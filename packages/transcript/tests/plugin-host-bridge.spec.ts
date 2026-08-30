@@ -56,7 +56,8 @@ describe('plugin host view bridge', () => {
     const diffStatus = opened.value.status!.register({ id: 'diff', render: () => ({ kind: 'diff', before: 'old', after: 'new' }) })
     const fieldsStatus = opened.value.status!.register({ id: 'fields', render: () => ({ kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok', tone: 'success' }] }] }) })
     const sectionsStatus = opened.value.status!.register({ id: 'sections', render: () => ({ kind: 'sections', sections: [{ body: { kind: 'text', content: 'body' } }, { title: 'collapsed', body: { kind: 'code', code: 'x' }, collapsed: true }] }) })
-    expect(status.ok && emptyStatus.ok && codeStatus.ok && plainStatus.ok && codePlainStatus.ok && diffStatus.ok && fieldsStatus.ok && sectionsStatus.ok).toBe(true)
+    const failedStatus = opened.value.status!.register({ id: 'failed', render: () => { throw new Error('status exploded') } })
+    expect(status.ok && emptyStatus.ok && codeStatus.ok && plainStatus.ok && codePlainStatus.ok && diffStatus.ok && fieldsStatus.ok && sectionsStatus.ok && failedStatus.ok).toBe(true)
     expect(statusModels.list().find(model => model.id === 'plugin.status.health')?.node).toEqual({ kind: 'text', content: 'healthy', tone: 'success' })
     expect(statusModels.list().find(model => model.id === 'plugin.status.quiet')?.visible).toBe(false)
     expect(statusModels.list().find(model => model.id === 'plugin.status.code')?.node).toEqual({ kind: 'code', code: 'const x = 1', language: 'ts' })
@@ -65,6 +66,7 @@ describe('plugin host view bridge', () => {
     expect(statusModels.list().find(model => model.id === 'plugin.status.diff')?.node).toEqual({ kind: 'diff', before: 'old', after: 'new' })
     expect(statusModels.list().find(model => model.id === 'plugin.status.fields')?.node).toEqual({ kind: 'fields', rows: [{ label: 'state', value: [{ text: 'ok', tone: 'success' }] }] })
     expect(statusModels.list().find(model => model.id === 'plugin.status.sections')?.node).toEqual({ kind: 'sections', sections: [{ body: { kind: 'text', content: 'body' } }, { title: 'collapsed', body: { kind: 'code', code: 'x' }, collapsed: true }] })
+    expect(statusModels.list().find(model => model.id === 'plugin.status.failed')?.node).toEqual({ kind: 'text', content: 'Status plugin.status.failed failed', tone: 'danger' })
     expect(redraws).toBeGreaterThan(0)
     if (!status.ok) return
     const beforeRefresh = redraws

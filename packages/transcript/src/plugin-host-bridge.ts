@@ -7,7 +7,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BluePluginHostSnapshot, BlueStatusEntryContribution } from '@dsh-blue/blue-api'
+import type { BlueStatusEntryContribution } from '@dsh-blue/blue-api'
 import type { BlueStatusEntry } from './status-model.ts'
 
 /** Stable Cordis plugin name. */
@@ -18,7 +18,7 @@ export const inject = ['bluePluginControl', 'blueStatusEntries']
 
 /** Mount additive status contributions behind the owner adapter. */
 export function apply(ctx: Context): void {
-  ctx.bluePluginControl.attachCapabilities(ctx, ['status'])
+  const lease = ctx.bluePluginControl.attachCapabilities(ctx, ['status'])
   const status = new Map<string, { dispose: () => void, contribution: BlueStatusEntryContribution }>()
   let statusRevision = -1
 
@@ -36,21 +36,33 @@ export function apply(ctx: Context): void {
         continue
       }
       const source = (): BlueStatusEntry | null => {
-        const node = entry.render()
-        return node === null ? {
-          id: `plugin.status.${entry.id}`,
-          priority: entry.priority ?? 50,
-          row: 2,
-          node: { kind: 'text', content: '' },
-          visible: false,
-          overflow: 'truncate',
-        } : {
-          id: `plugin.status.${entry.id}`,
-          priority: entry.priority ?? 50,
-          row: 2,
-          node,
-          visible: true,
-          overflow: 'truncate',
+        if (!lease.current('status')) return null
+        try {
+          const node = entry.render()
+          return node === null ? {
+            id: `plugin.status.${entry.id}`,
+            priority: entry.priority ?? 50,
+            row: 2,
+            node: { kind: 'text', content: '' },
+            visible: false,
+            overflow: 'truncate',
+          } : {
+            id: `plugin.status.${entry.id}`,
+            priority: entry.priority ?? 50,
+            row: 2,
+            node,
+            visible: true,
+            overflow: 'truncate',
+          }
+        } catch {
+          return {
+            id: `plugin.status.${entry.id}`,
+            priority: entry.priority ?? 50,
+            row: 2,
+            node: { kind: 'text', content: `Status plugin.status.${entry.id} failed`, tone: 'danger' },
+            visible: true,
+            overflow: 'truncate',
+          }
         }
       }
       status.set(entry.id, { contribution: entry, dispose: ctx.blueStatusEntries.register(source) })
@@ -59,10 +71,10 @@ export function apply(ctx: Context): void {
     statusRevision = revision
   }
 
-  const sync = (snapshot: BluePluginHostSnapshot): void => {
+  const sync = (snapshot: Parameters<Parameters<typeof lease.subscribe>[0]>[0]): void => {
     syncStatus(snapshot.status, snapshot.statusRevision ?? snapshot.revision ?? 0)
   }
-  const subscription = ctx.bluePluginControl.subscribe(sync)
+  const subscription = lease.subscribe(sync)
   ctx.effect(() => () => {
     subscription.dispose()
     for (const record of status.values()) record.dispose()

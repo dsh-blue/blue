@@ -25,22 +25,28 @@ const host = vi.hoisted(() => ({
   attach: vi.fn(),
   listeners: new Set<(snapshot: HostSnapshot) => void>(),
   disposed: 0,
+  current: true,
 }))
 
 function control() {
   return {
-    attachCapabilities: host.attach,
-    subscribe(listener: (snapshot: HostSnapshot) => void) {
-    host.listeners.add(listener)
-    let disposed = false
-    return {
-      dispose() {
-        if (disposed) return
-        disposed = true
-        host.disposed += 1
-        host.listeners.delete(listener)
-      },
-    }
+    attachCapabilities(owner: unknown, capabilities: readonly string[]) {
+      host.attach(owner, capabilities)
+      return {
+        current: () => host.current,
+        subscribe(listener: (snapshot: HostSnapshot) => void) {
+          host.listeners.add(listener)
+          let disposed = false
+          return {
+            dispose() {
+              if (disposed) return
+              disposed = true
+              host.disposed += 1
+              host.listeners.delete(listener)
+            },
+          }
+        },
+      }
     },
   }
 }
@@ -54,6 +60,7 @@ beforeEach(() => {
   host.attach.mockReset()
   host.listeners.clear()
   host.disposed = 0
+  host.current = true
 })
 
 afterEach(async () => {
@@ -96,6 +103,9 @@ describe('plugin host bridge revision compatibility', () => {
       visible: true,
       overflow: 'truncate',
     }])
+    host.current = false
+    expect(registry.list()).toEqual([])
+    host.current = true
     refreshes = 0
 
     emit({ status: [contribution], statusRevision: 7, revision: 71 })

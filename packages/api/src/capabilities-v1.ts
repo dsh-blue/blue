@@ -90,7 +90,7 @@ const DEFINITIONS: readonly BlueCapabilityDefinition[] = [
     // Command ids are plugin-defined. An omitted resource list means the
     // host grants every schema-valid name, subject only to maxNames.
     limits: Object.freeze({ maxNames: RESOURCE_LIMITS.commands }),
-    quotas: Object.freeze({ refreshPerSecond: RESOURCE_QUOTAS.refreshPerSecond }),
+    quotas: Object.freeze({}),
   },
   {
     name: 'status',
@@ -106,20 +106,26 @@ const DEFINITIONS: readonly BlueCapabilityDefinition[] = [
     resourceKind: 'placements',
     resources: Object.freeze(['header', 'left', 'right', 'bottom']),
     limits: Object.freeze({ maxPlacements: RESOURCE_LIMITS.panes }),
-    quotas: Object.freeze({ maxPerConsumer: RESOURCE_QUOTAS.panesPerConsumer }),
+    quotas: Object.freeze({ maxPerConsumer: RESOURCE_QUOTAS.panesPerConsumer, refreshPerSecond: RESOURCE_QUOTAS.refreshPerSecond }),
   },
   {
     name: 'overlays',
     version: '1.0.0',
     supported: true,
     limits: Object.freeze({ maxStack: RESOURCE_QUOTAS.overlaysGlobal }),
-    quotas: Object.freeze({ maxCapturingPerConsumer: 1 }),
+    quotas: Object.freeze({ maxCapturingPerConsumer: 1, refreshPerSecond: RESOURCE_QUOTAS.refreshPerSecond }),
   },
   {
     name: 'notifications.publish',
     version: '1.0.0',
     supported: true,
-    limits: Object.freeze({ maxViewBytes: 32_768 }),
+    limits: Object.freeze({
+      maxViewBytes: 32_768,
+      maxDepth: 64,
+      maxNodes: 4_096,
+      maxProperties: 8_192,
+      maxPrimitiveBytes: 32_768,
+    }),
     quotas: Object.freeze({ maxPerSecond: 20 }),
   },
   {

@@ -88,6 +88,10 @@ mismatch reports, indirect loader aliases, callable `apply` shape, reachable
 lifecycle ownership, and external-entry probe isolation. These assertions
 execute the CLI scripts as child processes; a pure helper assertion alone is not
 evidence for the JSON envelope.
+The runtime-corpus case has an explicit 15-second Vitest ceiling because it
+launches one isolated validator process per corpus entry; each child still
+retains its own fail-closed process behavior, while the suite remains stable
+under full-workspace worker load.
 
 The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and mounts the published host runner plus tool-cordis package for creative-mode coverage. Its explicit `@deepseek-ai/dsh` dev dependency supplies the pinned host preset tree and dynamic preset package closure without leaking that graph into the dependency-free `blue-cli` tarball. Scripted model calls exercise `cordis_define`/`cordis_run`, VM isolation, pane/status/command/notice rendering, stop, restart, update, rollback, process restart, and durable buffering across a missing view owner through the real chain. The safe-retraction case emits a creative-style `commands/change` during streamed thinking and requires the same-session reader refresh to preserve the editor receipt, erase the whole turn, and leave no interruption tombstone. Cases that mount real file-backed settings without exercising first-run onboarding, including the persisted status/editor-provider replay cases, seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
 

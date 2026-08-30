@@ -45,13 +45,22 @@ timeout, and stale-generation fences. F6/Shift-F6 traverses visible managed
 panes and restores the pre-surface focus at either boundary; any capturing
 overlay, including built-in overlays, blocks traversal.
 
+Each mounted pane/overlay event owner captures the control-plane capability
+generation. It rejects dispatch and settlement after owner replacement even
+when an old renderer callback is retained. Renderer unload closes every host
+overlay entry before hiding its local handle, because overlay opens are
+transient actions and must never replay into the replacement owner generation.
+Render exceptions inspect only an own data `message` property behind a guarded
+descriptor lookup; revoked proxies and accessor-backed thrown values retain the
+fixed bounded fallback instead of escaping the error boundary.
+
 The API host Fiber owns the durable panes/overlays readiness and buffering
 lease, so host-only external rows may register regardless of core import order,
 while theme/components are pending, or during a nested bridge reload gap. The
-nested bridge replays buffered contributions after mount and keeps its own
-runtime-scoped attachment for renderer ownership; core unload removes the
-rendered surfaces but intentionally leaves host-buffered registrations ready
-for a replacement renderer. When the API host unloads, it fences dependent
+nested bridge replays buffered pane contributions after mount and keeps its own
+runtime-scoped attachment for renderer ownership; core unload removes rendered
+surfaces, closes transient overlays, and leaves only host-buffered pane
+registrations ready for a replacement renderer. When the API host unloads, it fences dependent
 consumer facades before draining registries, independent of Cordis disposal
 order; writes through a retained facade therefore return `BLUE_ACTION_REJECTED`,
 not the `BLUE_CAPABILITY_ABSENT` reserved for a live consumer crossing a
@@ -97,6 +106,11 @@ The recoverable suspend composes pi-tui 0.84.2's own lifecycle primitives — `T
 `src/ui-validator.ts` is the only admission path for public `BlueUiNode`, recursively narrowed `BlueStatusNode`, and `BlueEditorShellNode` trees. Preserve the 20,000-text-unit, depth-8, 256-node, and 200-entry quotas; copy known fields and recursively freeze only the canonical copy; strip ESC and C1 terminal strings plus the private focus sentinel and pi-tui cursor marker. Ordinary records and dense arrays from another VM realm are admitted only when their prototype has the matching native realm constructor, constructor-to-prototype backreference, and intrinsic own-descriptor shape; local prototype identity is not required. Class instances, named-constructor spoofs, exotic/custom prototypes, sparse/subclass arrays, accessors, and proxy failures remain rejected, and known fields are read only through own data descriptors. Status recursion must remain non-interactive. An editor control is legal only at the editor root or through editor stack/surface slots; ordinary descendants (especially `scroll`) must parse as `BlueUiNode` and cannot reopen the editor slot. Its complete stack ancestry must guarantee visibility: reject any `when`, `maxSize: 0`, or explicit `basis: 0`/`grow: 0`/zero-minimum allocation on a child containing the slot. Nested scroll remains rejected.
 
 `src/ui-compiler.ts` is the sole canonical node -> pi-tui compiler. `compileBlueUiNode` must call the ordinary validator itself; `compileBlueStatusNode` must independently call the recursively narrowed status validator; `compileBlueEditorShellNode` must independently validate the shell and inject the exact host-owned `BlueEditor` at its sole `editor-control`. All three use the same admitted-node compiler and painter graph. Recompiling a shell must never manufacture or replace that editor object: cursor, IME, paste, undo, history, and the pre-clear submission transaction belong to the stable renderer engine. The status result is a passive facade with no focus/input/event surface: row stacks retain compact spatial `HStack` semantics in both screen modes, output is runtime-bounded to 1..3 rows, and `renderStatus` reports overflow plus the first contained leaf/root `runtimeFailure` for the current render. The failure accumulator resets on every frame; ordinary safe error rows remain unchanged, while the status composition owner can reject a dry render or trip its runtime breaker. Private official-compatibility options may impose a post-wrap leaf-row budget, select one exact leaf for a live row offset/metadata callback, or replace one exact text leaf with core's Markdown renderer; public plugin/host compilation never sets them. The composite render exit still enforces the column clamp. Its returned composite is the only `BlueFocusable`: it owns roving state, live viewport reconciliation, event containment, and exactly-one cursor-marker insertion. It must expose the real root `LAYOUT_NODE`; an opaque wrapper leaves nested ScrollView state at zero. Direct render/stop replay uses a sentinel replaced after composition. AltScreen layout bypasses wrapper render, so its explicit layout-pass adapter emits an equal-width marker from the reconciled active leaf; editor fields retain the real editor caret and replace the sentinel locally, falling back to one marker when narrow clipping removes that caret. Real `renderLayoutFrame` HStack/editor and replay tests must cover both paths. AltScreen scroll is non-primary/contained and clips to its stack-allocated height. Ordinary MainScreen UI unwraps scroll, linearizes row stacks, and preserves all document rows. Do not clamp stack sizing to the compile-time viewport; the fixed safety ceiling exists solely to bound hostile safe integers during later live resize. Delete the private Markdown selector when the canonical schema gains a validated Markdown/content node, and delete the leaf window/metadata seam when canonical content boxes expose controlled post-wrap scrolling.
+
+Compiler and plugin-surface catches share `src/error-message.ts`: it reads only
+a non-empty own data `message` behind a guarded descriptor lookup. Accessors,
+revoked proxies, primitive throws, and other opaque values retain a fixed
+bounded fallback and cannot escape during error reporting.
 
 Editor-shell composites additionally expose `renderChecked(width, { dryRun })`
 for the interaction-owned provider transaction. It reports the first contained

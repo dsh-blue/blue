@@ -9,6 +9,7 @@
 import type { BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
+import { ownDataErrorMessage } from './error-message.ts'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
 import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueSemanticColors } from './types.ts'
 import {
@@ -268,7 +269,7 @@ class ErrorComponent implements BlueComponent {
 }
 
 function renderFailure(error: unknown, fallback = 'unknown render failure'): string {
-  return error instanceof Error ? error.message : fallback
+  return ownDataErrorMessage(error) ?? fallback
 }
 
 function staticComponent(render: (width: number) => string[], options: RuntimeCompilerOptions): BlueComponent {

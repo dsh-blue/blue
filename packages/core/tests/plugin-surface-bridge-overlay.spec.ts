@@ -16,7 +16,7 @@ import {
   type BlueUiNode,
   type BlueUserGesture,
 } from '../../api/src/index.ts'
-import { createBluePluginControl, runBlueUserGesture } from '../../api/src/host.ts'
+import { attachBluePluginHostCapabilities, createBluePluginControl, runBlueUserGesture, snapshotBluePluginHost } from '../../api/src/host.ts'
 import { ui } from '../../ui/src/index.ts'
 import { mountPluginSurfaceBridge } from '../src/plugin-surface-bridge.ts'
 import { startBlueTerminal, type BlueTerminalRuntime } from '../src/terminal.ts'
@@ -164,6 +164,38 @@ afterEach(() => {
 })
 
 describe('plugin surface bridge overlays', () => {
+  it('closes opened overlays when the renderer owner enters a gap', async () => {
+    const f = await fixture()
+    try {
+      const opened = f.api.overlays!.open({ id: 'owner-gap-overlay', render: () => ui.text('gap') })
+      expect(opened.ok).toBe(true)
+      await flush()
+      expect(f.stack()).toHaveLength(1)
+      f.owner.dispose()
+      expect(f.stack()).toHaveLength(0)
+      expect(snapshotBluePluginHost(f.host).overlays).toEqual([])
+      expect(opened.ok && opened.value.closed).toBe(true)
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('closes an overlay still pending its first renderer reconciliation on owner unload', async () => {
+    const f = await fixture()
+    try {
+      const opened = f.api.overlays!.open({ id: 'pending-owner-gap-overlay', render: () => ui.text('pending') })
+      expect(opened.ok).toBe(true)
+      expect(f.stack()).toHaveLength(0)
+      f.owner.dispose()
+      await flush()
+      expect(f.stack()).toHaveLength(0)
+      expect(snapshotBluePluginHost(f.host).overlays).toEqual([])
+      expect(opened.ok && opened.value.closed).toBe(true)
+    } finally {
+      await f.dispose()
+    }
+  })
+
   it('admits passive content, rejects all potential passive controls, and admits capturing controls only with a gesture', async () => {
     const f = await fixture()
     try {
@@ -258,6 +290,15 @@ describe('plugin surface bridge overlays', () => {
       expect(errorRows.join(' ')).toContain('Blue UI rejected')
       expect(errorRows.every(row => visibleWidth(row) <= 40)).toBe(true)
       if (doubleFailure.ok) doubleFailure.value.close()
+      await flush()
+
+      const revoked = Proxy.revocable({}, {})
+      const hostileRender = f.api.overlays!.open({ id: 'hostile-render', render: () => { throw revoked.proxy } })
+      expect(hostileRender.ok).toBe(true)
+      revoked.revoke()
+      await flush()
+      expect(f.stack()[0]!.component.render(40).join(' ')).toContain('Plugin overlay failed: render failed')
+      if (hostileRender.ok) hostileRender.value.close()
       await flush()
 
       const numeric = f.api.overlays!.open({
@@ -478,6 +519,64 @@ describe('plugin surface bridge overlays', () => {
       expect(f.api.overlays!.open({ id: 'late-token', capturing: true, render: () => ui.text('late') }, { userGesture: retained })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     } finally {
       await f.dispose()
+    }
+  })
+
+  it('does not replay overlays or let stale-generation settlement close a same-id replacement', async () => {
+    vi.useFakeTimers()
+    const timeoutFixture = await fixture()
+    try {
+      const timedOut = await timeoutFixture.openCapturing({
+        id: 'stale-timeout',
+        capturing: true,
+        render: () => actionNode(),
+        onEvent: () => new Promise<BlueResult>(() => {}),
+      })
+      expect(timedOut.ok).toBe(true)
+      await flush()
+      timeoutFixture.stack()[0]!.component.handleInput?.('\r')
+      await flush()
+      const nextOwner = effectOwner()
+      attachBluePluginHostCapabilities(timeoutFixture.host, nextOwner, ['overlays'])
+      expect(timedOut.ok && timedOut.value.closed).toBe(true)
+      const timeoutReplacement = timeoutFixture.api.overlays!.open({ id: 'stale-timeout', render: () => ui.text('replacement') })
+      expect(timeoutReplacement.ok).toBe(true)
+      await vi.advanceTimersByTimeAsync(30_000)
+      await flush()
+      expect(timeoutReplacement.ok && timeoutReplacement.value.closed).toBe(false)
+      expect(snapshotBluePluginHost(timeoutFixture.host).overlays.map(entry => entry.id)).toEqual(['stale-timeout'])
+      if (timeoutReplacement.ok) timeoutReplacement.value.close()
+      nextOwner.dispose()
+    } finally {
+      await timeoutFixture.dispose()
+    }
+
+    const rejectedFixture = await fixture()
+    try {
+      let reject!: (error: Error) => void
+      const rejected = await rejectedFixture.openCapturing({
+        id: 'stale-rejection',
+        capturing: true,
+        render: () => actionNode(),
+        onEvent: () => new Promise<BlueResult>((_resolve, reject_) => { reject = reject_ }),
+      })
+      expect(rejected.ok).toBe(true)
+      await flush()
+      rejectedFixture.stack()[0]!.component.handleInput?.('\r')
+      await flush()
+      const nextOwner = effectOwner()
+      attachBluePluginHostCapabilities(rejectedFixture.host, nextOwner, ['overlays'])
+      expect(rejected.ok && rejected.value.closed).toBe(true)
+      const rejectedReplacement = rejectedFixture.api.overlays!.open({ id: 'stale-rejection', render: () => ui.text('replacement') })
+      expect(rejectedReplacement.ok).toBe(true)
+      reject(new Error('late failure'))
+      await flush()
+      expect(rejectedReplacement.ok && rejectedReplacement.value.closed).toBe(false)
+      expect(snapshotBluePluginHost(rejectedFixture.host).overlays.map(entry => entry.id)).toEqual(['stale-rejection'])
+      if (rejectedReplacement.ok) rejectedReplacement.value.close()
+      nextOwner.dispose()
+    } finally {
+      await rejectedFixture.dispose()
     }
   })
 

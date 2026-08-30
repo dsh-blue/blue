@@ -55,12 +55,15 @@ describe('example width contracts', () => {
     const control = hostContext.get('bluePluginControl')!
     const owner = new Scope(host)
     const consumer = new Scope(host)
-    control.attachCapabilities(owner, ['panes'])
+    const lease = control.attachCapabilities(owner, ['panes'])
     const ctx = consumer as unknown as Context
     applyHeader(ctx)
     applyInspector(ctx)
     applyBottomLog(ctx)
-    for (const entry of control.snapshot().panes) {
+    const current = lease.snapshot()
+    expect(current.ok).toBe(true)
+    if (!current.ok) throw new Error(current.message)
+    for (const entry of current.value.panes) {
       const node = entry.contribution.render()
       expect(node).not.toBeNull()
       uiRows(entry.id, node!)

@@ -31,8 +31,8 @@ api.notifications?.publish({
 ## Behavior details
 
 - **No public observation**: only Blue's official owner consumes the internal stream; ordinary plugins cannot subscribe to, forward, or enumerate other plugins' notices;
-- **No dedup, no throttling**: the host neither merges same-id notifications nor rate-limits. Frequency control is the publisher's responsibility — throttle high-frequency events (progress ticks) yourself, or use the [status bar](/en/plugins/status) instead;
-- **Failures are structured**: an illegal id or a non-object `view` makes `publish` return `BLUE_INVALID_CONTRIBUTION`; rejections from the presentation adapter are also returned as failures, never thrown;
+- **No dedup, with hard quotas**: the host does not merge same-id notifications. The grant publishes bounded-clone ceilings of depth 64, 4,096 containers, 8,192 properties, and 32 KiB of primitive/key bytes; after preflight, the serialized `view` must still fit the exact 32 KiB limit. One Cordis consumer shares a 20-publishes-per-rolling-second budget across canonical and legacy facades. Use the [status bar](/en/plugins/status) for high-frequency progress;
+- **Failures are structured**: an illegal id or non-object `view` returns `BLUE_INVALID_CONTRIBUTION`; payload/rate overflow returns `BLUE_LIMIT_EXCEEDED`. Owner-observer exceptions are contained per observer and cannot fail an accepted publish or block sibling observers;
 - **Transient presentation**: the current notice bar neither queues nor keeps history, and an owner gap never buffers or replays it. For persistently visible state, use the [status bar](/en/plugins/status) or a [pane](/en/plugins/dock).
 
 ## Common pitfalls
@@ -40,7 +40,8 @@ api.notifications?.publish({
 | Symptom | Cause |
 | --- | --- |
 | `BLUE_INVALID_CONTRIBUTION` | the id contains uppercase/illegal characters, or `view` is missing |
-| notification spam | no throttling on a high-frequency path — debounce on the publisher's side |
+| `BLUE_LIMIT_EXCEEDED` | the `view` exceeds a structural-preflight or final 32 KiB limit, or this consumer already published 20 notices in the rolling second |
+| notification spam | even below the hard cap, progress ticks belong in status or a pane |
 | `api.notifications` is undefined | `open()` did not declare `notifications.publish` |
 | `subscribe` is missing | expected: global notification observation is an owner-only control-plane operation |
 

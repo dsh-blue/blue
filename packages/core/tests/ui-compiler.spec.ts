@@ -923,6 +923,19 @@ describe('compileBlueUiNode', () => {
     expect(compiled(ui.richText([{ text: 'x' }]), fixture({ components: nonErrorComponents }).options).component.render(12).join('')).toContain('unknown')
     expect(layout(compiled(ui.richText([{ text: 'x' }]), fixture({ components: nonErrorComponents }).options).component as Component, 12, 3).lines.join('')).toContain('unknown')
 
+    const accessorError = Object.defineProperty({}, 'message', { get: () => { throw new Error('message getter escaped') } })
+    const accessorComponents = { ...components, wrapText: () => { throw accessorError } } as BlueComponents
+    expect(compiled(ui.richText([{ text: 'x' }]), fixture({ components: accessorComponents }).options).component.render(12).join('')).toContain('unknown render')
+
+    const emptyMessageComponents = { ...components, wrapText: () => { throw new Error('   ') } } as BlueComponents
+    expect(compiled(ui.richText([{ text: 'x' }]), fixture({ components: emptyMessageComponents }).options).component.render(12).join('')).toContain('unknown render')
+
+    const revoked = Proxy.revocable({}, {})
+    const hostileComponents = { ...components, wrapText: () => { throw revoked.proxy } } as BlueComponents
+    const hostile = compiled(ui.richText([{ text: 'x' }]), fixture({ components: hostileComponents }).options)
+    revoked.revoke()
+    expect(hostile.component.render(12).join('')).toContain('unknown render')
+
     const overwideComponents = { ...components, wrapText: () => ['overwide row'] } as BlueComponents
     expect(compiled(ui.richText([{ text: 'x' }]), fixture({ components: overwideComponents }).options).component.render(4).every(row => visibleWidth(row) <= 4)).toBe(true)
 

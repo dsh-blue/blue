@@ -52,6 +52,16 @@ function failedEntry(entry: BlueStatusEntry): BlueStatusEntry {
   }
 }
 
+function providerFailure(error: unknown): string {
+  try {
+    if (typeof error !== 'object' || error === null) return 'status provider render failed'
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'message')
+    return descriptor !== undefined && 'value' in descriptor && typeof descriptor.value === 'string'
+      ? descriptor.value
+      : 'status provider render failed'
+  } catch { return 'status provider render failed' }
+}
+
 /** Canonical status-node registry with explicit footer invalidation. */
 export class BlueStatusEntryService extends Service {
   private readonly entries = new Map<string, StatusEntryRecord>()
@@ -171,6 +181,7 @@ export class BlueStatusCompositionService extends Service implements BlueCompone
   private active: ActiveStatusProvider | undefined
   private candidates = new Map<string, BlueStatusProvider>()
   private providerRevision = -1
+  private providerOwner: object | undefined
   private session: BlueSessionSnapshot | null = null
   private runtimeFailure: string | undefined
   private breakerId: string | undefined
@@ -218,8 +229,15 @@ export class BlueStatusCompositionService extends Service implements BlueCompone
     else if (this.measuredWidth !== undefined) this.attemptDesired(this.measuredWidth)
   }
 
+  /** Claim the candidate slot for one frontend owner generation. */
+  attachProviderOwner(owner: object): void {
+    this.providerOwner = owner
+    this.providerRevision = -1
+  }
+
   /** Replace the candidate snapshot; installation/order never selects one. */
-  updateCandidates(providers: readonly BlueStatusProvider[], revision: number): void {
+  updateCandidates(providers: readonly BlueStatusProvider[], revision: number, owner?: object): void {
+    if (owner !== undefined && owner !== this.providerOwner) return
     if (revision === this.providerRevision) return
     const previous = this.candidates
     const next = new Map(providers.map(provider => [provider.id, provider]))
@@ -247,7 +265,9 @@ export class BlueStatusCompositionService extends Service implements BlueCompone
   }
 
   /** Drop one unloaded owner generation while preserving the persisted desired id. */
-  detachProviders(): void {
+  detachProviders(owner?: object): void {
+    if (owner !== undefined && owner !== this.providerOwner) return
+    if (owner !== undefined) this.providerOwner = undefined
     this.candidates.clear()
     this.providerRevision = -1
     this.breakerId = undefined
@@ -285,7 +305,7 @@ export class BlueStatusCompositionService extends Service implements BlueCompone
   private candidate(provider: BlueStatusProvider, width: number): { readonly component: BlueStatusComponent, readonly rows: readonly string[], readonly width: number } | { readonly failure: string } {
     let node: BlueStatusNode
     try { node = provider.render(this.providerSnapshot()) }
-    catch (error) { return { failure: error instanceof Error ? error.message : 'status provider render failed' } }
+    catch (error) { return { failure: providerFailure(error) } }
     const compiled = compileBlueStatusNode(node, {
       components: this.options.components,
       colors: this.options.colors,

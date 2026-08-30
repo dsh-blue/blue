@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BlueEditorProvider } from '../../api/src/contracts.ts'
+import type { BlueEditorProvider, BlueResult } from '../../api/src/contracts.ts'
 import { EditorHostService } from '../src/editor-instance.ts'
 
 const host = vi.hoisted(() => ({
@@ -15,24 +15,32 @@ const host = vi.hoisted(() => ({
   initial: { editorProviders: [] as readonly BlueEditorProvider[], editorProvidersRevision: 1 } as Record<string, unknown>,
   listeners: new Set<(snapshot: Record<string, unknown>) => void>(),
   disposed: 0,
+  current: true,
 }))
 
 function control() {
-  return {
-    attachCapabilities: host.attach,
+  const lease = {
+    current: () => host.current,
     runUserGesture: host.gesture,
     subscribe(listener: (snapshot: Record<string, unknown>) => void) {
-    host.listeners.add(listener)
-    listener(host.initial)
-    let disposed = false
-    return {
-      dispose() {
-        if (disposed) return
-        disposed = true
-        host.disposed += 1
-        host.listeners.delete(listener)
-      },
-    }
+      host.listeners.add(listener)
+      listener(host.initial)
+      let disposed = false
+      return {
+        get disposed() { return disposed },
+        dispose() {
+          if (disposed) return
+          disposed = true
+          host.disposed += 1
+          host.listeners.delete(listener)
+        },
+      }
+    },
+  }
+  return {
+    attachCapabilities(owner: unknown, capabilities: readonly string[]) {
+      host.attach(owner, capabilities)
+      return lease
     },
   }
 }
@@ -51,6 +59,7 @@ beforeEach(() => {
   host.initial = { editorProviders: [], editorProvidersRevision: 1 }
   host.listeners.clear()
   host.disposed = 0
+  host.current = true
 })
 
 function provide(ctx: Context, name: string, value: unknown): void {
@@ -138,6 +147,27 @@ describe('editor provider owner', () => {
 
     const throwing: BlueEditorProvider = { ...provider, onEvent: async () => { throw new Error('boom') } }
     await expect(binding.dispatch(throwing, { kind: 'dismiss' }, new AbortController().signal, 4)).resolves.toEqual({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'boom' })
+
+    let rejectStale!: (error: unknown) => void
+    let resolveStale!: (result: BlueResult) => void
+    const staleRejectedProvider: BlueEditorProvider = {
+      ...provider,
+      onEvent: () => new Promise((_resolve, reject) => { rejectStale = reject }),
+    }
+    const staleFulfilledProvider: BlueEditorProvider = {
+      ...provider,
+      onEvent: () => new Promise(resolve => { resolveStale = resolve }),
+    }
+    const staleRejected = binding.dispatch(staleRejectedProvider, { kind: 'dismiss' }, new AbortController().signal, 5)
+    const staleFulfilled = binding.dispatch(staleFulfilledProvider, { kind: 'dismiss' }, new AbortController().signal, 6)
+    await Promise.resolve()
+    host.current = false
+    rejectStale(new Error('late provider rejection'))
+    resolveStale({ ok: true, value: undefined })
+    for (const result of [staleRejected, staleFulfilled]) {
+      await expect(result).resolves.toEqual({ ok: false, code: 'BLUE_STALE', message: 'editor provider owner is stale' })
+    }
+    await expect(binding.dispatch({ id: 'passive', render: () => ({ kind: 'editor-control' }) }, { kind: 'dismiss' }, new AbortController().signal, 7)).resolves.toEqual({ ok: false, code: 'BLUE_STALE', message: 'editor provider owner is stale' })
     const replacement = { ...binding, desiredId: 'replacement' }
     mounted.editorHost.setProviders(replacement)
     await mounted.fiber.dispose()

@@ -260,6 +260,18 @@ describe('BlueStatusCompositionService', () => {
     expect(service.snapshot.runtimeFailure).toBe('status provider render failed')
     service.select('invalid')
     expect(service.snapshot.runtimeFailure).toMatch(/status node/i)
+
+    const revoked = Proxy.revocable({}, {})
+    const accessorMessage = Object.defineProperty({}, 'message', { get: () => { throw new Error('message getter ran') } })
+    service.updateCandidates([
+      provider('revoked', () => { throw revoked.proxy }),
+      provider('accessor-message', () => { throw accessorMessage }),
+    ], 2)
+    revoked.revoke()
+    service.select('revoked')
+    expect(service.snapshot.runtimeFailure).toBe('status provider render failed')
+    service.select('accessor-message')
+    expect(service.snapshot.runtimeFailure).toBe('status provider render failed')
   })
 
   it('rejects a contained dry-render failure and normalizes non-finite widths', () => {
@@ -544,6 +556,30 @@ describe('BlueStatusCompositionService', () => {
     expect(service.snapshot.activeId).toBe('custom')
     entries.refresh('default')
     expect(service.render(20)).toEqual(['custom'])
+  })
+
+  it('identity-fences provider detach across overlapping owner generations', () => {
+    const { service } = composition()
+    const firstOwner = {}
+    const replacementOwner = {}
+    const first = provider('first', () => ({ kind: 'text', content: 'first' }))
+    const replacement = provider('replacement', () => ({ kind: 'text', content: 'replacement' }))
+
+    service.attachProviderOwner(firstOwner)
+    service.updateCandidates([first], 1, firstOwner)
+    service.select('first')
+    expect(service.render(20)).toEqual(['first'])
+
+    service.attachProviderOwner(replacementOwner)
+    service.updateCandidates([replacement], 1, replacementOwner)
+    service.select('replacement')
+    expect(service.render(20)).toEqual(['replacement'])
+    service.detachProviders(firstOwner)
+    expect(service.render(20)).toEqual(['replacement'])
+    service.updateCandidates([first], 2, firstOwner)
+    expect(service.render(20)).toEqual(['replacement'])
+    service.detachProviders(replacementOwner)
+    expect(service.snapshot.activeId).toBe(BLUE_DEFAULT_STATUS_PROVIDER)
   })
 
   it('fences an unload triggered inside a candidate callback', () => {

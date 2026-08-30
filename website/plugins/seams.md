@@ -18,9 +18,9 @@ Blue 的当前架构用显式 Cordis service、projection/action、renderer-neut
 | `editor.extensions` (Experimental) | inert `BlueEditorExtensionContribution` | interaction owner -> editor extension binding |
 | `editor.provider` (Experimental) | inert `BlueEditorProvider` candidate | editor-provider owner -> core editor-shell compiler |
 
-`@dsh-blue/blue-api` 负责 manifest 校验、capability 裁剪、重复 id、owner namespace 和生命周期。注册绑定调用方 Fiber，卸载自动清理。`commands`、`status`、`panes`、`overlays` 与三个 Experimental/reference facet 使用 inert registration buffer；owner gap 后只恢复最新定义，不 replay action、overlay、gesture、notification 或旧 callback result。
+`@dsh-blue/blue-api` 负责 manifest 校验、capability 裁剪、重复 id、owner namespace 和生命周期。注册绑定调用方 Fiber，卸载自动清理。`commands`、`status`、`panes` 与三个 Experimental/reference facet 使用 inert registration buffer；`overlays` 只有持久 capability definition，每次 open 仍要求 live renderer owner。owner gap 后只恢复最新定义，不 replay action、overlay、gesture、notification 或旧 callback result。
 
-`notifications.publish` 与 `session.read` 依赖 active owner，缺位时 `open()` 返回 `BLUE_CAPABILITY_ABSENT`。通知 API 只有 publish，没有全局 observe。`session.read` 是唯一公开 session facade；generic `session.act` 已移除，领域写入继续使用所属 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。
+私有 `bluePluginControl.attachCapabilities()` 返回 generation-bound owner lease；重叠 capability 会撤销旧 lease 的全部 authority，snapshot/notification observe、gesture 与 semantic close 都由该 lease 收窄。`notifications.publish` 与 `session.read` 依赖 active owner，缺位操作返回 `BLUE_CAPABILITY_ABSENT`。通知 API 只有 publish，没有全局 observe，并执行 32 KiB/20 条每滚动秒的 Host 配额。`session.read` 是唯一公开 session facade；generic `session.act` 已移除，领域写入继续使用所属 Harness service、command 或 feature action。详见[会话只读数据](/plugins/session)。
 
 Provider/editor facet 只保留为 Experimental/reference runtime，不属于 Stable v1 root。它们的 candidate 注册保持 inert，只有 settings 选中的 id 才会激活；持久化选择和 fallback 分别见[状态栏](/plugins/status#独占-status-provider)与[编辑器 Provider](/plugins/editor-providers)。
 

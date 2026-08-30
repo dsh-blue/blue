@@ -15,6 +15,7 @@ import type {
 } from './contracts.ts'
 import { validateBlueManifest, type BlueCapability, type BluePluginManifest } from './manifest.ts'
 import {
+  getBlueCapabilityDefinition,
   negotiateBlueCapabilities,
 } from './capabilities-v1.ts'
 import {
@@ -34,6 +35,8 @@ type Capability = 'commands' | 'status' | 'notifications.publish' | 'panes' | 'o
 type V1Capability = 'commands' | 'status' | 'notifications.publish' | 'panes' | 'overlays' | 'session.read' | 'session.projections.read'
 type ActiveCapability = Capability | 'session.projections.read'
 type HostCapability = BlueCapability
+type AttachedCapability = Exclude<ActiveCapability, 'session.read' | 'session.projections.read'>
+type GestureCapability = 'commands' | 'panes' | 'overlays' | 'editor.extensions' | 'editor.provider'
 type EffectOwner = { effect(callback: () => () => void): unknown }
 type Consumer = { effect(callback: () => () => void): unknown }
 type Prioritized = { readonly id: string, readonly priority?: number }
@@ -48,6 +51,8 @@ export interface BluePluginHostOverlayEntry {
   readonly id: string
   readonly request: BlueOverlayRequest & { readonly capturing: boolean, readonly dismissible: boolean }
   readonly order: number
+  /** Owner generation that admitted this transient action. */
+  readonly ownerGeneration?: number
   /** Owner-only render generation; public refresh bumps it after coalescing. */
   readonly revision?: number
 }
@@ -73,25 +78,62 @@ export interface BluePluginHostSnapshot {
 export interface BluePluginHostOptions { readonly now?: () => number }
 
 /** Composition-private authority installed beside the public host service. */
-export interface BluePluginControl {
-  attachCapabilities(owner: EffectOwner, capabilities: readonly HostCapability[]): BlueRegistration
-  attachSessionReader(owner: EffectOwner, reader: BlueSessionReader): BlueRegistration
-  /** Internal owner-generation fence; unavailable to plugin-facing roots. */
-  generation(capability: V1Capability): number
-  snapshot(): BluePluginHostSnapshot
+interface BluePluginOwnerLease extends BlueRegistration {
+  /** Whether this lease still owns the current generation of one capability. */
+  current(capability: HostCapability): boolean
+  /** Snapshot access is valid only while every capability on the lease is current. */
+  snapshot(): BlueResult<BluePluginHostSnapshot>
   subscribe(listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration
   observeNotifications(listener: (notification: BlueNotification) => void): BlueRegistration
-  runUserGesture<T>(owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T>
-  closeOverlay(owner: EffectOwner, entry: BluePluginHostOverlayEntry): BlueResult
+  runUserGesture<T>(capability: GestureCapability, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T>
+  closeOverlay(entry: BluePluginHostOverlayEntry): BlueResult
+}
+
+/** Composition-private authority installed beside the public host service. */
+export interface BluePluginControl {
+  attachCapabilities(owner: EffectOwner, capabilities: readonly HostCapability[]): BluePluginOwnerLease
+  attachSessionReader(owner: EffectOwner, reader: BlueSessionReader): BlueRegistration
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/u
 const OWNER_ID_PATTERN = /^(?:blue[.:-]|@dsh-blue\/)/u
 const IMPLEMENTED_CAPABILITIES = new Set<Capability>(['commands', 'status', 'notifications.publish', 'panes', 'overlays', 'editor.extensions', 'session.read', 'status.provider', 'editor.provider'])
 
+/** Runtime enforcement reads the same immutable values returned in grants. */
+const COMMAND_DEFINITION = getBlueCapabilityDefinition('commands')!
+const STATUS_DEFINITION = getBlueCapabilityDefinition('status')!
+const PANES_DEFINITION = getBlueCapabilityDefinition('panes')!
+const OVERLAYS_DEFINITION = getBlueCapabilityDefinition('overlays')!
+const NOTIFICATIONS_DEFINITION = getBlueCapabilityDefinition('notifications.publish')!
+const MAX_COMMAND_CONTRIBUTIONS = COMMAND_DEFINITION.limits.maxNames!
+const MAX_STATUS_CONTRIBUTIONS = STATUS_DEFINITION.limits.maxEntries!
+const MAX_PANES_PER_CONSUMER = PANES_DEFINITION.quotas.maxPerConsumer!
+const MAX_OVERLAY_STACK = OVERLAYS_DEFINITION.limits.maxStack!
+const MAX_CAPTURING_OVERLAYS_PER_CONSUMER = OVERLAYS_DEFINITION.quotas.maxCapturingPerConsumer!
+const STATUS_REFRESH_PER_SECOND = STATUS_DEFINITION.quotas.refreshPerSecond!
+const PANE_REFRESH_PER_SECOND = PANES_DEFINITION.quotas.refreshPerSecond!
+const OVERLAY_REFRESH_PER_SECOND = OVERLAYS_DEFINITION.quotas.refreshPerSecond!
+const MAX_NOTIFICATION_VIEW_BYTES = NOTIFICATIONS_DEFINITION.limits.maxViewBytes!
+const MAX_NOTIFICATION_VIEW_DEPTH = NOTIFICATIONS_DEFINITION.limits.maxDepth!
+const MAX_NOTIFICATION_VIEW_NODES = NOTIFICATIONS_DEFINITION.limits.maxNodes!
+const MAX_NOTIFICATION_VIEW_PROPERTIES = NOTIFICATIONS_DEFINITION.limits.maxProperties!
+const MAX_NOTIFICATION_PRIMITIVE_BYTES = NOTIFICATIONS_DEFINITION.limits.maxPrimitiveBytes!
+const MAX_NOTIFICATION_PER_SECOND = NOTIFICATIONS_DEFINITION.quotas.maxPerSecond!
+/** Experimental facets have no v1 grant catalog yet. */
+const EXPERIMENTAL_REFRESH_PER_SECOND = 20
+const NOTIFICATION_CLONE_LIMIT = Symbol('notification-clone-limit')
+
 function success<T>(value: T): BlueResult<T> { return { ok: true, value } }
 function failure(code: BlueErrorCode, message: string): BlueResult<never> { return { ok: false, code, message } }
-function message(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback }
+function message(error: unknown, fallback: string): string {
+  try {
+    if (typeof error !== 'object' || error === null) return fallback
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'message')
+    return descriptor !== undefined && 'value' in descriptor && typeof descriptor.value === 'string'
+      ? descriptor.value
+      : fallback
+  } catch { return fallback }
+}
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function absent(capability: Capability): BlueResult<never> { return failure('BLUE_CAPABILITY_ABSENT', `capability "${capability}" has no active Blue owner adapter`) }
 function consumerDisposed(): BlueResult<never> { return failure('BLUE_ACTION_REJECTED', 'plugin consumer is disposed') }
@@ -120,33 +162,79 @@ function fields(input: unknown, keys: readonly string[]): Record<string, unknown
   for (const key of keys) copy[key] = own(input, key)
   return copy
 }
-function cloneData(input: unknown, seen = new Set<object>()): unknown {
-  if (input === null || typeof input === 'string' || typeof input === 'boolean') return input
+interface DataCloneBudget {
+  readonly maxDepth: number
+  readonly maxNodes: number
+  readonly maxProperties: number
+  readonly maxPrimitiveBytes: number
+  nodes: number
+  properties: number
+  primitiveBytes: number
+}
+
+function consumeStringBudget(input: string, budget: DataCloneBudget): void {
+  const remainingPrimitiveBytes = budget.maxPrimitiveBytes - budget.primitiveBytes
+  if (input.length > remainingPrimitiveBytes) throw NOTIFICATION_CLONE_LIMIT
+  budget.primitiveBytes += Buffer.byteLength(input, 'utf8')
+  if (budget.primitiveBytes > budget.maxPrimitiveBytes) throw NOTIFICATION_CLONE_LIMIT
+}
+
+function cloneData(input: unknown, seen = new Set<object>(), budget?: DataCloneBudget, depth = 0): unknown {
+  if (input === null || typeof input === 'string' || typeof input === 'boolean') {
+    if (budget !== undefined) {
+      if (typeof input === 'string') consumeStringBudget(input, budget)
+      else {
+        budget.primitiveBytes += input === null || input ? 4 : 5
+        if (budget.primitiveBytes > budget.maxPrimitiveBytes) throw NOTIFICATION_CLONE_LIMIT
+      }
+    }
+    return input
+  }
   if (typeof input === 'number') {
     if (!Number.isFinite(input)) throw new Error('nested contribution numbers must be finite')
+    if (budget !== undefined) {
+      budget.primitiveBytes += String(input).length
+      if (budget.primitiveBytes > budget.maxPrimitiveBytes) throw NOTIFICATION_CLONE_LIMIT
+    }
     return input
   }
   if (!object(input) || seen.has(input)) throw new Error('nested contribution data must be finite, acyclic JSON-shaped data')
+  if (budget !== undefined) {
+    if (depth > budget.maxDepth) throw NOTIFICATION_CLONE_LIMIT
+    budget.nodes += 1
+    if (budget.nodes > budget.maxNodes) throw NOTIFICATION_CLONE_LIMIT
+  }
   seen.add(input)
-  const descriptors = Object.getOwnPropertyDescriptors(input)
   if (Array.isArray(input)) {
-    const length = descriptors.length
+    const length = Object.getOwnPropertyDescriptor(input, 'length')
     /* v8 ignore next -- Array length is a non-configurable own data descriptor. */
     if (length === undefined || !('value' in length) || typeof length.value !== 'number') throw new Error('array length must be an own data property')
+    if (budget !== undefined) {
+      budget.properties += length.value
+      if (budget.properties > budget.maxProperties) throw NOTIFICATION_CLONE_LIMIT
+    }
     const copy: unknown[] = []
     for (let index = 0; index < length.value; index += 1) {
-      const descriptor = descriptors[String(index)]
+      const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
       if (descriptor === undefined || !('value' in descriptor)) throw new Error('array entries must be own data properties')
-      copy.push(cloneData(descriptor.value, seen))
+      copy.push(cloneData(descriptor.value, seen, budget, depth + 1))
     }
     seen.delete(input)
     return Object.freeze(copy)
   }
   const copy: Record<string, unknown> = {}
-  for (const [key, descriptor] of Object.entries(descriptors)) {
+  for (const key of Reflect.ownKeys(input)) {
+    if (typeof key !== 'string') continue
+    const descriptor = Object.getOwnPropertyDescriptor(input, key)
+    if (descriptor === undefined) continue
     if (!descriptor.enumerable) continue
     if (!('value' in descriptor)) throw new Error(`${key} must be an own data property`)
-    Object.defineProperty(copy, key, { value: cloneData(descriptor.value, seen), enumerable: true })
+    if (budget !== undefined) {
+      budget.properties += 1
+      if (budget.properties > budget.maxProperties) throw NOTIFICATION_CLONE_LIMIT
+      consumeStringBudget(key, budget)
+    }
+    Object.defineProperty(copy, key, { value: cloneData(descriptor.value, seen, budget, depth + 1), enumerable: true })
   }
   seen.delete(input)
   return Object.freeze(copy)
@@ -199,10 +287,26 @@ function meta(input: Record<string, unknown>, bounded = false): BlueResult<{ id:
   return success(priority === undefined ? { id } : { id, priority })
 }
 
-function command(input: unknown): BlueResult<BlueCommandContribution> {
+function command(input: unknown, lifetime: ConsumerLifetime): BlueResult<BlueCommandContribution> {
   const value = fields(input, ['id', 'priority', 'label', 'execute']); const m = meta(value, true); if (!m.ok) return m
   if (!/^[a-z][a-z0-9_-]*$/u.test(m.value.id) || typeof value.label !== 'string' || value.label.trim().length === 0 || typeof value.execute !== 'function') return failure('BLUE_INVALID_CONTRIBUTION', 'command contributions need a lowercase command id, label, and execute function')
-  return success(Object.freeze({ ...m.value, label: value.label, execute: value.execute }) as BlueCommandContribution)
+  const execute = value.execute as BlueCommandContribution['execute']
+  const fencedExecute: BlueCommandContribution['execute'] = async (args, options) => {
+    const aborted = () => options?.signal?.aborted === true
+    if (lifetime.disposed) return failure('BLUE_STALE', 'plugin command owner is no longer active')
+    if (aborted()) return failure('BLUE_ABORTED', 'plugin command was aborted')
+    try {
+      const result = await execute(args, options)
+      if (aborted()) return failure('BLUE_ABORTED', 'plugin command was aborted')
+      if (lifetime.disposed) return failure('BLUE_STALE', 'plugin command owner is no longer active')
+      return result
+    } catch (error) {
+      if (aborted()) return failure('BLUE_ABORTED', 'plugin command was aborted')
+      if (lifetime.disposed) return failure('BLUE_STALE', 'plugin command owner is no longer active')
+      throw error
+    }
+  }
+  return success(Object.freeze({ ...m.value, label: value.label, execute: fencedExecute }) as BlueCommandContribution)
 }
 function status(input: unknown): BlueResult<BlueStatusEntryContribution> {
   const value = fields(input, ['id', 'priority', 'render']); const m = meta(value, true); if (!m.ok) return m
@@ -303,9 +407,9 @@ class Aggregate<T extends Prioritized> {
       .map(entry => entry.value))
   }
   subscribe(listener: () => void): BlueRegistration { this.listeners.add(listener); return new Registration(() => { this.listeners.delete(listener) }) }
-  touch(): void { this.revisionValue += 1; this.changed(); for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
+  touch(): void { this.revisionValue += 1; this.changed(); for (const listener of [...this.listeners]) try { listener() } catch { /* owner refresh errors are contained */ } }
   clear(): void { this.entries.clear(); this.touch(); this.listeners.clear() }
-  private emit(): void { this.revisionValue += 1; this.changed(); for (const listener of this.listeners) listener() }
+  private emit(): void { this.revisionValue += 1; this.changed(); for (const listener of [...this.listeners]) listener() }
 }
 class Ordered<T extends { readonly id: string }> {
   private readonly entries = new Map<string, T>()
@@ -321,22 +425,22 @@ class Ordered<T extends { readonly id: string }> {
   list(): readonly T[] { return Object.freeze([...this.entries.values()]) }
   replace(id: string, value: T): void { this.entries.set(id, value); this.touch() }
   subscribe(listener: () => void): BlueRegistration { this.listeners.add(listener); return new Registration(() => { this.listeners.delete(listener) }) }
-  touch(): void { this.changed(); for (const listener of this.listeners) try { listener() } catch { /* owner refresh errors are contained */ } }
+  touch(): void { this.changed(); for (const listener of [...this.listeners]) try { listener() } catch { /* owner refresh errors are contained */ } }
   clear(): void { this.entries.clear(); this.touch(); this.listeners.clear() }
-  private emit(): void { this.changed(); for (const listener of this.listeners) listener() }
+  private emit(): void { this.changed(); for (const listener of [...this.listeners]) listener() }
 }
 
 class RefreshGate {
   private readonly times: number[] = []
   private cancel: (() => void) | undefined
-  constructor(private readonly capability: Capability, private readonly ready: () => boolean, private readonly disposed: () => boolean, private readonly now: () => number, private readonly notify: () => void) {}
+  constructor(private readonly capability: Capability, private readonly limit: number, private readonly ready: () => boolean, private readonly disposed: () => boolean, private readonly now: () => number, private readonly notify: () => void) {}
   refresh(): BlueResult {
     if (this.disposed()) return failure('BLUE_ACTION_REJECTED', 'contribution is disposed')
     if (!this.ready()) return absent(this.capability)
     try {
       const current = this.now()
       while (this.times.length > 0 && this.times[0]! <= current - 1_000) this.times.shift()
-      if (this.times.length >= 20) return failure('BLUE_LIMIT_EXCEEDED', 'refresh limit is 20 per contribution per second')
+      if (this.times.length >= this.limit) return failure('BLUE_LIMIT_EXCEEDED', `refresh limit is ${String(this.limit)} per contribution per second`)
       this.times.push(current)
       if (this.cancel === undefined) {
         let active = true
@@ -352,15 +456,42 @@ class RefreshRegistration implements BlueRefreshRegistration {
   private done = false
   private readonly gate: RefreshGate
   get disposed(): boolean { return this.done }
-  constructor(capability: Capability, ready: () => boolean, now: () => number, notify: () => void, private readonly cleanup: () => void) { this.gate = new RefreshGate(capability, ready, () => this.done, now, notify) }
+  constructor(capability: Capability, refreshPerSecond: number, ready: () => boolean, now: () => number, notify: () => void, private readonly cleanup: () => void) { this.gate = new RefreshGate(capability, refreshPerSecond, ready, () => this.done, now, notify) }
   refresh(): BlueResult { return this.gate.refresh() }
   dispose(): void { if (!this.done) { this.done = true; this.gate.dispose(); this.cleanup() } }
+}
+
+interface EntryQuota {
+  readonly limit: number
+  reserve(): boolean
+  release(): void
+}
+
+const UNLIMITED_ENTRY_QUOTA: EntryQuota = Object.freeze({
+  limit: Number.POSITIVE_INFINITY,
+  reserve: () => true,
+  release: () => {},
+})
+
+class ConsumerEntryQuota implements EntryQuota {
+  constructor(private readonly counts: Map<object, number>, private readonly consumer: object, readonly limit: number) {}
+  reserve(): boolean {
+    const count = this.counts.get(this.consumer) ?? 0
+    if (count >= this.limit) return false
+    this.counts.set(this.consumer, count + 1)
+    return true
+  }
+  release(): void {
+    const count = this.counts.get(this.consumer)!
+    if (count === 1) this.counts.delete(this.consumer)
+    else this.counts.set(this.consumer, count - 1)
+  }
 }
 
 class Scoped<T extends Prioritized> implements BlueRegistry<T> {
   private readonly entries = new Map<string, T>()
   private readonly handles = new Set<Registration>()
-  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly normalize: (input: unknown) => BlueResult<T>, private readonly allowedIds?: ReadonlySet<string>) {}
+  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly normalize: (input: unknown) => BlueResult<T>, private readonly allowedIds?: ReadonlySet<string>, private readonly quota: EntryQuota = UNLIMITED_ENTRY_QUOTA) {}
   register(input: T): BlueResult<BlueRegistration> {
     if (this.lifetime.disposed) return consumerDisposed()
     if (!this.ready()) return absent(this.capability)
@@ -369,12 +500,13 @@ class Scoped<T extends Prioritized> implements BlueRegistry<T> {
       const value = result.value
       if (this.allowedIds !== undefined && !this.allowedIds.has(value.id)) return failure('BLUE_RESOURCE_DENIED', `contribution "${value.id}" is outside the granted ${this.capability} resources`)
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
+      if (!this.quota.reserve()) return failure('BLUE_LIMIT_EXCEEDED', `${this.capability} contributions are limited to ${String(this.quota.limit)} per consumer`)
       const added = this.aggregate.add(value)
-      if (this.lifetime.disposed) return rejectDisposedAdmission(added)
-      if (!added.ok) return added
+      if (this.lifetime.disposed) { this.quota.release(); return rejectDisposedAdmission(added) }
+      if (!added.ok) { this.quota.release(); return added }
       this.entries.set(value.id, value)
       let handle: Registration
-      handle = new Registration(() => { this.entries.delete(value.id); this.handles.delete(handle); added.value.dispose() })
+      handle = new Registration(() => { this.entries.delete(value.id); this.handles.delete(handle); this.quota.release(); added.value.dispose() })
       this.handles.add(handle); return success(handle)
     } catch (error) { return invalid(error) }
   }
@@ -384,7 +516,7 @@ class Scoped<T extends Prioritized> implements BlueRegistry<T> {
 class ScopedRefresh<T extends Prioritized> {
   private readonly entries = new Map<string, T>()
   private readonly handles = new Set<RefreshRegistration>()
-  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly now: () => number, private readonly normalize: (input: unknown) => BlueResult<T>) {}
+  constructor(private readonly capability: Capability, private readonly aggregate: Aggregate<T>, private readonly ready: () => boolean, private readonly lifetime: ConsumerLifetime, private readonly now: () => number, private readonly normalize: (input: unknown) => BlueResult<T>, private readonly refreshPerSecond: number, private readonly quota: EntryQuota = UNLIMITED_ENTRY_QUOTA) {}
   register(input: T): BlueResult<BlueRefreshRegistration> {
     if (this.lifetime.disposed) return consumerDisposed()
     if (!this.ready()) return absent(this.capability)
@@ -392,12 +524,13 @@ class ScopedRefresh<T extends Prioritized> {
       const result = this.normalize(input); if (!result.ok) return result
       const value = result.value
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
+      if (!this.quota.reserve()) return failure('BLUE_LIMIT_EXCEEDED', `${this.capability} contributions are limited to ${String(this.quota.limit)} per consumer`)
       const added = this.aggregate.add(value)
-      if (this.lifetime.disposed) return rejectDisposedAdmission(added)
-      if (!added.ok) return added
+      if (this.lifetime.disposed) { this.quota.release(); return rejectDisposedAdmission(added) }
+      if (!added.ok) { this.quota.release(); return added }
       this.entries.set(value.id, value)
       let handle: RefreshRegistration
-      handle = new RefreshRegistration(this.capability, this.ready, this.now, () => this.aggregate.touch(), () => { this.entries.delete(value.id); this.handles.delete(handle); added.value.dispose() })
+      handle = new RefreshRegistration(this.capability, this.refreshPerSecond, this.ready, this.now, () => this.aggregate.touch(), () => { this.entries.delete(value.id); this.handles.delete(handle); this.quota.release(); added.value.dispose() })
       this.handles.add(handle); return success(handle)
     } catch (error) { return invalid(error) }
   }
@@ -410,20 +543,39 @@ interface HostState {
   readonly commands: Aggregate<BlueCommandContribution>; readonly status: Aggregate<BlueStatusEntryContribution>
   readonly panes: Aggregate<BluePluginHostPaneEntry>; readonly overlays: Ordered<BluePluginHostOverlayEntry>; readonly extensions: Aggregate<BlueEditorExtensionContribution>
   readonly statusProviders: Aggregate<BlueStatusProvider>; readonly editorProviders: Aggregate<BlueEditorProvider>; readonly owners: Map<Capability, number>
+  /** Canonical capability definitions installed by the composition. */
+  readonly supportedCapabilities: Set<V1Capability>
   /** Active owner fibers, kept separate from durable registration leases. */
   readonly activeOwners: Map<ActiveCapability, Map<EffectOwner, number>>
   /** Monotonic owner generation; every attach/detach advances the fence. */
-  readonly ownerGenerations: Map<V1Capability, number>
+  readonly ownerGenerations: Map<ActiveCapability, number>
+  /** Exactly one attached owner lease is current for each UI capability. */
+  readonly currentOwners: Map<AttachedCapability, OwnerGenerationLease>
+  readonly ownerLeases: Map<EffectOwner, Set<OwnerGenerationLease>>
+  ownerHandoff: boolean
   /** Consumers admitted through canonical or legacy open(). */
   readonly consumerIds: Map<string, ConsumerLifetime>
-  readonly gestureOwners: Map<EffectOwner, number>; readonly gestures: Map<object, EffectOwner>; readonly ownerGestures: Map<EffectOwner, Set<object>>; readonly now: () => number
-  readonly overlayOwners: Map<EffectOwner, number>; readonly overlayClosers: Map<string, { entry: BluePluginHostOverlayEntry, close: () => void }>
-  readonly paneCounts: Map<object, number>; readonly capturingConsumers: Set<object>
+  readonly commandCounts: Map<object, number>; readonly statusCounts: Map<object, number>
+  readonly notificationQuotas: Map<object, NotificationQuota>
+  readonly gestures: Map<object, GestureRecord>; readonly ownerGestures: Map<OwnerGenerationLease, Set<object>>; readonly now: () => number
+  readonly overlayClosers: Map<string, { entry: BluePluginHostOverlayEntry, close: () => void }>
+  readonly paneCounts: Map<object, number>; readonly capturingConsumers: Map<object, number>
   readonly revision: { value: number }
   readonly sessionListeners: Set<(snapshot: BlueSessionSnapshot | null) => void>
   sessionOwner: SessionOwner | undefined
   sessionSnapshot: BlueSessionSnapshot | null
   nextOverlayOrder: number
+}
+
+interface NotificationQuota {
+  refs: number
+  readonly times: number[]
+}
+
+interface GestureRecord {
+  readonly lease: OwnerGenerationLease
+  readonly capability: GestureCapability
+  readonly generation: number
 }
 
 interface SessionOwner {
@@ -432,7 +584,7 @@ interface SessionOwner {
 }
 
 function emitSession(state: HostState): void {
-  for (const listener of state.sessionListeners) try { listener(state.sessionSnapshot) } catch { /* plugin observer failures are contained */ }
+  for (const listener of [...state.sessionListeners]) try { listener(state.sessionSnapshot) } catch { /* plugin observer failures are contained */ }
 }
 
 function publishSession(state: HostState, owner: SessionOwner, input: unknown): void {
@@ -464,7 +616,7 @@ class SessionReadFacade implements BlueSessionReader {
 }
 
 class PaneHandle extends RefreshRegistration implements BluePaneRegistration {
-  constructor(ready: () => boolean, now: () => number, notify: () => void, cleanup: () => void, private readonly set: (hidden: boolean) => void, private readonly paneReady: () => boolean) { super('panes', ready, now, notify, cleanup) }
+  constructor(ready: () => boolean, now: () => number, notify: () => void, cleanup: () => void, private readonly set: (hidden: boolean) => void, private readonly paneReady: () => boolean) { super('panes', PANE_REFRESH_PER_SECOND, ready, now, notify, cleanup) }
   setHidden(hidden: boolean): BlueResult {
     if (this.disposed) return failure('BLUE_ACTION_REJECTED', 'pane is disposed')
     if (!this.paneReady()) return absent('panes')
@@ -474,23 +626,25 @@ class PaneHandle extends RefreshRegistration implements BluePaneRegistration {
 }
 class Panes implements BluePaneRegistry {
   private readonly entries = new Map<string, BluePaneContribution>(); private readonly handles = new Set<PaneHandle>()
-  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime, private readonly allowedPlacements?: ReadonlySet<string>) {}
+  private readonly quota: ConsumerEntryQuota
+  constructor(private readonly state: HostState, consumer: object, private readonly lifetime: ConsumerLifetime, private readonly allowedPlacements?: ReadonlySet<string>) {
+    this.quota = new ConsumerEntryQuota(state.paneCounts, consumer, MAX_PANES_PER_CONSUMER)
+  }
   register(input: BluePaneContribution): BlueResult<BluePaneRegistration> {
     if (this.lifetime.disposed) return consumerDisposed()
     if (!ready(this.state, 'panes')) return absent('panes')
-    if ((this.state.paneCounts.get(this.consumer) ?? 0) >= 8) return failure('BLUE_LIMIT_EXCEEDED', 'a consumer may register at most 8 panes')
     try {
       const result = pane(input); if (!result.ok) return result
       const value = result.value
       if (this.allowedPlacements !== undefined && !this.allowedPlacements.has(value.placement)) return failure('BLUE_RESOURCE_DENIED', `pane placement "${value.placement}" is outside the granted panes resources`)
       if (this.entries.has(value.id)) return failure('BLUE_DUPLICATE_ID', `contribution "${value.id}" is already registered`)
+      if (!this.quota.reserve()) return failure('BLUE_LIMIT_EXCEEDED', `a consumer may register at most ${String(MAX_PANES_PER_CONSUMER)} panes`)
       let revision = 0
       let entry: BluePluginHostPaneEntry = Object.freeze({ id: value.id, ...(value.priority === undefined ? {} : { priority: value.priority }), contribution: value, hidden: false, revision })
       const added = this.state.panes.add(entry)
-      if (this.lifetime.disposed) return rejectDisposedAdmission(added)
-      if (!added.ok) return added
+      if (this.lifetime.disposed) { this.quota.release(); return rejectDisposedAdmission(added) }
+      if (!added.ok) { this.quota.release(); return added }
       this.entries.set(value.id, value)
-      this.state.paneCounts.set(this.consumer, (this.state.paneCounts.get(this.consumer) ?? 0) + 1)
       const isReady = () => ready(this.state, 'panes')
       let handle: PaneHandle
       handle = new PaneHandle(isReady, this.state.now, () => {
@@ -498,12 +652,7 @@ class Panes implements BluePaneRegistry {
         this.state.panes.replace(value.id, entry)
       }, () => {
         this.entries.delete(value.id); this.handles.delete(handle); added.value.dispose()
-        const count = this.state.paneCounts.get(this.consumer)
-        /* v8 ignore else -- host disposal drains every registry before clearing pane counts. */
-        if (count !== undefined) {
-          if (count <= 1) this.state.paneCounts.delete(this.consumer)
-          else this.state.paneCounts.set(this.consumer, count - 1)
-        }
+        this.quota.release()
       }, hidden => { if (entry.hidden !== hidden) { entry = Object.freeze({ ...entry, hidden }); this.state.panes.replace(value.id, entry) } }, isReady)
       this.handles.add(handle); return success(handle)
     } catch (error) { return invalid(error) }
@@ -514,23 +663,26 @@ class Panes implements BluePaneRegistry {
 class OverlayHandle implements BluePublicOverlayHandle {
   private done = false; private readonly gate: RefreshGate
   get disposed(): boolean { return this.done } get closed(): boolean { return this.done }
-  constructor(isReady: () => boolean, now: () => number, notify: () => void, private readonly cleanup: () => void) { this.gate = new RefreshGate('overlays', isReady, () => this.done, now, notify) }
+  constructor(isReady: () => boolean, now: () => number, notify: () => void, private readonly cleanup: () => void) { this.gate = new RefreshGate('overlays', OVERLAY_REFRESH_PER_SECOND, isReady, () => this.done, now, notify) }
   refresh(): BlueResult { return this.gate.refresh() } close(): void { this.dispose() }
   dispose(): void { if (!this.done) { this.done = true; this.gate.dispose(); this.cleanup() } }
 }
 class Overlays implements BlueOverlayRegistry {
   private readonly handles = new Set<OverlayHandle>()
-  constructor(private readonly state: HostState, private readonly consumer: object, private readonly lifetime: ConsumerLifetime, private readonly available?: () => boolean) {}
+  private readonly capturingQuota: ConsumerEntryQuota
+  constructor(private readonly state: HostState, consumer: object, private readonly lifetime: ConsumerLifetime) {
+    this.capturingQuota = new ConsumerEntryQuota(state.capturingConsumers, consumer, MAX_CAPTURING_OVERLAYS_PER_CONSUMER)
+  }
   open(input: BlueOverlayRequest, options?: BlueOverlayOpenOptions): BlueResult<BluePublicOverlayHandle> {
     if (this.lifetime.disposed) return consumerDisposed()
-    if (!(this.available?.() ?? ready(this.state, 'overlays'))) return absent('overlays')
+    const ownerGeneration = currentOwnerGeneration(this.state, 'overlays')
+    if (ownerGeneration === undefined) return absent('overlays')
     try {
       const result = overlay(input); if (!result.ok) return result
       const request = result.value
-      if (request.capturing && this.state.overlayOwners.size === 0) return failure('BLUE_ACTION_REJECTED', 'capturing overlays require an active renderer owner')
       if (request.capturing && !consumeGesture(this.state, options?.userGesture)) return failure('BLUE_ACTION_REJECTED', 'capturing overlays require a valid one-shot user gesture')
-      if (this.state.overlays.size >= 4) return failure('BLUE_LIMIT_EXCEEDED', 'the global overlay stack is limited to 4 entries')
-      if (request.capturing && this.state.capturingConsumers.has(this.consumer)) return failure('BLUE_LIMIT_EXCEEDED', 'a consumer may open only one capturing overlay')
+      if (this.state.overlays.size >= MAX_OVERLAY_STACK) return failure('BLUE_LIMIT_EXCEEDED', `the global overlay stack is limited to ${String(MAX_OVERLAY_STACK)} entries`)
+      if (request.capturing && !this.capturingQuota.reserve()) return failure('BLUE_LIMIT_EXCEEDED', `a consumer may open at most ${String(MAX_CAPTURING_OVERLAYS_PER_CONSUMER)} capturing overlay`)
       let handle: OverlayHandle | undefined
       let closeRequested = false
       const close = () => {
@@ -538,27 +690,28 @@ class Overlays implements BlueOverlayRegistry {
         else handle.close()
       }
       let revision = 0
-      let entry: BluePluginHostOverlayEntry = Object.freeze({ id: request.id, request, order: this.state.nextOverlayOrder++, revision })
+      let entry: BluePluginHostOverlayEntry = Object.freeze({ id: request.id, request, order: this.state.nextOverlayOrder++, ownerGeneration, revision })
       const closer = { entry, close }
       if (!this.state.overlayClosers.has(request.id)) this.state.overlayClosers.set(request.id, closer)
       const added = this.state.overlays.add(entry)
       if (this.lifetime.disposed) {
+        if (request.capturing) this.capturingQuota.release()
         this.state.overlayClosers.delete(request.id)
         return rejectDisposedAdmission(added)
       }
       if (!added.ok) {
+        if (request.capturing) this.capturingQuota.release()
         if (this.state.overlayClosers.get(request.id) === closer) this.state.overlayClosers.delete(request.id)
         return added
       }
-      if (request.capturing) this.state.capturingConsumers.add(this.consumer)
-      handle = new OverlayHandle(() => this.available?.() ?? ready(this.state, 'overlays'), this.state.now, () => {
+      handle = new OverlayHandle(() => currentOwnerGeneration(this.state, 'overlays') === ownerGeneration, this.state.now, () => {
         entry = Object.freeze({ ...entry, revision: ++revision })
         closer.entry = entry
         this.state.overlays.replace(request.id, entry)
       }, () => {
         this.handles.delete(handle!)
         this.state.overlayClosers.delete(request.id)
-        if (request.capturing) this.state.capturingConsumers.delete(this.consumer)
+        if (request.capturing) this.capturingQuota.release()
         added.value.dispose()
       })
       const activeHandle = handle
@@ -570,21 +723,77 @@ class Overlays implements BlueOverlayRegistry {
   dispose(): void { for (const handle of this.handles) handle.dispose() }
 }
 class Notifications {
-  constructor(private readonly state: HostState, private readonly lifetime: ConsumerLifetime) {}
+  private readonly quota: NotificationQuota
+  private done = false
+  constructor(
+    private readonly state: HostState,
+    private readonly lifetime: ConsumerLifetime,
+    private readonly consumer: object,
+    /** Notification publication has no durable buffer; require its live sink. */
+    private readonly available: () => boolean,
+  ) {
+    let quota = state.notificationQuotas.get(consumer)
+    if (quota === undefined) {
+      quota = { refs: 0, times: [] }
+      state.notificationQuotas.set(consumer, quota)
+    }
+    quota.refs += 1
+    this.quota = quota
+  }
   publish(input: BlueNotification): BlueResult {
     if (this.lifetime.disposed) return consumerDisposed()
-    if (!ready(this.state, 'notifications.publish')) return absent('notifications.publish')
+    if (!this.available()) return absent('notifications.publish')
     try {
       const safe = fields(input, ['id', 'view', 'tone'])
       if (typeof safe.id !== 'string' || !ID_PATTERN.test(safe.id)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification id must be 1-128 lowercase namespace characters')
       if (!object(safe.view)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification view must be an object')
       if (safe.tone !== undefined && !['default', 'muted', 'accent', 'success', 'warning', 'danger'].includes(safe.tone as string)) return failure('BLUE_INVALID_CONTRIBUTION', 'notification tone is invalid')
-      const value = Object.freeze({ id: safe.id, view: cloneData(safe.view), ...(safe.tone === undefined ? {} : { tone: safe.tone }) }) as BlueNotification
-      for (const observer of this.state.notificationObservers) observer(value)
+      let clonedView: unknown
+      try {
+        clonedView = cloneData(safe.view, new Set(), {
+          maxDepth: MAX_NOTIFICATION_VIEW_DEPTH,
+          maxNodes: MAX_NOTIFICATION_VIEW_NODES,
+          maxProperties: MAX_NOTIFICATION_VIEW_PROPERTIES,
+          maxPrimitiveBytes: MAX_NOTIFICATION_PRIMITIVE_BYTES,
+          nodes: 0,
+          properties: 0,
+          primitiveBytes: 0,
+        })
+      } catch (error) {
+        if (error === NOTIFICATION_CLONE_LIMIT) {
+          return failure('BLUE_LIMIT_EXCEEDED', `notification view exceeds structural limits (depth ${String(MAX_NOTIFICATION_VIEW_DEPTH)}, nodes ${String(MAX_NOTIFICATION_VIEW_NODES)}, properties ${String(MAX_NOTIFICATION_VIEW_PROPERTIES)}, primitive bytes ${String(MAX_NOTIFICATION_PRIMITIVE_BYTES)})`)
+        }
+        throw error
+      }
+      const value = Object.freeze({ id: safe.id, view: clonedView, ...(safe.tone === undefined ? {} : { tone: safe.tone }) }) as BlueNotification
+      const serialized = JSON.stringify(value.view)
+      if (serialized === undefined || Buffer.byteLength(serialized, 'utf8') > MAX_NOTIFICATION_VIEW_BYTES) return failure('BLUE_LIMIT_EXCEEDED', `notification view exceeds ${String(MAX_NOTIFICATION_VIEW_BYTES)} bytes`)
+      // A notification is best-effort UI output. If the host clock is
+      // unavailable, preserve publication rather than turning a transient
+      // notice into a plugin failure; quota accounting resumes on the next
+      // successful clock read.
+      let current: number | undefined
+      try { current = this.state.now() } catch { current = undefined }
+      if (current !== undefined) {
+        while (this.quota.times.length > 0 && this.quota.times[0]! <= current - 1_000) this.quota.times.shift()
+        if (this.quota.times.length >= MAX_NOTIFICATION_PER_SECOND) return failure('BLUE_LIMIT_EXCEEDED', `notification publish limit is ${String(MAX_NOTIFICATION_PER_SECOND)} per second`)
+        this.quota.times.push(current)
+      }
+      for (const observer of [...this.state.notificationObservers]) {
+        try { observer(value) } catch { /* owner notification failures are contained per observer */ }
+      }
       return success(undefined)
     } catch (error) { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'notification was rejected')) }
   }
-  dispose(): void {}
+  dispose(): void {
+    if (this.done) return
+    this.done = true
+    this.quota.refs -= 1
+    if (this.quota.refs === 0) {
+      this.quota.times.length = 0
+      this.state.notificationQuotas.delete(this.consumer)
+    }
+  }
 }
 
 const HOST_STATE_KEY = Symbol.for('@dsh-blue/blue-api/plugin-host-states/v1')
@@ -607,12 +816,175 @@ function ownerStateOf(host: BluePluginHostService): HostState {
 }
 function ready(state: HostState, capability: Capability): boolean { return (state.owners.get(capability) ?? 0) > 0 }
 function activeReady(state: HostState, capability: V1Capability): boolean {
+  if (capability !== 'session.read' && capability !== 'session.projections.read') {
+    const lease = state.currentOwners.get(capability)
+    return lease?.current(capability) === true
+  }
   return (state.activeOwners.get(capability)?.size ?? 0) > 0
 }
-function bumpOwnerGeneration(state: HostState, capability: V1Capability): number {
+function declareSupported(state: HostState, capabilities: readonly V1Capability[]): void {
+  for (const capability of capabilities) state.supportedCapabilities.add(capability)
+}
+function bumpOwnerGeneration(state: HostState, capability: ActiveCapability): number {
   const generation = (state.ownerGenerations.get(capability) ?? 0) + 1
   state.ownerGenerations.set(capability, generation)
   return generation
+}
+
+function currentOwnerGeneration(state: HostState, capability: AttachedCapability): number | undefined {
+  const lease = state.currentOwners.get(capability)
+  return lease?.accepting(capability) === true ? lease.generation(capability) : undefined
+}
+
+function decrementOwner(state: HostState, capability: AttachedCapability): void {
+  const count = state.owners.get(capability)
+  /* v8 ignore next -- every active lease increments the matching count. */
+  if (count === undefined) return
+  if (count <= 1) state.owners.delete(capability)
+  else state.owners.set(capability, count - 1)
+}
+
+function closeOverlayGeneration(state: HostState, generation: number): void {
+  const closers = [...state.overlayClosers.values()].filter(closer => closer.entry.ownerGeneration === generation)
+  for (const closer of closers.reverse()) closer.close()
+}
+
+function invalidateLeaseGestures(state: HostState, lease: OwnerGenerationLease, capability?: GestureCapability): void {
+  const tokens = state.ownerGestures.get(lease)
+  if (tokens === undefined) return
+  for (const token of tokens) {
+    const record = state.gestures.get(token)
+    if (record === undefined || (capability !== undefined && record.capability !== capability)) continue
+    state.gestures.delete(token)
+    tokens.delete(token)
+  }
+  if (tokens.size === 0) state.ownerGestures.delete(lease)
+}
+
+class OwnerGenerationLease implements BluePluginOwnerLease {
+  private done = false
+  private disposing = false
+  private readonly active = new Set<AttachedCapability>()
+  private readonly retiring = new Set<AttachedCapability>()
+  private readonly generations = new Map<AttachedCapability, number>()
+  private readonly handles = new Set<BlueRegistration>()
+
+  constructor(private readonly state: HostState, readonly owner: EffectOwner, private readonly capabilities: readonly AttachedCapability[]) {}
+
+  get disposed(): boolean { return this.done }
+
+  activate(capability: AttachedCapability, generation: number): void {
+    this.active.add(capability)
+    this.generations.set(capability, generation)
+  }
+
+  generation(capability: AttachedCapability): number | undefined { return this.generations.get(capability) }
+
+  accepting(capability: AttachedCapability): boolean {
+    return !this.retiring.has(capability) && this.current(capability)
+  }
+
+  current(capability: HostCapability): boolean {
+    if (this.done || !this.active.has(capability as AttachedCapability)) return false
+    const generation = this.generations.get(capability as AttachedCapability)
+    return generation !== undefined
+      && this.state.ownerGenerations.get(capability as AttachedCapability) === generation
+      && this.state.currentOwners.get(capability as AttachedCapability) === this
+  }
+
+  private currentAll(): boolean { return this.capabilities.every(capability => this.current(capability)) }
+
+  private inert(): BlueRegistration {
+    const handle = new Registration(() => {})
+    handle.dispose()
+    return handle
+  }
+
+  private track(handle: BlueRegistration): BlueRegistration {
+    if (!this.currentAll()) { handle.dispose(); return this.inert() }
+    let tracked: Registration
+    tracked = new Registration(() => { this.handles.delete(tracked); handle.dispose() })
+    this.handles.add(tracked)
+    return tracked
+  }
+
+  snapshot(): BlueResult<BluePluginHostSnapshot> {
+    return this.currentAll()
+      ? success(snapshotBluePluginHostState(this.state))
+      : failure('BLUE_STALE', 'Blue owner lease is no longer current')
+  }
+
+  subscribe(listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration {
+    if (!this.currentAll()) return this.inert()
+    const handle = subscribeBluePluginHostState(this.state, snapshot => { if (this.currentAll()) listener(snapshot) })
+    return this.track(handle)
+  }
+
+  observeNotifications(listener: (notification: BlueNotification) => void): BlueRegistration {
+    if (!this.current('notifications.publish')) return this.inert()
+    const handle = subscribeBluePluginNotificationsState(this.state, notification => {
+      if (this.current('notifications.publish')) listener(notification)
+    })
+    let tracked: Registration
+    tracked = new Registration(() => { this.handles.delete(tracked); handle.dispose() })
+    this.handles.add(tracked)
+    return tracked
+  }
+
+  runUserGesture<T>(capability: GestureCapability, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+    return runBlueUserGestureLease(this.state, this, capability, callback, signal)
+  }
+
+  closeOverlay(entry: BluePluginHostOverlayEntry): BlueResult {
+    if (!this.current('overlays') || entry.ownerGeneration !== this.generation('overlays')) return failure('BLUE_STALE', 'overlays owner lease is no longer current')
+    return closeBluePluginHostOverlayState(this.state, entry)
+  }
+
+  revoke(capability: AttachedCapability): void {
+    if (!this.active.has(capability)) return
+    this.active.delete(capability)
+    this.state.currentOwners.delete(capability)
+    bumpOwnerGeneration(this.state, capability)
+    if (isGestureCapability(capability)) invalidateLeaseGestures(this.state, this, capability)
+    decrementOwner(this.state, capability)
+  }
+
+  dispose(): void {
+    if (this.done || this.disposing) return
+    this.disposing = true
+    try {
+      const overlayGeneration = this.generations.get('overlays')
+      if (this.active.has('overlays') && stateCurrent(this.state, 'overlays', this, overlayGeneration) && overlayGeneration !== undefined) {
+        // The aggregate subscriber requires every capability on this atomic
+        // lease to remain current for the final transient-removal snapshot,
+        // while the retirement fence prevents that callback from admitting a
+        // new transient into the generation already being drained.
+        this.retiring.add('overlays')
+        closeOverlayGeneration(this.state, overlayGeneration)
+      }
+      for (const capability of this.capabilities) this.revoke(capability)
+    } finally {
+      this.done = true
+      invalidateLeaseGestures(this.state, this)
+      for (const handle of this.handles) handle.dispose()
+      this.handles.clear()
+      const leases = this.state.ownerLeases.get(this.owner)
+      leases?.delete(this)
+      if (leases?.size === 0) this.state.ownerLeases.delete(this.owner)
+      this.retiring.clear()
+      this.disposing = false
+    }
+  }
+}
+
+function stateCurrent(state: HostState, capability: AttachedCapability, lease: OwnerGenerationLease, generation: number | undefined): boolean {
+  return generation !== undefined
+    && state.currentOwners.get(capability) === lease
+    && state.ownerGenerations.get(capability) === generation
+}
+
+function isGestureCapability(capability: AttachedCapability): capability is GestureCapability {
+  return capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions' || capability === 'editor.provider'
 }
 
 function canonicalCapability(value: string): value is V1Capability {
@@ -625,15 +997,19 @@ function grantFor(grants: readonly BlueCapabilityGrant[], name: V1Capability): B
 
 /** Open a canonical v1 manifest after negotiation has produced exact grants. */
 function openCanonical(state: HostState, consumer: Consumer, manifest: BluePluginManifestV1): BlueResult<BluePluginOpen> {
+  if (state.consumerIds.has(manifest.id)) return failure('BLUE_DUPLICATE_ID', `plugin identity "${manifest.id}" is already open`)
   const admission = negotiateBlueCapabilities(manifest, {
     apiVersion: '1.0.0-beta.1',
-    supported: capability => ready(state, capability as Capability),
+    // `supported` describes the definitions installed by this composition;
+    // `ownerReady` is the live renderer/app Fiber. Keeping them separate lets
+    // a canonical consumer open during a legitimate owner gap and receive an
+    // unavailable grant instead of an incorrect unsupported denial.
+    supported: capability => state.supportedCapabilities.has(capability),
     ownerReady: capability => activeReady(state, capability),
     /* v8 ignore next -- a supported capability always initializes its fence. */
     generation: capability => state.ownerGenerations.get(capability) ?? 0,
   })
   if (!admission.ok) return failure(admission.code, admission.message)
-  if (state.consumerIds.has(manifest.id)) return failure('BLUE_DUPLICATE_ID', `plugin identity "${manifest.id}" is already open`)
   const capabilities = admission.grants.map(grant => grant.name).filter(canonicalCapability) as V1Capability[]
   const lifetime = new ConsumerLifetime()
   state.lifetimes.add(lifetime)
@@ -643,11 +1019,11 @@ function openCanonical(state: HostState, consumer: Consumer, manifest: BluePlugi
   const allowedCommands = commandResources !== undefined && 'names' in commandResources ? new Set(commandResources.names) : undefined
   const paneResources = grantFor(admission.grants, 'panes')?.resources
   const allowedPlacements = paneResources !== undefined && 'placements' in paneResources ? new Set(paneResources.placements) : undefined
-  const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, command, allowedCommands)
-  const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status)
+  const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, input => command(input, lifetime), allowedCommands, new ConsumerEntryQuota(state.commandCounts, consumer, MAX_COMMAND_CONTRIBUTIONS))
+  const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status, STATUS_REFRESH_PER_SECOND, new ConsumerEntryQuota(state.statusCounts, consumer, MAX_STATUS_CONTRIBUTIONS))
   const panes = new Panes(state, consumer, lifetime, allowedPlacements)
-  const overlays = new Overlays(state, consumer, lifetime, () => activeReady(state, 'overlays'))
-  const notificationPublisher = new Notifications(state, lifetime)
+  const overlays = new Overlays(state, consumer, lifetime)
+  const notificationPublisher = new Notifications(state, lifetime, consumer, () => activeReady(state, 'notifications.publish'))
   const notifications = Object.freeze({ publish: (notification: BlueNotification) => notificationPublisher.publish(notification) })
   const session = new SessionReadFacade(state, lifetime, callback => consumer.effect(callback))
   const registries = [commands, statuses, panes, overlays, session, notificationPublisher]
@@ -670,77 +1046,66 @@ function openCanonical(state: HostState, consumer: Consumer, manifest: BluePlugi
   try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }
   return success(openProjection(manifest, facets, admission.grants, admission.unavailableOptional))
 }
-function invalidateGestures(state: HostState, owner: EffectOwner): void {
-  const tokens = state.ownerGestures.get(owner)
-  if (tokens === undefined) return
-  for (const token of tokens) state.gestures.delete(token)
-  state.ownerGestures.delete(owner)
-}
 function consumeGesture(state: HostState, gesture: BlueUserGesture | undefined): boolean {
   if (!object(gesture)) return false
-  const owner = state.gestures.get(gesture)
-  if (owner === undefined) return false
+  const record = state.gestures.get(gesture)
+  if (record === undefined) return false
   state.gestures.delete(gesture)
-  const tokens = state.ownerGestures.get(owner)
+  const tokens = state.ownerGestures.get(record.lease)
   tokens?.delete(gesture)
-  if (tokens?.size === 0) state.ownerGestures.delete(owner)
-  return true
+  if (tokens?.size === 0) state.ownerGestures.delete(record.lease)
+  return record.lease.current(record.capability) && record.lease.generation(record.capability) === record.generation
 }
 
 function revokeGesture(state: HostState, gesture: BlueUserGesture): void {
-  const owner = state.gestures.get(gesture)
-  if (owner === undefined) return
+  const record = state.gestures.get(gesture)
+  if (record === undefined) return
   state.gestures.delete(gesture)
-  const tokens = state.ownerGestures.get(owner)
+  const tokens = state.ownerGestures.get(record.lease)
   tokens?.delete(gesture)
-  if (tokens?.size === 0) state.ownerGestures.delete(owner)
+  if (tokens?.size === 0) state.ownerGestures.delete(record.lease)
 }
 
 /** Attach capabilities implemented by one Blue-owned adapter Fiber. */
-export function attachBluePluginHostCapabilities(host: BluePluginHostService, owner: EffectOwner, capabilities: readonly HostCapability[]): BlueRegistration {
+export function attachBluePluginHostCapabilities(host: BluePluginHostService, owner: EffectOwner, capabilities: readonly HostCapability[]): BluePluginOwnerLease {
   const state = ownerStateOf(host)
-  const owned = [...new Set(capabilities)]
-  for (const capability of owned) if (capability === 'session.read') throw new Error(`Blue session capability "${capability}" requires attachBluePluginHostSessionReader`)
-  for (const capability of owned) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
-  for (const capability of owned as Capability[]) {
-    state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
-    let owners = state.activeOwners.get(capability)
-    if (owners === undefined) { owners = new Map(); state.activeOwners.set(capability, owners) }
-    owners.set(owner, (owners.get(owner) ?? 0) + 1)
-    if ((['commands', 'status', 'notifications.publish', 'panes', 'overlays'] as readonly string[]).includes(capability)) bumpOwnerGeneration(state, capability as V1Capability)
+  if (state.ownerHandoff) throw new Error('Blue owner capability attachment cannot be reentrant')
+  const unique = [...new Set(capabilities)]
+  if (unique.length === 0) throw new Error('Blue owner capability attachment requires at least one capability')
+  for (const capability of unique) if (capability === 'session.read') throw new Error(`Blue session capability "${capability}" requires attachBluePluginHostSessionReader`)
+  for (const capability of unique) if (!IMPLEMENTED_CAPABILITIES.has(capability as Capability)) throw new Error(`Blue owner adapter cannot attach unsupported capability "${capability}"`)
+  const owned = unique as AttachedCapability[]
+  const lease = new OwnerGenerationLease(state, owner, owned)
+  state.ownerHandoff = true
+  try {
+    try { owner.effect(() => () => lease.dispose()) } catch (error) { lease.dispose(); throw error }
+    // A Cordis Fiber that is already retiring may run the cleanup synchronously.
+    // Such an inert lease must not displace the still-healthy owner generation.
+    if (lease.disposed) return lease
+    let leases = state.ownerLeases.get(owner)
+    if (leases === undefined) { leases = new Set(); state.ownerLeases.set(owner, leases) }
+    leases.add(lease)
+    // A lease is one atomic ownership unit. Any overlap retires every
+    // capability on the displaced lease so current() and aggregate
+    // snapshot/subscription authority cannot diverge.
+    const displaced = new Set<OwnerGenerationLease>()
+    for (const capability of owned) {
+      const current = state.currentOwners.get(capability)
+      if (current !== undefined) displaced.add(current)
+    }
+    for (const current of displaced) current.dispose()
+    if (lease.disposed) return lease
+    for (const capability of owned) {
+      if (canonicalCapability(capability)) declareSupported(state, [capability])
+      const generation = bumpOwnerGeneration(state, capability)
+      lease.activate(capability, generation)
+      state.currentOwners.set(capability, lease)
+      state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
+    }
+  } finally {
+    state.ownerHandoff = false
   }
-  const dispatchOwner = owned.some(capability => capability === 'commands' || capability === 'panes' || capability === 'overlays' || capability === 'editor.extensions' || capability === 'editor.provider')
-  const overlayOwner = owned.includes('overlays')
-  if (dispatchOwner) state.gestureOwners.set(owner, (state.gestureOwners.get(owner) ?? 0) + 1)
-  if (overlayOwner) state.overlayOwners.set(owner, (state.overlayOwners.get(owner) ?? 0) + 1)
-  const registration = new Registration(() => {
-    for (const capability of owned as Capability[]) {
-      const count = state.owners.get(capability)
-      if (count === undefined) continue
-      if (count <= 1) state.owners.delete(capability); else state.owners.set(capability, count - 1)
-      const owners = state.activeOwners.get(capability)
-      const ownerCount = owners?.get(owner)
-      if (ownerCount !== undefined) {
-        if (ownerCount <= 1) owners!.delete(owner); else owners!.set(owner, ownerCount - 1)
-        if (owners!.size === 0) state.activeOwners.delete(capability)
-      }
-      if ((['commands', 'status', 'notifications.publish', 'panes', 'overlays'] as readonly string[]).includes(capability)) bumpOwnerGeneration(state, capability as V1Capability)
-    }
-    if (dispatchOwner) {
-      const count = state.gestureOwners.get(owner)
-      if (count !== undefined) {
-        if (count <= 1) { state.gestureOwners.delete(owner); invalidateGestures(state, owner) } else state.gestureOwners.set(owner, count - 1)
-      }
-    }
-    if (overlayOwner) {
-      const count = state.overlayOwners.get(owner)
-      if (count !== undefined) {
-        if (count <= 1) state.overlayOwners.delete(owner); else state.overlayOwners.set(owner, count - 1)
-      }
-    }
-  })
-  try { owner.effect(() => () => registration.dispose()) } catch (error) { registration.dispose(); throw error }
-  return registration
+  return lease
 }
 
 /** Attach the app-owned readonly session projection for one owner lifetime. */
@@ -749,6 +1114,7 @@ export function attachBluePluginHostSessionReader(host: BluePluginHostService, o
   if (state.sessionOwner !== undefined) throw new Error('Blue plugin host already has an active session owner')
   if (!object(reader) || typeof reader.current !== 'function' || typeof reader.subscribe !== 'function') throw new Error('Blue session owner requires a reader')
   const initial = sessionSnapshot(reader.current())
+  declareSupported(state, ['session.read'])
   const sessionOwner: SessionOwner = {
     subscription: undefined,
     lastRevision: initial?.revision ?? -1,
@@ -788,6 +1154,10 @@ export function attachBluePluginHostSessionReader(host: BluePluginHostService, o
 function attachBluePluginRegistrationBuffers(host: BluePluginHostService, owner: EffectOwner): BlueRegistration {
   const state = ownerStateOf(host)
   const capabilities = ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'] as const
+  // These four registries are durable host buffers and therefore installed
+  // before their renderer owners boot. Transient notifications and session
+  // reads become supported only after their own owner has attached once.
+  declareSupported(state, ['commands', 'status', 'panes', 'overlays'])
   for (const capability of capabilities) {
     state.owners.set(capability, (state.owners.get(capability) ?? 0) + 1)
     if ((['commands', 'status', 'panes', 'overlays'] as readonly string[]).includes(capability) && !state.ownerGenerations.has(capability as V1Capability)) state.ownerGenerations.set(capability as V1Capability, 0)
@@ -808,17 +1178,38 @@ function attachBluePluginRegistrationBuffers(host: BluePluginHostService, owner:
   return registration
 }
 
+const GESTURE_CAPABILITY_ORDER: readonly GestureCapability[] = ['overlays', 'commands', 'panes', 'editor.extensions', 'editor.provider']
+
+function currentLeaseForOwner(state: HostState, owner: EffectOwner, capability?: GestureCapability): { lease: OwnerGenerationLease, capability: GestureCapability } | undefined {
+  const leases = state.ownerLeases.get(owner)
+  if (leases === undefined) return undefined
+  const capabilities = capability === undefined ? GESTURE_CAPABILITY_ORDER : [capability]
+  for (const candidate of capabilities) {
+    for (const lease of leases) if (lease.current(candidate)) return { lease, capability: candidate }
+  }
+  return undefined
+}
+
+function createBlueUserGestureLease(state: HostState, lease: OwnerGenerationLease, capability: GestureCapability): BlueResult<BlueUserGesture> {
+  if (!lease.current(capability)) return failure('BLUE_ACTION_REJECTED', 'only the current user-dispatch owner generation may mint user gestures')
+  const generation = lease.generation(capability)
+  /* v8 ignore next -- current() requires the captured generation. */
+  if (generation === undefined) return failure('BLUE_ACTION_REJECTED', 'user-dispatch owner generation is unavailable')
+  const token = Object.freeze({}) as BlueUserGesture
+  state.gestures.set(token, { lease, capability, generation })
+  let tokens = state.ownerGestures.get(lease)
+  if (tokens === undefined) { tokens = new Set(); state.ownerGestures.set(lease, tokens) }
+  tokens.add(token)
+  return success(token)
+}
+
 /** Mint an owner-scoped, one-shot gesture proof for a semantic user dispatch. */
-export function createBlueUserGesture(host: BluePluginHostService, owner: EffectOwner): BlueResult<BlueUserGesture> {
+export function createBlueUserGesture(host: BluePluginHostService, owner: EffectOwner, capability?: GestureCapability): BlueResult<BlueUserGesture> {
   try {
     const state = ownerStateOf(host)
-    if ((state.gestureOwners.get(owner) ?? 0) === 0) return failure('BLUE_ACTION_REJECTED', 'only an active user-dispatch owner may mint user gestures')
-    const token = Object.freeze({}) as BlueUserGesture
-    state.gestures.set(token, owner)
-    let tokens = state.ownerGestures.get(owner)
-    if (tokens === undefined) { tokens = new Set(); state.ownerGestures.set(owner, tokens) }
-    tokens.add(token)
-    return success(token)
+    const current = currentLeaseForOwner(state, owner, capability)
+    if (current === undefined) return failure('BLUE_ACTION_REJECTED', 'only an active user-dispatch owner may mint user gestures')
+    return createBlueUserGestureLease(state, current.lease, current.capability)
   } catch (error) { return failure('BLUE_ACTION_REJECTED', message(error, 'user gesture could not be minted')) }
 }
 
@@ -827,9 +1218,8 @@ export function createBlueUserGesture(host: BluePluginHostService, owner: Effect
  * the complete async handler settles. Consumers may not retain the token
  * beyond this owner-controlled scope.
  */
-export async function runBlueUserGesture<T>(host: BluePluginHostService, owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
-  const state = ownerStateOf(host)
-  const minted = createBlueUserGesture(host, owner)
+async function runBlueUserGestureLease<T>(state: HostState, lease: OwnerGenerationLease, capability: GestureCapability, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  const minted = createBlueUserGestureLease(state, lease, capability)
   if (!minted.ok) throw new Error(minted.message)
   const revoke = () => revokeGesture(state, minted.value)
   signal?.addEventListener('abort', revoke, { once: true })
@@ -846,49 +1236,67 @@ export async function runBlueUserGesture<T>(host: BluePluginHostService, owner: 
   }
 }
 
+export async function runBlueUserGesture<T>(host: BluePluginHostService, owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal, capability?: GestureCapability): Promise<T> {
+  const state = ownerStateOf(host)
+  const current = currentLeaseForOwner(state, owner, capability)
+  if (current === undefined) throw new Error('only an active user-dispatch owner may mint user gestures')
+  return runBlueUserGestureLease(state, current.lease, current.capability, callback, signal)
+}
+
+function closeBluePluginHostOverlayState(state: HostState, entry: BluePluginHostOverlayEntry): BlueResult {
+  const closer = state.overlayClosers.get(entry.id)
+  if (closer === undefined || closer.entry !== entry) return failure('BLUE_ACTION_REJECTED', 'overlay entry is no longer active')
+  closer.close()
+  return success(undefined)
+}
+
 /** Close one current overlay entry from its active Blue-owned renderer Fiber. */
 export function closeBluePluginHostOverlay(host: BluePluginHostService, owner: EffectOwner, entry: BluePluginHostOverlayEntry): BlueResult {
   try {
     const state = ownerStateOf(host)
-    if ((state.overlayOwners.get(owner) ?? 0) === 0) return failure('BLUE_ACTION_REJECTED', 'only an active overlays owner may close overlay entries')
-    const closer = state.overlayClosers.get(entry.id)
-    if (closer === undefined || closer.entry !== entry) return failure('BLUE_ACTION_REJECTED', 'overlay entry is no longer active')
-    closer.close()
-    return success(undefined)
+    const leases = state.ownerLeases.get(owner)
+    const lease = leases === undefined ? undefined : [...leases].find(candidate => candidate.current('overlays'))
+    if (lease === undefined) return failure('BLUE_ACTION_REJECTED', 'only the current overlays owner generation may close overlay entries')
+    return lease.closeOverlay(entry)
   } catch (error) { return failure('BLUE_ACTION_REJECTED', message(error, 'overlay entry could not be closed')) }
 }
 
-/** Snapshot all additive contributions for Blue-owned adapters. */
-export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginHostSnapshot {
-  const state = ownerStateOf(host)
+function snapshotBluePluginHostState(state: HostState): BluePluginHostSnapshot {
   return Object.freeze({ revision: state.revision.value, statusRevision: state.status.revision, statusProvidersRevision: state.statusProviders.revision, editorExtensionsRevision: state.extensions.revision, editorProvidersRevision: state.editorProviders.revision, commands: state.commands.list(), status: state.status.list(), panes: state.panes.list(), overlays: state.overlays.list(), editorExtensions: state.extensions.list(), statusProviders: state.statusProviders.list(), editorProviders: state.editorProviders.list() })
 }
 
-/** Observe aggregate changes from a Blue-owned adapter. */
-export function subscribeBluePluginHost(host: BluePluginHostService, listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration {
-  const state = ownerStateOf(host)
-  const notify = () => listener(snapshotBluePluginHost(host))
+/** Snapshot all additive contributions for host-internal contract tests. */
+export function snapshotBluePluginHost(host: BluePluginHostService): BluePluginHostSnapshot { return snapshotBluePluginHostState(ownerStateOf(host)) }
+
+function subscribeBluePluginHostState(state: HostState, listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration {
+  const notify = () => listener(snapshotBluePluginHostState(state))
   const aggregates = [state.commands, state.status, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]
   const handles = aggregates.map(aggregate => aggregate.subscribe(notify))
   try { notify() } catch (error) { for (const handle of handles) handle.dispose(); throw error }
   return new Registration(() => { for (const handle of handles) handle.dispose() })
 }
 
-/** Observe plugin notices from Blue's owner interaction adapter. */
-export function subscribeBluePluginNotifications(host: BluePluginHostService, listener: (notification: BlueNotification) => void): BlueRegistration {
-  const state = ownerStateOf(host); state.notificationObservers.add(listener)
+/** Observe aggregate changes in host-internal contract tests. */
+export function subscribeBluePluginHost(host: BluePluginHostService, listener: (snapshot: BluePluginHostSnapshot) => void): BlueRegistration { return subscribeBluePluginHostState(ownerStateOf(host), listener) }
+
+function subscribeBluePluginNotificationsState(state: HostState, listener: (notification: BlueNotification) => void): BlueRegistration {
+  state.notificationObservers.add(listener)
   return new Registration(() => { state.notificationObservers.delete(listener) })
 }
+
+/** Observe plugin notices in host-internal contract tests. */
+export function subscribeBluePluginNotifications(host: BluePluginHostService, listener: (notification: BlueNotification) => void): BlueRegistration { return subscribeBluePluginNotificationsState(ownerStateOf(host), listener) }
 
 function disposeHost(host: BluePluginHostService): void {
   const state = HOST_STATES.get(host)
   /* v8 ignore next -- Cordis invokes an effect cleanup at most once. */
   if (state === undefined) return
+  for (const leases of state.ownerLeases.values()) for (const lease of leases) lease.dispose()
   for (const lifetime of state.lifetimes) lifetime.dispose()
   for (const registry of state.registries) registry.dispose()
   state.sessionOwner?.subscription?.dispose()
   for (const aggregate of [state.commands, state.status, state.panes, state.overlays, state.extensions, state.statusProviders, state.editorProviders]) aggregate.clear()
-  state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.activeOwners.clear(); state.ownerGenerations.clear(); state.consumerIds.clear(); state.gestureOwners.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayOwners.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); state.sessionListeners.clear(); state.sessionOwner = undefined; state.sessionSnapshot = null; HOST_STATES.delete(host)
+  state.lifetimes.clear(); state.notificationObservers.clear(); state.owners.clear(); state.activeOwners.clear(); state.supportedCapabilities.clear(); state.ownerGenerations.clear(); state.currentOwners.clear(); state.ownerLeases.clear(); state.ownerHandoff = false; state.consumerIds.clear(); state.commandCounts.clear(); state.statusCounts.clear(); state.notificationQuotas.clear(); state.gestures.clear(); state.ownerGestures.clear(); state.overlayClosers.clear(); state.paneCounts.clear(); state.capturingConsumers.clear(); state.sessionListeners.clear(); state.sessionOwner = undefined; state.sessionSnapshot = null; HOST_STATES.delete(host)
 }
 
 /** Create closure-bound owner authority for one host instance. */
@@ -896,14 +1304,6 @@ export function createBluePluginControl(host: BluePluginHostService): BluePlugin
   const control: BluePluginControl = {
     attachCapabilities: (owner: EffectOwner, capabilities: readonly HostCapability[]) => attachBluePluginHostCapabilities(host, owner, capabilities),
     attachSessionReader: (owner: EffectOwner, reader: BlueSessionReader) => attachBluePluginHostSessionReader(host, owner, reader),
-    generation: (capability: V1Capability) => ownerStateOf(host).ownerGenerations.get(capability) ?? 0,
-    snapshot: () => snapshotBluePluginHost(host),
-    subscribe: (listener: (snapshot: BluePluginHostSnapshot) => void) => subscribeBluePluginHost(host, listener),
-    observeNotifications: (listener: (notification: BlueNotification) => void) => subscribeBluePluginNotifications(host, listener),
-    runUserGesture<T>(owner: EffectOwner, callback: (gesture: BlueUserGesture) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
-      return runBlueUserGesture(host, owner, callback, signal)
-    },
-    closeOverlay: (owner: EffectOwner, entry: BluePluginHostOverlayEntry) => closeBluePluginHostOverlay(host, owner, entry),
   }
   return Object.freeze(control)
 }
@@ -916,7 +1316,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const revision = { value: 0 }
     const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), activeOwners: new Map(), ownerGenerations: new Map(), consumerIds: new Map(), gestureOwners: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayOwners: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Set(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), sessionOwner: undefined, sessionSnapshot: null, nextOverlayOrder: 0,
+      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), supportedCapabilities: new Set(), activeOwners: new Map(), ownerGenerations: new Map(), currentOwners: new Map(), ownerLeases: new Map(), ownerHandoff: false, consumerIds: new Map(), commandCounts: new Map(), statusCounts: new Map(), notificationQuotas: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Map(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), sessionOwner: undefined, sessionSnapshot: null, nextOverlayOrder: 0,
     })
     ctx.provide('bluePluginControl', createBluePluginControl(this))
     ctx.effect(() => () => disposeHost(this))
@@ -955,20 +1355,22 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       } catch {
         return failure('BLUE_API_INCOMPATIBLE', `unsupported Blue API range "${hostManifest.api}"`)
       }
+      if (state.consumerIds.has(hostManifest.id)) return failure('BLUE_DUPLICATE_ID', `plugin identity "${hostManifest.id}" is already open`)
       const capabilities = [...hostManifest.capabilities]
       const missing = capabilities.find(capability => !ready(state, capability as Capability))
       if (missing !== undefined) return absent(missing as Capability)
 
       const lifetime = new ConsumerLifetime()
       state.lifetimes.add(lifetime)
+      state.consumerIds.set(hostManifest.id, lifetime)
       const isReady = (capability: Capability) => () => ready(state, capability)
-      const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, command)
-      const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status)
+      const commands = new Scoped('commands', state.commands, isReady('commands'), lifetime, input => command(input, lifetime), undefined, new ConsumerEntryQuota(state.commandCounts, consumer, MAX_COMMAND_CONTRIBUTIONS))
+      const statuses = new ScopedRefresh('status', state.status, isReady('status'), lifetime, state.now, status, STATUS_REFRESH_PER_SECOND, new ConsumerEntryQuota(state.statusCounts, consumer, MAX_STATUS_CONTRIBUTIONS))
       const panes = new Panes(state, consumer, lifetime); const overlays = new Overlays(state, consumer, lifetime)
-      const extensions = new ScopedRefresh('editor.extensions', state.extensions, isReady('editor.extensions'), lifetime, state.now, extension)
-      const statusProviders = new ScopedRefresh('status.provider', state.statusProviders, isReady('status.provider'), lifetime, state.now, statusProvider)
-      const editorProviders = new ScopedRefresh('editor.provider', state.editorProviders, isReady('editor.provider'), lifetime, state.now, editorProvider)
-      const notificationPublisher = new Notifications(state, lifetime)
+      const extensions = new ScopedRefresh('editor.extensions', state.extensions, isReady('editor.extensions'), lifetime, state.now, extension, EXPERIMENTAL_REFRESH_PER_SECOND)
+      const statusProviders = new ScopedRefresh('status.provider', state.statusProviders, isReady('status.provider'), lifetime, state.now, statusProvider, EXPERIMENTAL_REFRESH_PER_SECOND)
+      const editorProviders = new ScopedRefresh('editor.provider', state.editorProviders, isReady('editor.provider'), lifetime, state.now, editorProvider, EXPERIMENTAL_REFRESH_PER_SECOND)
+      const notificationPublisher = new Notifications(state, lifetime, consumer, () => activeReady(state, 'notifications.publish'))
       const notifications = Object.freeze({ publish: (notification: BlueNotification) => notificationPublisher.publish(notification) })
       const session = new SessionReadFacade(state, lifetime, callback => consumer.effect(callback))
       const registries = [commands, statuses, panes, overlays, extensions, statusProviders, editorProviders, session, notificationPublisher]
@@ -978,7 +1380,12 @@ export class BluePluginHostService extends Service implements BluePluginHost {
       const facets: Omit<BluePluginApi, 'manifest'> = {
         ...(capabilities.includes('commands') ? { commands } : {}), ...(capabilities.includes('status') ? { status: statuses } : {}), ...(capabilities.includes('notifications.publish') ? { notifications } : {}), ...(capabilities.includes('panes') ? { panes } : {}), ...(capabilities.includes('overlays') ? { overlays } : {}), ...(capabilities.includes('editor.extensions') ? { editorExtensions: extensions } : {}), ...(capabilities.includes('session.read') ? { session } : {}), ...(capabilities.includes('status.provider') ? { statusProviders } : {}), ...(capabilities.includes('editor.provider') ? { editorProviders } : {}),
       }
-      const cleanup = () => { lifetime.dispose(); state.lifetimes.delete(lifetime); for (const registry of registries) { registry.dispose(); state.registries.delete(registry) } }
+      const cleanup = () => {
+        lifetime.dispose(); state.lifetimes.delete(lifetime)
+        /* v8 ignore next -- identity is reserved for this live lifetime. */
+        if (state.consumerIds.get(hostManifest.id) === lifetime) state.consumerIds.delete(hostManifest.id)
+        for (const registry of registries) { registry.dispose(); state.registries.delete(registry) }
+      }
       try { consumer.effect(() => cleanup) } catch (error) { cleanup(); throw error }
       // Legacy inline manifests retain their original surface shape. The
       // additional v1 negotiation fields are only present on canonical opens.

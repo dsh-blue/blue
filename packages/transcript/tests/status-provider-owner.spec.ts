@@ -16,20 +16,27 @@ const host = vi.hoisted(() => ({
 }))
 
 function control() {
-  return {
-    attachCapabilities: host.attach,
+  const lease = {
+    current: () => true,
     subscribe(listener: (snapshot: Record<string, unknown>) => void) {
-    host.listeners.add(listener)
-    listener(host.initial)
-    let disposed = false
-    return {
-      dispose() {
-        if (disposed) return
-        disposed = true
-        host.disposed += 1
-        host.listeners.delete(listener)
-      },
-    }
+      host.listeners.add(listener)
+      listener(host.initial)
+      let disposed = false
+      return {
+        get disposed() { return disposed },
+        dispose() {
+          if (disposed) return
+          disposed = true
+          host.disposed += 1
+          host.listeners.delete(listener)
+        },
+      }
+    },
+  }
+  return {
+    attachCapabilities(owner: unknown, capabilities: readonly string[]) {
+      host.attach(owner, capabilities)
+      return lease
     },
   }
 }
@@ -41,10 +48,12 @@ interface CompositionProbe {
   readonly candidateUpdates: { readonly providers: readonly BlueStatusProvider[], readonly revision: number }[]
   readonly sessions: (BlueSessionSnapshot | null)[]
   detaches: number
+  providerOwner?: object
   select(id: string): void
-  updateCandidates(providers: readonly BlueStatusProvider[], revision: number): void
+  attachProviderOwner(owner: object): void
+  updateCandidates(providers: readonly BlueStatusProvider[], revision: number, owner?: object): void
   updateSession(snapshot: BlueSessionSnapshot | null): void
-  detachProviders(): void
+  detachProviders(owner?: object): void
 }
 
 interface ReaderProbe {
@@ -73,9 +82,16 @@ function compositionProbe(): CompositionProbe {
     sessions: [],
     detaches: 0,
     select(id) { this.selections.push(id) },
-    updateCandidates(providers, revision) { this.candidateUpdates.push({ providers, revision }) },
+    attachProviderOwner(owner) { this.providerOwner = owner },
+    updateCandidates(providers, revision, owner) {
+      if (owner === undefined || owner === this.providerOwner) this.candidateUpdates.push({ providers, revision })
+    },
     updateSession(snapshot) { this.sessions.push(snapshot) },
-    detachProviders() { this.detaches += 1 },
+    detachProviders(owner) {
+      if (owner !== undefined && owner !== this.providerOwner) return
+      this.providerOwner = undefined
+      this.detaches += 1
+    },
   }
 }
 
@@ -109,10 +125,11 @@ function provide(ctx: Context, name: string, value: unknown): void {
 async function mount(options: {
   readonly settings?: unknown
   readonly current?: BlueSessionSnapshot | null
+  readonly composition?: CompositionProbe
 } = {}): Promise<{ readonly ctx: Context, readonly composition: CompositionProbe, readonly reader: ReaderProbe, readonly fiber: Awaited<ReturnType<Context['plugin']>> }> {
   const ctx = new Context()
   roots.push(ctx)
-  const composition = compositionProbe()
+  const composition = options.composition ?? compositionProbe()
   const reader = readerProbe(options.current)
   provide(ctx, 'bluePluginControl', control())
   provide(ctx, 'blueStatusComposition', composition)
@@ -211,6 +228,17 @@ describe('status provider owner', () => {
     expect(first.composition.selections).toEqual(['acme.persisted', 'acme.persisted', 'acme.persisted'])
     await replacement.dispose()
     expect(first.composition.detaches).toBe(2)
+  })
+
+  it('does not let a late stale owner cleanup detach replacement candidates', async () => {
+    const composition = compositionProbe()
+    const first = await mount({ composition })
+    const replacement = await mount({ composition })
+
+    await first.fiber.dispose()
+    expect(composition.detaches).toBe(0)
+    await replacement.fiber.dispose()
+    expect(composition.detaches).toBe(1)
   })
 
   it('disposes host/session subscriptions, detaches providers, and rejects late events', async () => {

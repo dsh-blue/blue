@@ -79,7 +79,12 @@ snapshot. Unload withdraws that readiness and owner mounts while
 leaving consumer contributions in the API host; a replacement bridge restores
 them from the snapshot. It follows the host's status-local revision so a
 public status refresh invalidates an existing entry, while unrelated aggregate
-mutations remain inert.
+mutations remain inert. A plugin render exception is converted to that entry's
+bounded danger-node fallback during initial registration as well as later
+refresh; it cannot prevent sibling status entries or the default footer from
+rendering. Status-provider failures use the same descriptor-safe rule: hostile
+or accessor-backed thrown values receive a fixed message and never escape the
+composition boundary.
 
 `./status-provider-owner` is the separate composition plugin that advertises
 only `status.provider`, subscribes candidates and the app-owned readonly

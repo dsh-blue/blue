@@ -93,12 +93,19 @@ R1 只冻结可观察权限结果，不强制特定 authority representation。h
 
 R2 按合并手册拆为 P1-P4，不得放进一个大 PR：P1 建机器真相，P2 建协商与权限，P3/P4 才把 UI 和 session capability 接到该契约。
 
-当前进度（候选 worktree，尚待人工 profile 验收后合并）：P1 已完成机器契约、共享
-corpus、packed validator 与双 Harness line fixture；P2 正在收敛 canonical host
-admission。P2 已开放 required/optional、精确 resource grant、结构化 denial、受保护
-owner generation 与 durable registration restore；`session.projections.read` 仍明确
-保持 unavailable，等待 P4。P3/P4 尚未进入主线，不能把三个生态插件的 Blue entries
-当作 capability Stable 证据。
+当前进度（本地状态，不代表远端或发布 artifact）：P1 以 `a13e6e8`、`f2222c2`
+完成机器契约、共享 corpus、packed validator 与双 Harness line fixture；P2 以
+`522d2ca`、`96e8999` 完成 canonical host admission、required/optional、精确
+resource grant、结构化 denial、受保护 owner generation 与 durable registration
+restore。两阶段均已由用户真人验收并合入本地 `master`，但尚未 push，也没有发布
+npm、Website 或协议 artifact。`session.projections.read` 仍保持 unavailable，等待 P4。
+P3 是独立候选 worktree，P4 尚未进入本地 `master`；两者都不能被当作 capability
+Stable 证据。
+
+P3 候选 worktree 已把五项 UI capability 接到 canonical grant：resource/数量/刷新/
+notification 大小与速率限制、owner-gap restore、command/事件 stale fence、overlay
+不重放和 status failure isolation 已进入自动测试；整树门禁、独立 packed fixture 与
+真人 profile 验收完成前仍只记为 implemented candidate。
 
 ### Schema 与 package
 
@@ -136,16 +143,15 @@ P1/P2 完成且至少一个 P3/P4 capability 形成可运行 Public Beta 后，�
 
 ### 5.1 生态验证与协作
 
-首批六个项目采用同一标准：固定 upstream commit、记录公开边界、只使用 v1 候选七项中当时已开放的 Beta capability、独立 packed fixture、相同邀请 Issue 模板和相同作者 skill 链接。
+当前实施批次的三个项目采用同一标准：固定 upstream commit、记录公开边界、只使用 v1 候选七项中当时已开放的 Beta capability、独立 packed fixture、相同邀请 Issue 模板和相同作者 skill 链接。
 
 | 项目 | 当前公开边界 | Blue v1 验证切片 | 技术前置条件 |
 | --- | --- | --- | --- |
 | [dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) | headless tools、持久团队状态、scheduler、command、Web 私有 routes/internals | `commands`、`status`、`panes`、`overlays` | 先由上游拥有 renderer-neutral Service Definition 或 session projection；不得读 `.agent-teams`、private route 或 package internal |
 | [dsh-context](https://github.com/bowenliang123/dsh-context) | `contextTimeline` / `contextHeaders` session projections 与公开 types | `session.projections.read`、`commands`、`status`、`panes`、`overlays` | 保持 Host projection 为唯一真相，Blue entry 不复制 Web dashboard state |
-| [dsh-cost-meter](https://github.com/Han-1413141/dsh-cost-meter) | `costUsage` session projection 与公开 `costMeter` Service | `session.projections.read`、`status`、`panes`、`notifications.publish` | 直接 inject Service；不发明 `cost.*` Blue capability |
-| [dsh-mcp-panel](https://github.com/PerryLink/dsh-mcp-panel) | 公开 `mcpPanel` Service、Typert invocations 与 `/mcp` | `commands`、`status`、`panes`、`overlays` | v1 先做只读状态/诊断切片，写操作继续由插件 Service 与 Harness approval 所有 |
-| [dsh-notifier](https://github.com/wingsky-1/dsh-plugin-hub/tree/main/packages/dsh-notifier) | Host 事件判断、免打扰和历史；browser half 走 SSE/HTTP | `notifications.publish`、`panes`、`overlays` | 抽取窄的 renderer-neutral Service/subscription；Blue 不消费 private Web routes |
-| [dsh-peak-indicator](https://github.com/future007s/dsh-peak-indicator) | `peakCost` session projection 与独立 browser half | `session.projections.read`、`status`、`panes` | 复用 projection；timer/registration 绑定 Fiber，不把 Web visual effects带进 TUI |
+| [TokenLedger](https://github.com/zh667/TokenLedger/issues/57) | 跨 session 账本、usage/configuration/action；现有 Web/Host face 保持不变，窄化 `tokenLedgerV1` Service 仍是本地候选 | `commands`、`status`、`panes`、`overlays`、`notifications.publish`；需要当前会话语境时才选配 `session.read(identity)` | Blue companion 直接 inject renderer-neutral Service；跨 session 账本不得伪装成 `session.projections.read`，不得暴露 SQLite、凭据、Agent/Session 或 renderer object |
+
+`dsh-cost-meter` 与 TokenLedger 的 token/费用聚合、历史、模型/站点、余额/额度、导出和设置高度重叠，因此从当前 goal 暂停；它独有的实时单-session cost、预算/峰谷提醒与更广定价矩阵保留为后续 gap backlog，不并行维护第二套计费 surface。
 
 每个项目的 fixture MAY 位于固定 fork或 conformance workspace，但必须记录 upstream commit、patch、同步/删除条件和代码 ownership。Blue 默认只发邀请 Issue，不向上游提交未经邀请的代码 PR。作者认可与互荐是生态目标，但不作为确定性 v1 release gate。
 

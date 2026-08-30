@@ -169,7 +169,12 @@ public command or editor action execution receives an owner-minted
 `userGesture` whose authority lasts through legal asynchronous handler work;
 the invocation abort signal and final settlement both revoke it, so a plugin
 cannot retain the proof for a later capturing overlay. Completion and submit
-callbacks never receive a gesture.
+callbacks never receive a gesture. The command adapter checks its captured
+owner generation before dispatch and after both fulfilled and rejected
+settlement; a removed Harness registration also carries a local live fence.
+Retained old handlers therefore return a stale command error without invoking
+plugin code. The API host independently fences settlement after the plugin
+consumer Fiber unloads.
 
 `paste-image` state belongs to `InteractionStateService`; readers/clocks remain explicit test seams. Late clipboard results must check unload before saving, inserting markers, or notifying.
 

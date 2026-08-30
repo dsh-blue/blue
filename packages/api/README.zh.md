@@ -34,7 +34,17 @@ Canonical manifest 还会返回 `BluePluginOpen`：`api` 是只含 facet 的视�
 resource fence 约束；pane registration 只能使用获准 placement。过渡期间旧 inline
 manifest 保持原返回面。
 
-host 会持久缓冲 `commands`、`status`、`panes`、`overlays` 以及三个 Experimental editor/provider facet 的 inert registration。因此插件可以在对应 frontend-tree owner 尚在启动或重载时注册，active owner 只恢复最新 definition。consumer 卸载仍会删除它的 registration。缓冲不赋予 render、dispatch、gesture、provider selection、last-known-good、breaker 或 fallback 权限。`notifications.publish` 与 `session.read` 不是 registration buffer，owner 缺位时返回 absent/unavailable；notice、overlay、gesture、action 与旧 callback result 都不会 replay。
+当前可执行的 P3 候选会落实 catalog budget：每个 consumer 最多注册 64 个 command
+和 64 个 additive status contribution，notification view 最大 32 KiB，并且滚动一秒
+最多发布 20 条 notification。notification grant 还会公开 bounded clone 上限：深度
+64、4096 个容器、8192 个属性、32 KiB primitive/key bytes；通过预检后仍执行最终
+JSON UTF-8 精确字节检查。每个 consumer 最多 8 个 pane，全局 overlay stack
+最多 4 个，每个 consumer 最多 1 个 capturing overlay；status、pane 与 overlay 的
+refresh handle 各自每滚动秒接受 20 次成功调用，并把同一 microtask 的调用合并。
+异步 command settlement（包括 callback rejection）在 abort、插件卸载或 command
+owner 替换后会被丢弃。
+
+host 会持久缓冲 `commands`、`status`、`panes` 以及三个 Experimental editor/provider facet 的 inert registration；`overlays` 只安装 canonical capability definition，不缓冲 overlay open。插件可以在对应 frontend-tree owner 尚在启动或重载时注册 definition，active owner 只恢复最新 definition。consumer 卸载仍会删除它的 registration。缓冲不赋予 render、dispatch、gesture、provider selection、last-known-good、breaker 或 fallback 权限。overlay open、`notifications.publish` 与 `session.read` 都要求 live owner，owner 缺位时返回 absent/unavailable；notice、overlay、gesture、action 与旧 callback result 都不会 replay。
 
 owner attach、aggregate observe、notification observe、gesture mint、semantic overlay close，以及 raw session/projection/action service 都不是公共插件 API。默认 bundle 通过私有隔离 runtime realm 中 closure-bound 的 `bluePluginControl` 承载这些操作；普通 sibling 只能取得受保护的 `bluePluginHost` facade。
 
