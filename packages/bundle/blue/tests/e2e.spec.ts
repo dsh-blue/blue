@@ -142,8 +142,16 @@ async function backToDark(tree: BlueTree, agent: Agent): Promise<void> {
  * frame reflects exactly what is on screen right now.
  */
 async function fullFrame(terminal: FakeTerminal): Promise<string> {
+  return fullFrameAt(terminal, terminal.columns + 1)
+}
+
+/** Resize to an exact width and return the resulting full repaint. */
+async function fullFrameAt(terminal: FakeTerminal, columns: number): Promise<string> {
+  if (terminal.columns === columns) {
+    await fullFrameAt(terminal, columns + 1)
+  }
   const before = terminal.written.length
-  terminal.resize(terminal.columns + 1, terminal.rows)
+  terminal.resize(columns, terminal.rows)
   let frame = ''
   await vi.waitFor(() => {
     frame = terminal.written.slice(before).find(chunk => chunk.includes('\x1b[2J')) ?? ''
@@ -1757,11 +1765,13 @@ describe('blue whole-tree e2e', () => {
       const leftCluster = `mock  ${cwdLabel}  e2e-branch`.length
       // A right-cluster budget of 8 columns in the frame, computed off the
       // same cwd abbreviation the entry derives, so the boundary holds in
-      // any checkout. fullFrame forces its repaint by bumping the width one
-      // column, so the resize lands one short of the frame's budget.
+      // any checkout. fullFrameAt primes a different width when this target
+      // happens to equal the previous frame width.
       const budget = 8
-      tree.terminal.resize(leftCluster + FOOTER_GAP + budget - 1, 24)
-      const frame = await fullFrame(tree.terminal)
+      const frame = await fullFrameAt(
+        tree.terminal,
+        leftCluster + FOOTER_GAP + budget,
+      )
       const row = frame.split('\r\n').find(line => line.includes('e2e-branch'))
       expect(row).toBeDefined()
       const plain = stripSgr(row!)
