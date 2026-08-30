@@ -136,13 +136,16 @@ export interface BlueRewindCandidate {
 
 /** One immutable value from the official current-session projection registry. */
 export interface BlueSessionProjectionSnapshot {
+  readonly sessionEpoch: number
   readonly asOfSeq: number
   readonly value: unknown
 }
 
 /** One direct child session's immutable official projection value. */
-export interface BlueChildSessionProjectionSnapshot extends BlueSessionProjectionSnapshot {
+export interface BlueChildSessionProjectionSnapshot {
   readonly id: string
+  readonly asOfSeq: number
+  readonly value: unknown
 }
 
 /** The presenter hooks a resolved tool definition may carry (host face, structural). */
@@ -172,8 +175,8 @@ export interface BlueToolPresentationSource {
 export interface BlueSessionProjectionReader {
   current(key: string): BlueSessionProjectionSnapshot | undefined
   /** Read several current-session projection values from one consistent cut. */
-  currentMany(keys: readonly string[]): { readonly asOfSeq: number, readonly values: Readonly<Record<string, unknown>> } | undefined
-  subscribe(listener: (key: string, value: unknown, seq: number) => void): () => void
+  currentMany(keys: readonly string[]): { readonly sessionEpoch: number, readonly asOfSeq: number, readonly values: Readonly<Record<string, unknown>> } | undefined
+  subscribe(listener: (key: string, value: unknown, seq: number, sessionEpoch: number) => void): () => void
   /** Snapshot one projection key across direct subagent children of the active session. */
   children(key: string): readonly BlueChildSessionProjectionSnapshot[]
   /** Subscribe to projection changes from direct subagent children of the active session. */

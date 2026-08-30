@@ -443,7 +443,7 @@
             resume: !!js ctx.blueStartup.resume
 
         # Public session capability owner: mounts only after blue-app has
-        # synchronously provided its readonly reader.
+        # synchronously provided its readonly reader and projection source.
         - id: blue-plugin-session-bridge
           name: '@dsh-blue/blue-app/plugin-host-session-bridge'
-          inject: [bluePluginControl, blueSessionReader]
+          inject: [bluePluginControl, blueSessionReader, blueSessionProjections]

@@ -1,24 +1,52 @@
 # 会话只读数据
 
-当前 Beta 只提供 `session.read`。插件可以读取和订阅当前会话的裁剪摘要，但不能通过 Blue plugin host 写会话；generic `session.act` 已从 manifest、类型和 public facade 中删除。领域写入继续使用所属 Harness Cordis service、Harness command 或 feature-owned action。
+Canonical Beta 提供两个彼此独立的只读 capability：`session.read` 读取当前会话摘要，`session.projections.read` 读取 Host 插件拥有的 projection JSON。Blue plugin host 不提供通用写网关；generic `session.act` 已从 manifest、类型和 public facade 中删除。
 
 | Capability | `open()` 返回字段 | 暴露方法 |
 |---|---|---|
 | `session.read` | `api.session` | `current()`、`subscribe()` |
+| `session.projections.read` | `api.projections` | `current()`、`currentMany()`、`subscribe()` |
 
-公开对象不会暴露 Harness Agent、Session、event log、raw projection reader 或 app 的广义 action service。请求已删除的 `session.act` 会在 manifest/open 校验期失败，不存在兼容 fallback。
+公开对象不会暴露 Harness Agent、Session、event log、未收窄的 projection reader 或 app 的广义 action service。请求已删除的 `session.act` 会在 manifest/open 校验期失败，不存在兼容 fallback。
 
-## 只读 snapshot
+## 精确 resource
 
-`current()` 返回当前 `BlueSessionSnapshot`，没有活跃会话时返回 `null`：
+Canonical manifest 必须明确声明所需字段和 key。Host 只返回实际 grant 的数据：
+
+```json
+{
+  "capabilities": {
+    "required": [
+      {
+        "name": "session.read",
+        "version": "^1.0.0",
+        "resources": { "fields": ["identity", "status", "model"] }
+      },
+      {
+        "name": "session.projections.read",
+        "version": "^1.0.0",
+        "resources": { "keys": ["costUsage", "contextTimeline"] }
+      }
+    ],
+    "optional": []
+  }
+}
+```
+
+`session.read` 可申请 `identity`、`cwd`、`status`、`mode`、`model`。`identity` 在 snapshot 中映射为 `id`。`revision` 与 `sessionEpoch` 是强制 fencing metadata，不需要也不能从 grant 中移除。projection key 由拥有该 projection 的 Host 插件定义；Blue 不重新定义它的 schema 或业务含义。
+
+## 会话 snapshot
+
+Canonical `current()` 返回 `BlueResult<BluePluginSessionSnapshot | null>`：
 
 ```ts
-interface BlueSessionSnapshot {
+interface BluePluginSessionSnapshot {
   readonly revision: number
-  readonly id: string
-  readonly cwd: string
-  readonly status: 'idle' | 'running' | 'waiting' | 'failed'
-  readonly mode: 'normal' | 'plan' | 'yolo'
+  readonly sessionEpoch: number
+  readonly id?: string
+  readonly cwd?: string
+  readonly status?: 'idle' | 'running' | 'waiting' | 'failed'
+  readonly mode?: 'normal' | 'plan' | 'yolo'
   readonly model?: {
     readonly id: string
     readonly provider?: string
@@ -27,37 +55,69 @@ interface BlueSessionSnapshot {
 }
 ```
 
-host 会复制并深度冻结 snapshot，包括嵌套的 `model`。`revision` 在 app owner 发布新状态时单调递增；host 忽略同一 owner generation 中重复或倒退的 revision，也丢弃旧 owner 卸载后的 late callback。
+只有获准字段会成为 own property；即使获准了 `model`，当前没有模型时也会省略该字段。Host 会复制并深冻结 snapshot。`null` 只表示 owner 在线但当前没有 active session，不表示 capability 缺失。
 
-`subscribe(listener)` 先注册再同步 replay 当前值，因此订阅期间的重入发布不会漏掉更新。返回的 `BlueRegistration` 可以重复安全地 `dispose()`；consumer Fiber 卸载也会自动撤销订阅。
+同一个 session epoch 内，host 只接受递增的 `revision`。同 id session 切换到新 epoch 后可以从较低 revision 重新开始；旧 epoch、重复 revision 和旧 owner 卸载后的 late callback 都会被拒绝。
 
-owner bridge 在 `open()` 时尚未激活，`open()` 返回 `BLUE_CAPABILITY_ABSENT`。已经打开的 reader 遇到 owner reload 时先收到 `null`，新 generation 激活后再收到当前 snapshot；它不会复用旧 session 值。consumer 已卸载后，保留的 facade 永久失效。
+`subscribe(listener)` 返回 `BlueResult<BlueRegistration>`，并在 effect 注册成功后同步 replay 当前结果。listener 收到的也是 `BlueResult<BluePluginSessionSnapshot | null>`。owner gap 产生 `BLUE_CAPABILITY_ABSENT`；owner reload 后 replay 当前 generation。consumer Fiber 卸载后，保留的 facade 永久返回 `BLUE_ACTION_REJECTED`。
 
 ```ts
-export const inject = ['bluePluginHost']
+const opened = ctx.bluePluginHost.open(ctx, manifest)
+if (!opened.ok || opened.value.session === undefined) return
 
-export function apply(ctx) {
-  const opened = ctx.bluePluginHost.open(ctx, {
-    id: 'com.example.session-badge',
-    api: '^1.0.0-beta.1',
-    capabilities: ['session.read'],
-  })
-  if (!opened.ok) throw new Error(`${opened.code}: ${opened.message}`)
+const initial = opened.value.session.current()
+if (initial.ok && initial.value !== null) {
+  console.log(initial.value.sessionEpoch, initial.value.id, initial.value.status)
+}
 
-  const reader = opened.value.session
-  const registration = reader.subscribe(snapshot => {
-    if (snapshot !== null) console.log(snapshot.revision, snapshot.id, snapshot.status)
-  })
-  // registration 随 ctx Fiber 自动释放；也可提前 registration.dispose()
+const subscribed = opened.value.session.subscribe(result => {
+  if (!result.ok) return
+  if (result.value !== null) console.log(result.value.revision, result.value.status)
+})
+if (!subscribed.ok) console.error(subscribed.code, subscribed.message)
+```
+
+## Projection cut
+
+`current(key)` 返回单个获准 key 的 `BlueResult<BlueSessionProjectionSnapshot | null>`。`currentMany(keys)` 从 owner 的一次 snapshot 读取所有 key，返回一致 cut：
+
+```ts
+interface BlueSessionProjectionCut {
+  readonly sessionEpoch: number
+  readonly asOfSeq: number
+  readonly values: Readonly<Record<string, BlueJson>>
 }
 ```
 
+每个 value 必须是 finite、acyclic JSON；accessor、sparse array、`undefined`、symbol、非有限数字和循环引用都会被拒绝。Host 会分离并深冻结每个 value，单 value 上限为 262,144 encoded bytes，整个 cut 上限为 1,048,576 bytes。
+
+缺失或已卸载的 key 返回 `BLUE_CAPABILITY_ABSENT`，不会复用旧值。旧 epoch 或较小 `asOfSeq` 返回 `BLUE_STALE`。`subscribe(keys, listener)` 在注册后 replay 一次一致 cut，只在指定 key 变化时读取新 cut；重复、过期、非法或迟到的 owner 通知不会进入 listener。
+
+```ts
+const projections = opened.value.projections
+if (projections !== undefined) {
+  const cut = projections.currentMany(['costUsage', 'contextTimeline'])
+  if (cut.ok && cut.value !== null) {
+    console.log(cut.value.asOfSeq, cut.value.values.costUsage)
+  }
+
+  const subscribed = projections.subscribe(['costUsage'], result => {
+    if (result.ok && result.value !== null) console.log(result.value.values.costUsage)
+  })
+  if (!subscribed.ok) console.error(subscribed.code, subscribed.message)
+}
+```
+
+## 过渡期 inline manifest
+
+旧 flat manifest 的 `capabilities: ['session.read']` 仍保留原来的 inline-host reader 形状，用于 PR #77 兼容 lane；它不提供 `session.projections.read`，也不代表 canonical v1 resource/epoch 语义。新插件和 R3 生态 adapter 应使用带 `$schema`、required/optional 分组和精确 resources 的 canonical manifest。
+
 ## 写操作归领域 owner
 
-Blue 不提供通用 session 写网关。需要 followup、steer、interrupt 或其他领域 mutation 时：
+需要 followup、steer、interrupt 或其他领域 mutation 时：
 
 - 优先使用拥有该语义的公开 Harness Cordis service、command 或 feature action；
 - 在 domain 包中完成写入，把 renderer-neutral 结果投影给 Blue adapter；
 - 没有公开领域边界时，停止并向能力 owner 提案，不要读取 package internal 或复制 Session 状态。
 
-插件不得直接 inject owner-only 的 `blueSessionReader`、`blueSessionProjections`、`blueSessionActions` 或 `bluePluginControl`，也不得 unwrap `bluePluginHost` 获取它们。默认 bundle 将这些服务隔离在 private runtime realm 中；公开 `session.read` 是唯一当前可执行的 session facade。
+插件不得直接 inject owner-only 的 `blueSessionReader`、`blueSessionProjections`、`blueSessionActions` 或 `bluePluginControl`，也不得 unwrap `bluePluginHost` 获取它们。默认 bundle 将这些未收窄服务隔离在 private runtime realm 中；公共插件只能使用 manifest-scoped facade。

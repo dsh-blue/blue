@@ -57,9 +57,10 @@ dsh process 进程（one Cordis tree 一棵 Cordis 树）
 | [`panes`](/plugins/dock) | 布局位置、canonical node 与结构化 event | header/left/right/bottom 插件面 |
 | [`overlays`](/plugins/dock#overlay-契约) | canonical overlay request 与结构化 event | 受 Blue focus/lifecycle 托管的浮层 |
 | [`notifications.publish`](/plugins/notifications) | 只发布 `BlueNotification` | 编辑器通知条；没有全局 observe |
-| [`session.read`](/plugins/session) | revisioned、深度冻结的当前会话 snapshot | `current()` 与 effect-bound `subscribe()` |
+| [`session.read`](/plugins/session) | exact-field、带 epoch/revision 且深度冻结的当前会话 snapshot | result-bearing `current()` 与 effect-bound `subscribe()` |
+| [`session.projections.read`](/plugins/session#projection-cut) | exact-key、带 epoch/seq 的 projection JSON cut | `current()`、consistent `currentMany()` 与 key-set `subscribe()` |
 
-generic `session.act` 已移除；写操作使用所属 Harness service 或 feature-owned action。`session.read` owner 缺失时返回 unavailable/null，不会回退到 raw app service。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
+generic `session.act` 已移除；写操作使用所属 Harness service 或 feature-owned action。`null` 只表示 read owner 在线但当前无 session；read owner 缺失时返回 `BLUE_CAPABILITY_ABSENT`，不会回退到未收窄的 app service。旧名 `dock`、`panels`、`editor` 与 `tools` 已从公开 manifest 删除；校验器会返回具体迁移提示。
 
 ## 文档地图
 
@@ -71,7 +72,7 @@ generic `session.act` 已移除；写操作使用所属 Harness service 或 feat
 
 **贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
 
-- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [编辑器 Provider](/plugins/editor-providers) · [Pane 与 Overlay](/plugins/dock) · [通知](/plugins/notifications)
+- [命令](/plugins/commands) · [状态栏与独占 provider](/plugins/status) · [编辑器扩展](/plugins/editor-extensions) · [编辑器 Provider](/plugins/editor-providers) · [Pane 与 Overlay](/plugins/dock) · [通知](/plugins/notifications) · [会话只读数据](/plugins/session)
 
 **验证与发布**
 

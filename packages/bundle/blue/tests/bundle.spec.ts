@@ -121,7 +121,7 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/editor-provider-owner'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
     expect(patch).toContain("name: '@dsh-blue/blue-app/plugin-host-session-bridge'")
-    expect(patch).toMatch(/- id: blue-app[\s\S]*?- id: blue-plugin-session-bridge\n\s+name: '@dsh-blue\/blue-app\/plugin-host-session-bridge'\n\s+inject: \[bluePluginControl, blueSessionReader\]/u)
+    expect(patch).toMatch(/- id: blue-app[\s\S]*?- id: blue-plugin-session-bridge\n\s+name: '@dsh-blue\/blue-app\/plugin-host-session-bridge'\n\s+inject: \[bluePluginControl, blueSessionReader, blueSessionProjections\]/u)
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
 
     const privateGroup = insertedRows.find(row => row.id === 'blue-runtime-private')

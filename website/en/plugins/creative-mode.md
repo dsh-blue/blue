@@ -26,7 +26,7 @@ blue-feature/
   cordis.patch.yml      # inserts the entry into a profile
 ```
 
-The entry exports fixed `name`, `inject`, and `apply(ctx)` values. It requests the current `1.0.0-beta.1` capabilities through `ctx.bluePluginHost.open(ctx, manifest)`: `commands`, `status`, `panes`, `overlays`, `notifications.publish`, and read-only `session.read`. Generic `session.act` has been removed; writes continue through their owning Harness service, command, or feature action. `open()`, `register()`, and `publish()` return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Editor/status providers and editor extensions remain Experimental/reference surfaces; their candidates stay inert until selected in settings.
+The entry exports fixed `name`, `inject`, and `apply(ctx)` values. It requests the current `1.0.0-beta.1` capabilities through `ctx.bluePluginHost.open(ctx, manifest)`: `commands`, `status`, `panes`, `overlays`, `notifications.publish`, plus read-only `session.read` and `session.projections.read`. The latter two declare exact field/key resources in a canonical manifest. Generic `session.act` has been removed; writes continue through their owning Harness service, command, or feature action. `open()`, `register()`, `publish()`, and canonical reads return structured `BlueResult` values and must be checked. Registrations belong to the caller's Fiber and are removed on unload, update, or profile reload. Editor/status providers and editor extensions remain Experimental/reference surfaces; their candidates stay inert until selected in settings.
 
 Plugin code returns renderer-neutral `BlueUiNode`/`BlueView` data and structured actions:
 

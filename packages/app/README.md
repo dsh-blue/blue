@@ -8,8 +8,8 @@ The `./startup` entry (`blue-startup`) declares an optional `[task]` positional 
 
 The main entry (`blue-app`) creates or resumes the Harness Agent, but keeps the Agent and Session inside the package. Official Blue consumers inside the bundle's private runtime realm receive four renderer-neutral services:
 
-- `blueSessionReader` publishes cached, deeply frozen current-session snapshots with monotonic revisions.
-- `blueSessionProjections` reads and subscribes to official current-session projection values, including direct child-session values, without exposing a Session handle.
+- `blueSessionReader` publishes cached, deeply frozen current-session snapshots with monotonic revisions and a required switch epoch.
+- `blueSessionProjections` reads and subscribes to official current-session projection values with the same epoch plus a consistent sequence cut, including direct child-session values, without exposing a Session handle.
 - `blueSessionActions` owns richer interaction operations such as model and mode changes, command execution, queue projection, rewind candidates, presets, skills, tools, session details, and disposable side sessions. Interrupt requests also stop live continuable descendants of the current Agent.
 - `blueToolPresentations` resolves official agent-scoped tool presenter views without exposing the active Agent.
 
@@ -19,7 +19,7 @@ Model selection uses three tiers: an in-session choice, the latest durable reque
 
 The package also owns safe open-turn retraction and BTW side sessions. A side-session handle exposes only an opaque projection identity, plain-text follow-up, admitted `running`/`idle` status, and disposal.
 
-The `./plugin-host-session-bridge` entry attaches only the reader to `bluePluginHost` through the composition-private control for its Fiber lifetime. Public plugins receive the readonly `session.read` facade; generic `session.act` is removed, and raw projections plus `blueSessionActions` never cross that boundary. Domain writes use their owning Harness service or a dedicated feature action.
+The `./plugin-host-session-bridge` entry attaches both app-owned read sources to `bluePluginHost` through the composition-private control for its Fiber lifetime. Public plugins receive the field-scoped `session.read` facade and exact-key `session.projections.read` facade; the API host owns JSON detachment, size limits, epoch/sequence fencing, owner reload, and consumer unload. Generic `session.act` is removed, and the unscoped projection source plus `blueSessionActions` never cross that boundary. Domain writes use their owning Harness service or a dedicated feature action.
 
 ## Model Experience
 

@@ -8,8 +8,8 @@ Blue 交互式 `dsh --profile blue` 界面的命令行启动提供方与 Agent �
 
 主入口（`blue-app`）创建或恢复 Harness Agent，但 Agent 与 Session 始终留在本包内部。bundle 私有 runtime realm 中的 Blue 官方 consumer 只接收四个 renderer-neutral 服务：
 
-- `blueSessionReader` 发布带单调递增 revision、缓存且深冻结的当前会话快照。
-- `blueSessionProjections` 读取并订阅官方当前会话 projection 值，也可读取直接子会话 projection，但不暴露 Session handle。
+- `blueSessionReader` 发布带单调递增 revision、必需 switch epoch、缓存且深冻结的当前会话快照。
+- `blueSessionProjections` 以同一 epoch 与一致 sequence cut 读取并订阅官方当前会话 projection 值，也可读取直接子会话 projection，但不暴露 Session handle。
 - `blueSessionActions` 承担更丰富的交互操作，包括模型与模式切换、命令执行、队列投影、rewind 候选、preset、skill、tool、会话详情以及可释放的旁路会话。Interrupt 请求也会停止当前 Agent 仍在运行的 continuable 后代。
 - `blueToolPresentations` 解析 Agent-scoped 的官方 tool presenter view，但不暴露 active Agent。
 
@@ -19,7 +19,7 @@ Blue 交互式 `dsh --profile blue` 界面的命令行启动提供方与 Agent �
 
 本包还拥有安全的进行中 turn 撤回与 BTW 旁路会话。旁路 handle 只暴露 opaque projection identity、纯文本 follow-up、限定为 `running`/`idle` 的状态以及 disposal。
 
-`./plugin-host-session-bridge` 入口在自身 Fiber 生命周期内通过 composition-private control 只把 reader 挂接到 `bluePluginHost`。公共插件只获得 readonly `session.read` facade；generic `session.act` 已移除，raw projection 与内部宽口径的 `blueSessionActions` 都不会越过该边界。领域写入继续使用所属 Harness service 或专用 feature action。
+`./plugin-host-session-bridge` 入口在自身 Fiber 生命周期内通过 composition-private control 把两个 app-owned read source 挂接到 `bluePluginHost`。公共插件获得 field-scoped `session.read` facade 与 exact-key `session.projections.read` facade；JSON 分离、大小上限、epoch/sequence fence、owner reload 和 consumer unload 均由 API host 托管。generic `session.act` 已移除，未收窄的 projection source 与内部宽口径 `blueSessionActions` 都不会越过该边界。领域写入继续使用所属 Harness service 或专用 feature action。
 
 ## 模型体验
 

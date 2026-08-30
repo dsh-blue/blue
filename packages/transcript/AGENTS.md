@@ -91,8 +91,9 @@ only `status.provider`, subscribes candidates and the app-owned readonly
 session reader, and follows both settings updates and the settings-source-ready
 handoff. Its unload detaches provider generations and restores the default
 without changing the persisted desired id. Status-provider snapshots retain
-the app-owned session revision while cloning and freezing the session/model
-data, so provider generations observe the same public read fence.
+the app-owned session revision and epoch while cloning and freezing the
+session/model data, so provider generations observe the same public read
+fence and cannot carry a snapshot across a same-id session generation.
 
 `status.provider` is retained as an Experimental/reference runtime in the Beta
 host. It is not part of the Stable v1 capability root; the owner and fixtures

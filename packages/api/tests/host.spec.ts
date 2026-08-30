@@ -66,7 +66,7 @@ function attach(host: BluePluginHostService, capabilities: BluePluginManifest['c
 }
 
 function sessionValue(revision = 1, id = 'session-one'): BlueSessionSnapshot {
-  return { revision, id, cwd: '/workspace', status: 'idle', mode: 'normal', model: { id: 'model', provider: 'provider', effort: 'high' } }
+  return { revision, sessionEpoch: 1, id, cwd: '/workspace', status: 'idle', mode: 'normal', model: { id: 'model', provider: 'provider', effort: 'high' } }
 }
 
 function sessionSource(initial: BlueSessionSnapshot | null = sessionValue()) {
@@ -980,10 +980,10 @@ describe('BluePluginHostService', () => {
     const seen: Array<BlueSessionSnapshot | null> = []
     const subscription = read.value.session!.subscribe(snapshot => { seen.push(snapshot) })
     expect(seen.map(snapshot => snapshot?.revision ?? null)).toEqual([1])
-    source.publish({ revision: 2, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan' })
-    source.publish({ revision: 3, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan', model: { id: 'minimal' } })
-    source.publish({ revision: 1, id: 'session-one', cwd: '/stale', status: 'failed', mode: 'yolo' })
-    source.publish({ revision: -1, id: 'invalid', cwd: '/', status: 'idle', mode: 'normal' } as never)
+    source.publish({ revision: 2, sessionEpoch: 1, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan' })
+    source.publish({ revision: 3, sessionEpoch: 1, id: 'session-one', cwd: '/next', status: 'running', mode: 'plan', model: { id: 'minimal' } })
+    source.publish({ revision: 1, sessionEpoch: 1, id: 'session-one', cwd: '/stale', status: 'failed', mode: 'yolo' })
+    source.publish({ revision: -1, sessionEpoch: 1, id: 'invalid', cwd: '/', status: 'idle', mode: 'normal' } as never)
     expect(seen.map(snapshot => snapshot?.revision ?? null)).toEqual([1, 2, 3])
     expect(seen[2]?.model).toEqual({ id: 'minimal' })
     expect(Object.isFrozen(seen[1])).toBe(true)

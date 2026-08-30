@@ -16,7 +16,7 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 
 ## 2. 当前 Beta 公共插件 API
 
-第三方插件通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力。当前 host/API version 为 `1.0.0-beta.1`，manifest 使用 `^1.0.0-beta.1`。Beta 能力是 `commands`、`status`、`panes`、`overlays`、`notifications.publish` 与 `session.read`；editor/provider facet 只保留为 Experimental/reference runtime。契约归 `@dsh-blue/blue-api` 所有，入口只接受 renderer-neutral view 和 capability-specific action/result。
+第三方插件通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请能力。当前 host/API version 为 `1.0.0-beta.1`，manifest 使用 `^1.0.0-beta.1`。Beta 能力是 `commands`、`status`、`panes`、`overlays`、`notifications.publish`、`session.read` 与 `session.projections.read`；editor/provider facet 只保留为 Experimental/reference runtime。契约归 `@dsh-blue/blue-api` 所有，入口只接受 renderer-neutral view 和 capability-specific action/result。
 
 | Capability | 公共对象 | 当前 consumer bridge | 行为 |
 |---|---|---|---|
@@ -26,13 +26,14 @@ Blue 的 seam 不是单一类型，而是五类显式边界：
 | `overlays` | `BlueOverlayRequest` | core plugin surface bridge | 贡献 canonical overlay；capturing surface 必须消费当前 Blue user gesture，close/refresh 与 owner generation 绑定 |
 | `commands` | `BlueCommandContribution` | `blue-plugin-interaction-bridge` -> Harness commands | 注册结构化异步命令；卸载时撤销，late result 不回写 |
 | `notifications.publish` | publish-only `BlueNotification` facade | `blue-plugin-interaction-bridge` -> editor notice | 发布 renderer-neutral 通知；普通插件不能订阅全局通知流 |
-| `session.read` | `BlueSessionReader` | app session owner bridge | `current/subscribe` only；snapshot revision 单调、深度冻结，owner/consumer unload fenced |
+| `session.read` | `BluePluginSessionReader` | app session owner bridge | result-bearing `current/subscribe`；exact field grant，revision + sessionEpoch fence，深度冻结，owner/consumer unload fenced |
+| `session.projections.read` | `BlueSessionProjectionReader` | app projection owner bridge | exact key grant；`currentMany` 返回同一 `sessionEpoch/asOfSeq` cut，JSON/size bound、key unload、owner reload 与 stale/late fence 由 host 托管 |
 | `editor.extensions` (Experimental) | inert extension contribution | interaction plugin-host bridge | callback 由 frontend-tree owner 执行并受 abort/stale/unload fence |
 | `editor.provider` (Experimental) | inert editor-shell candidate | editor-provider owner | 用户选择后原子切换；保留 editor engine 与 plain fallback |
 
-`session.read` 是唯一公开 session facade。generic `session.act` 已从 manifest、types 与 host facade 删除；领域写入继续使用其所属 Harness service 或专用 feature action，不建立通用替代。owner bridge 未激活时 read 返回 unavailable/null，不会退回私有 app/Harness service。旧 `dock`、`panels`、`editor` 和 `tools` 不再是公开 capability；validator 与未类型化的 host input 都返回具体迁移建议。
+`session.read` 与 `session.projections.read` 是两个独立的公开只读 facade。`null` 只表示 owner 在线但当前无 session；owner bridge 未激活时返回 `BLUE_CAPABILITY_ABSENT`，不会退回私有 app/Harness service，也不会复用上一 owner 的 projection value。generic `session.act` 已从 manifest、types 与 host facade 删除；领域写入继续使用其所属 Harness service 或专用 feature action，不建立通用替代。旧 `dock`、`panels`、`editor` 和 `tools` 不再是公开 capability；validator 与未类型化的 host input 都返回具体迁移建议。
 
-owner attach、aggregate snapshot/observe、notification observe、gesture mint 与 semantic close 通过 composition-private `bluePluginControl` 执行。默认 bundle 把该 control 与 raw session/projection/action backing services 放在 `blue-runtime-private` 隔离 realm 中；普通 sibling 只能 inject public `bluePluginHost`。
+owner attach、aggregate snapshot/observe、notification observe、gesture mint 与 semantic close 通过 composition-private `bluePluginControl` 执行。默认 bundle 把该 control 与未收窄的 session/projection/action backing services 放在 `blue-runtime-private` 隔离 realm 中；普通 sibling 只能 inject public `bluePluginHost`。
 
 ## 3. 产品内部 seam
 
@@ -41,8 +42,8 @@ owner attach、aggregate snapshot/observe、notification observe、gesture mint 
 | Owner | Seam | Contract / provider | Consumer |
 |---|---|---|---|
 | core | `blueScreen`、`blueKeymap`、`blueComponents`、`blueTerminalInfo`、`blueTheme` | `packages/core/src/types.ts` 与主题 provider | transcript、interaction 的 TUI adapter；只有 core 接触 pi-tui/raw terminal |
-| app | `blueSessionReader` | readonly revisioned `BlueSessionSnapshot`；公开 bridge 只装配 reader facet | transcript、interaction、context adapter、public plugin host |
-| app | `blueSessionProjections` | `current/currentMany/children/subscribe`，只返回 immutable projection values + seq | conversation/status/bottom-pane/context consumers |
+| app | `blueSessionReader` | readonly revisioned `BlueSessionSnapshot`，含 required `sessionEpoch`；公开 bridge 只向 host 提供 owner source | transcript、interaction、context adapter、public plugin host |
+| app | `blueSessionProjections` | `current/currentMany/children/subscribe`；当前 session cut 携带 `sessionEpoch` + seq，公开 host 再做 exact-key/JSON/size scope | conversation/status/bottom-pane/context consumers、public plugin host |
 | app | `blueSessionActions` | followup/steer/interrupt、session details、mode/model/preset/tool/skill、side session 等结构化 action | interaction commands 和 BTW pane |
 | app | `blueRetractions` / `blueRequests` | request/session epoch guard 与 retract lifecycle | input、conversation/transcript lifecycle |
 | conversation | `blueConversation`、`blueConversationFacts` + `blueConversationProjection` readiness | official `SessionProjectionRegistry` owns replay/live/checkpoint/watermark | official transcript model、status 和 dock facts |

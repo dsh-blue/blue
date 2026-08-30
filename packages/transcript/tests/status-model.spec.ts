@@ -18,7 +18,7 @@ function entry(id: string, content: string, options: Partial<BlueStatusEntry> = 
 }
 
 function session(id = 'session', status: BlueSessionSnapshot['status'] = 'idle'): BlueSessionSnapshot {
-  return { revision: 1, id, cwd: '/tmp', status, mode: 'normal', model: { id: 'model', provider: 'provider' } }
+  return { revision: 1, sessionEpoch: 1, id, cwd: '/tmp', status, mode: 'normal', model: { id: 'model', provider: 'provider' } }
 }
 
 function composition(options: { now?: () => number, components?: BlueComponents } = {}) {

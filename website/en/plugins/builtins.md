@@ -103,7 +103,7 @@ These nine rows plus assembly form the minimum usable UI. The locale runtime/set
 | `blue-plugin-interaction-bridge` | public command/publish-only notification plus Experimental editor-extension contributions into Harness/editor consumers |
 | `blue-startup` | `[task]` and `--resume` startup values |
 | `blue-app` | Agent driver providing readonly session reader/projections and structured actions |
-| `blue-plugin-session-bridge` | uses private control to attach only the app's strict reader as public readonly `session.read` |
+| `blue-plugin-session-bridge` | uses private control to adapt app read sources into exact-field `session.read` and exact-key `session.projections.read` |
 
 ## Validation-only packages
 

@@ -162,7 +162,7 @@ describe('canonical v1 capability admission', () => {
     expect(negotiateBlueCapabilities(manifest([status]), { policy: () => false })).toMatchObject({ ok: false, code: 'BLUE_POLICY_DENIED', capability: 'status' })
     expect(negotiateBlueCapabilities(manifest([status]), { ownerReady: () => false })).toMatchObject({ ok: true, grants: [{ name: 'status', availability: 'unavailable' }], unavailableOptional: [] })
     expect(negotiateBlueCapabilities(manifest([], [status]), { ownerReady: () => false })).toMatchObject({ ok: true, grants: [{ availability: 'unavailable' }], unavailableOptional: [{ reason: 'owner-gap' }] })
-    expect(negotiateBlueCapabilities(manifest([], [projections(['costUsage'])]))).toMatchObject({ ok: true, grants: [], unavailableOptional: [{ name: 'session.projections.read', reason: 'unsupported' }] })
+    expect(negotiateBlueCapabilities(manifest([], [projections(['costUsage'])]))).toMatchObject({ ok: true, grants: [{ name: 'session.projections.read', resources: { keys: ['costUsage'] } }], unavailableOptional: [] })
   })
 
   it('rejects an empty resource intersection and honours custom catalog definitions', () => {
@@ -172,6 +172,11 @@ describe('canonical v1 capability admission', () => {
       ? { ...definition, supported: false }
       : definition)
     expect(negotiateBlueCapabilities(manifest([status]), { catalog: custom })).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_UNSUPPORTED' })
+    expect(negotiateBlueCapabilities(manifest([], [status]), { catalog: custom })).toMatchObject({
+      ok: true,
+      grants: [],
+      unavailableOptional: [{ name: 'status', reason: 'unsupported' }],
+    })
   })
 
   it('negotiates every resource shape and defensive error branch', () => {
@@ -245,9 +250,9 @@ describe('canonical host projection', () => {
     const owner = consumer()
     attachBluePluginHostCapabilities(host, owner, ['commands', 'status', 'notifications.publish', 'panes', 'overlays'])
     attachBluePluginHostSessionReader(host, owner, {
-      current: () => ({ revision: 1, id: 's', cwd: '/', status: 'idle', mode: 'normal' }),
+      current: () => ({ revision: 1, sessionEpoch: 1, id: 's', cwd: '/', status: 'idle', mode: 'normal' }),
       subscribe: listener => {
-        listener({ revision: 1, id: 's', cwd: '/', status: 'idle', mode: 'normal' })
+        listener({ revision: 1, sessionEpoch: 1, id: 's', cwd: '/', status: 'idle', mode: 'normal' })
         return { disposed: false, dispose: () => {} }
       },
     })
@@ -268,13 +273,13 @@ describe('canonical host projection', () => {
     expect(opened.value.notifications).toBeDefined()
     expect(opened.value.panes).toBeDefined()
     expect(opened.value.overlays).toBeDefined()
-    expect(opened.value.session?.current()).toMatchObject({ id: 's' })
+    expect(opened.value.session?.current()).toMatchObject({ ok: true, value: { id: 's', sessionEpoch: 1 } })
     expect(opened.value.notifications?.publish({ id: 'notice', view: { kind: 'text', content: 'notice' } })).toMatchObject({ ok: true })
     const sessionSubscription = opened.value.session?.subscribe(() => {})
-    sessionSubscription?.dispose()
+    if (sessionSubscription?.ok) sessionSubscription.value.dispose()
     c.dispose()
     expect(opened.value.commands?.list()).toEqual([])
-    expect(opened.value.session?.current()).toBeNull()
+    expect(opened.value.session?.current()).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
   })
 
   it('rolls back canonical consumer admission when effect registration throws', () => {

@@ -57,9 +57,10 @@ Integration is a single move: **declare a manifest → `open()` to receive a cap
 | [`panes`](/en/plugins/dock) | placement, canonical node, and structured events | plugin surfaces in header/left/right/bottom lanes |
 | [`overlays`](/en/plugins/dock#overlay-contract) | canonical overlay request and structured events | overlays managed by Blue focus and lifecycle |
 | [`notifications.publish`](/en/plugins/notifications) | publish-only `BlueNotification` | editor notice bar; no global observation |
-| [`session.read`](/en/plugins/session) | revisioned, deeply frozen current-session snapshot | `current()` and effect-bound `subscribe()` |
+| [`session.read`](/en/plugins/session) | exact-field, epoch/revision-fenced, deeply frozen current-session snapshot | result-bearing `current()` and effect-bound `subscribe()` |
+| [`session.projections.read`](/en/plugins/session#projection-cuts) | exact-key projection JSON cuts with epoch/seq fences | `current()`, consistent `currentMany()`, and key-set `subscribe()` |
 
-Generic `session.act` has been removed; writes use the owning Harness service or a feature-owned action. A missing `session.read` owner returns unavailable/null and never falls back to raw app services. The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
+Generic `session.act` has been removed; writes use the owning Harness service or a feature-owned action. `null` means the read owner is online with no current session; a missing read owner returns `BLUE_CAPABILITY_ABSENT` and never falls back to an unscoped app service. The old `dock`, `panels`, `editor`, and `tools` names have been removed from the public manifest; validation returns a concrete migration message.
 
 ## Documentation map
 
@@ -71,7 +72,7 @@ Generic `session.act` has been removed; writes use the owning Harness service or
 
 **Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
 
-- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Editor providers](/en/plugins/editor-providers) · [Panes and overlays](/en/plugins/dock) · [Notifications](/en/plugins/notifications)
+- [Commands](/en/plugins/commands) · [Status bar and exclusive provider](/en/plugins/status) · [Editor extensions](/en/plugins/editor-extensions) · [Editor providers](/en/plugins/editor-providers) · [Panes and overlays](/en/plugins/dock) · [Notifications](/en/plugins/notifications) · [Read-only session data](/en/plugins/session)
 
 **Validation and publishing**
 

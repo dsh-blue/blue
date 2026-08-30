@@ -21,6 +21,10 @@ import {
   type BluePluginManifestV1,
   type BluePluginCapabilityNameV1,
 } from './manifest-v1.generated.ts'
+import {
+  BLUE_PROJECTION_CUT_MAX_BYTES,
+  BLUE_PROJECTION_VALUE_MAX_BYTES,
+} from './session-data.ts'
 
 /** Resource domains understood by the v1 catalog. */
 export type BlueCapabilityResourceKind = 'names' | 'placements' | 'fields' | 'keys'
@@ -140,10 +144,16 @@ const DEFINITIONS: readonly BlueCapabilityDefinition[] = [
   {
     name: 'session.projections.read',
     version: '1.0.0',
-    supported: false,
+    supported: true,
     resourceKind: 'keys',
-    resources: Object.freeze([]),
-    limits: Object.freeze({ maxKeys: RESOURCE_LIMITS.keys }),
+    // Projection keys are domain-defined. Admission grants the exact declared
+    // names; runtime reads still require each key to exist in the live Host
+    // projection registry.
+    limits: Object.freeze({
+      maxKeys: RESOURCE_LIMITS.keys,
+      maxValueBytes: BLUE_PROJECTION_VALUE_MAX_BYTES,
+      maxCutBytes: BLUE_PROJECTION_CUT_MAX_BYTES,
+    }),
     quotas: Object.freeze({}),
   },
 ]

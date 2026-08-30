@@ -206,6 +206,8 @@ export class FakeFactsService {
     const options = agent.options ?? {}
     const selectedModel = session.requestHeader?.()?.config.model ?? options.model
     return {
+      revision: 1,
+      sessionEpoch: 1,
       id: String(session.id ?? agent.id),
       cwd: session.header.cwd ?? process.cwd(),
       status: agent.status === 'running' ? 'running' : 'idle',

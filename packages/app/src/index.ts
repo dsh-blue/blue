@@ -342,7 +342,7 @@ export function apply(ctx: Context, config: Config): void {
   const sessionListeners = new Set<(snapshot: BlueSessionSnapshot | null) => void>()
   let sessionRevision = 0
   let currentSnapshot: BlueSessionSnapshot | null = null
-  const projectionListeners = new Set<(key: string, value: unknown, seq: number) => void>()
+  const projectionListeners = new Set<(key: string, value: unknown, seq: number, sessionEpoch: number) => void>()
   const childProjectionListeners = new Set<(child: BlueChildSessionProjectionSnapshot & { readonly key: string }) => void>()
   const modeState = (): BlueSessionModeState | undefined => {
     const active = session.current
@@ -360,6 +360,7 @@ export function apply(ctx: Context, config: Config): void {
     const selection = session.modelRef?.current
     return Object.freeze({
       revision,
+      sessionEpoch: requests.sessionEpoch,
       id: String(active.id),
       cwd: active.session.header.cwd ?? process.cwd(),
       status: active.status === 'running' ? 'running' : 'idle',
@@ -487,15 +488,22 @@ export function apply(ctx: Context, config: Config): void {
       const active = session.current
       if (active === null || projectionSource === undefined) return undefined
       const value = projectionSource.snapshot(active.session)
-      return { asOfSeq: value.asOfSeq, value: value.values[key] }
+      return { sessionEpoch: requests.sessionEpoch, asOfSeq: value.asOfSeq, value: value.values[key] }
     },
     currentMany(keys) {
       const active = session.current
       if (active === null || projectionSource === undefined) return undefined
       const snapshot = projectionSource.snapshot(active.session)
+      const values: Record<string, unknown> = {}
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(snapshot.values, key)) {
+          Object.defineProperty(values, key, { enumerable: true, value: snapshot.values[key] })
+        }
+      }
       return {
+        sessionEpoch: requests.sessionEpoch,
         asOfSeq: snapshot.asOfSeq,
-        values: Object.fromEntries(keys.map(key => [key, snapshot.values[key]])),
+        values,
       }
     },
     subscribe(listener) {
@@ -517,7 +525,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.provide('blueSessionProjections', sessionProjections)
   const offProjection = projectionSource?.onChanged((eventSession, key, value, seq) => {
     if (eventSession === session.current?.session) {
-      for (const listener of projectionListeners) listener(key, value, seq)
+      for (const listener of projectionListeners) listener(key, value, seq, requests.sessionEpoch)
       return
     }
     const child = childSessions().find(candidate => candidate.session === eventSession)
