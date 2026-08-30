@@ -799,7 +799,11 @@ describe('compileBlueUiNode', () => {
     tabs.focusTarget!.handleInput?.('\t')
     const tabRow = tabs.component.render(40).join('')
     expect(tabRow).toContain('‹ Active ›')
-    expect(tabRow).toContain(`${CURSOR_MARKER} Focused`)
+    expect(tabRow).toContain(`${CURSOR_MARKER} → Focused`)
+    expect(tabRow.replaceAll(CURSOR_MARKER, '')).toContain('→ Focused')
+    const tabLayoutRow = layout(tabs.component as Component, 40, 1).lines.join('')
+    expect(tabLayoutRow).toContain(`${CURSOR_MARKER} → Focused`)
+    expect(tabLayoutRow.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
 
     const list = compiled(ui.list({ id: 'list', mode: 'multiple', selectedIds: ['selected'], items: [
       { id: 'plain', label: 'Plain' },
