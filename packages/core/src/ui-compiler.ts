@@ -200,6 +200,7 @@ type ControlDescriptor =
 interface FocusState {
   activeKey: string | undefined
   lastIndex: number
+  lastGroupIndex: number
   focused: boolean
   layoutPass: boolean
   pendingConfirmation: string | undefined
@@ -212,6 +213,30 @@ interface FocusState {
   setSelectValue(key: string, canonical: string | null, value: string | null): void
   setToggleValue(key: string, canonical: boolean, value: boolean): void
   setLayoutViewport(viewport: BlueUiViewport): void
+}
+
+interface ControlGroup {
+  readonly id: string
+  readonly entries: readonly { readonly control: ControlDescriptor, readonly index: number }[]
+}
+
+function controlGroups(controls: readonly ControlDescriptor[]): ControlGroup[] {
+  const groups: { id: string, entries: { control: ControlDescriptor, index: number }[] }[] = []
+  const byId = new Map<string, { id: string, entries: { control: ControlDescriptor, index: number }[] }>()
+  for (const [index, control] of controls.entries()) {
+    let group = byId.get(control.group)
+    if (group === undefined) {
+      group = { id: control.group, entries: [] }
+      byId.set(control.group, group)
+      groups.push(group)
+    }
+    group.entries.push({ control, index })
+  }
+  return groups
+}
+
+function preferredControlIndex(group: ControlGroup): number {
+  return (group.entries.find(entry => entry.control.preferred) ?? group.entries[0]!).index
 }
 
 function safeViewport(getViewport: () => BlueUiViewport): BlueUiViewport {
@@ -479,13 +504,14 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
         break
       case 'form':
         for (const field of current.fields) if (field.disabled !== true) {
-          const base: ControlBase = { key: `${currentPath}:field:${field.id}`, preferred: false, group: currentPath, navigation: 'vertical' }
+          const key = `${currentPath}:field:${field.id}`
+          const base: ControlBase = { key, preferred: true, group: key, navigation: 'none' }
           if (field.kind === 'toggle') controls.push({ ...base, kind: 'toggle', field })
           else if (field.kind === 'select') controls.push({ ...base, kind: 'select', field })
           else controls.push({ ...base, kind: 'text', field })
         }
-        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: `${currentPath}:submit`, preferred: false, group: currentPath, navigation: 'vertical', form: current, formPath: currentPath })
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: currentPath, navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: `${currentPath}:submit`, preferred: true, group: `${currentPath}:actions`, navigation: 'horizontal', form: current, formPath: currentPath })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: `${currentPath}:actions`, navigation: 'horizontal', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'actions':
         for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.intent === 'primary', group: currentPath, navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
@@ -629,15 +655,19 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
     state.activeKey = undefined
     state.pendingConfirmation = undefined
     state.lastIndex = 0
+    state.lastGroupIndex = 0
     return controls
   }
+  const groups = controlGroups(controls)
   const current = controls.findIndex(control => control.key === state.activeKey)
   if (current >= 0) {
     state.lastIndex = current
+    state.lastGroupIndex = groups.findIndex(group => group.id === controls[current]!.group)
     return controls
   }
-  const preferred = controls.findIndex(control => control.preferred)
-  state.lastIndex = preferred >= 0 ? preferred : Math.min(state.lastIndex, controls.length - 1)
+  state.lastGroupIndex = Math.min(state.lastGroupIndex, groups.length - 1)
+  const group = groups[state.lastGroupIndex]!
+  state.lastIndex = preferredControlIndex(group)
   state.pendingConfirmation = undefined
   state.activeKey = controls[state.lastIndex]!.key
   return controls
@@ -707,6 +737,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     runtimeState = {
       activeKey: undefined,
       lastIndex: 0,
+      lastGroupIndex: 0,
       focused: false,
       layoutPass: false,
       pendingConfirmation: undefined,
@@ -793,6 +824,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     const focus = {
       activeKey: this.state.activeKey,
       lastIndex: this.state.lastIndex,
+      lastGroupIndex: this.state.lastGroupIndex,
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
       pendingConfirmation: this.state.pendingConfirmation,
@@ -808,6 +840,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     } finally {
       this.state.activeKey = focus.activeKey
       this.state.lastIndex = focus.lastIndex
+      this.state.lastGroupIndex = focus.lastGroupIndex
       this.state.focused = focus.focused
       this.state.layoutPass = focus.layoutPass
       this.state.pendingConfirmation = focus.pendingConfirmation
@@ -823,6 +856,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     const index = controls.findIndex(control => control.kind === 'editor')
     this.state.activeKey = controls[index]!.key
     this.state.lastIndex = index
+    this.state.lastGroupIndex = controlGroups(controls).findIndex(group => group.id === controls[index]!.group)
     this.state.pendingConfirmation = undefined
   }
 
@@ -840,10 +874,12 @@ class CompiledSurface implements BlueEditorShellComponent {
     }
     if (controls.length === 0) return
     const active = controls[this.state.lastIndex]!
+    const groups = controlGroups(controls)
     const moveTo = (index: number): void => {
       this.state.pendingConfirmation = undefined
       this.state.lastIndex = index
       this.state.activeKey = controls[index]!.key
+      this.state.lastGroupIndex = groups.findIndex(group => group.id === controls[index]!.group)
     }
     if (data === '\t' || data === '\x1b[Z') {
       // An editor-only provider shell has nowhere to rove. Preserve the
@@ -853,12 +889,14 @@ class CompiledSurface implements BlueEditorShellComponent {
         this.editor?.handleInput?.(data)
         return
       }
+      if (groups.length === 1) {
+        this.state.pendingConfirmation = undefined
+        return
+      }
       const delta = data === '\t' ? 1 : -1
-      moveTo((this.state.lastIndex + controls.length + delta) % controls.length)
-      return
-    }
-    if (active.kind === 'text') {
-      this.state.textEditor(active.field, active.key).handleInput?.(data)
+      const groupIndex = groups.findIndex(group => group.id === active.group)
+      const nextGroup = groups[(groupIndex + groups.length + delta) % groups.length]!
+      moveTo(preferredControlIndex(nextGroup))
       return
     }
     if (active.kind === 'editor') {
@@ -866,7 +904,10 @@ class CompiledSurface implements BlueEditorShellComponent {
       return
     }
     const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
-    if (active.kind === 'select' && direction !== 0) {
+    const matchingDirection = direction !== 0 && (active.navigation === 'horizontal'
+      ? data === '\x1b[D' || data === '\x1b[C'
+      : active.navigation === 'vertical' && (data === '\x1b[A' || data === '\x1b[B'))
+    if (active.kind === 'select' && (data === '\x1b[D' || data === '\x1b[C')) {
       const enabled = active.field.options.filter(option => option.disabled !== true)
       if (enabled.length === 0) return
       const current = this.state.fieldValue(active.field, active.key)
@@ -877,16 +918,17 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.setSelectValue(active.key, active.field.value, enabled[nextIndex]!.id)
       return
     }
-    if (direction !== 0) {
-      const matchingDirection = active.navigation === 'horizontal'
-        ? data === '\x1b[D' || data === '\x1b[C'
-        : active.navigation === 'vertical' && (data === '\x1b[A' || data === '\x1b[B')
-      if (!matchingDirection) return
+    if (matchingDirection) {
       const siblings = controls.map((control, index) => ({ control, index })).filter(entry => entry.control.group === active.group)
       const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
       moveTo(siblings[(siblingIndex + siblings.length + direction) % siblings.length]!.index)
       return
     }
+    if (active.kind === 'text') {
+      this.state.textEditor(active.field, active.key).handleInput?.(data)
+      return
+    }
+    if (direction !== 0) return
     if (data !== '\r' && data !== '\n' && data !== ' ') return
     if (active.kind === 'toggle') {
       const value = !this.state.fieldValue(active.field, active.key)

@@ -418,10 +418,10 @@ describe('compileBlueUiNode', () => {
     expect(focus).toBe(result.component)
     focus.focused = true
     expect(focus.render(40).join('')).toContain(CURSOR_MARKER)
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'activate', controlId: 'three' }])
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[D')
     focus.handleInput?.(' ')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'one' })
   })
@@ -437,10 +437,17 @@ describe('compileBlueUiNode', () => {
     focus.focused = true
     focus.render(80)
     focus.handleInput?.('\t')
+    expect(stripTerminalSequences(focus.render(80).find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Right')
     viewport.columns = 40
-    focus.render(40)
+    const fallbackRows = focus.render(40)
+    expect(fallbackRows.join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    expect(stripTerminalSequences(fallbackRows.find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Left')
     focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'activate', controlId: 'left-action' }])
+    viewport.columns = 80
+    focus.render(80)
+    focus.handleInput?.('\x1b[Z')
+    expect(stripTerminalSequences(focus.render(80).find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Right')
   })
 
   it('evaluates every viewport boundary against the live pane snapshot', () => {
@@ -488,7 +495,7 @@ describe('compileBlueUiNode', () => {
     const { options, events } = fixture()
     const focus = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), options).focusTarget!
     focus.focused = true
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.focused = false
     expect(focus.render(20).join('')).not.toContain(CURSOR_MARKER)
     focus.focused = true
@@ -603,9 +610,9 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('\t')
     focus.handleInput?.('\r')
     focus.handleInput?.('\t')
-    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[C')
     expect(focus.render(80).join('\n')).toContain('Choice: Alpha')
-    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     focus.handleInput?.('\t')
     focus.handleInput?.('\r')
@@ -627,14 +634,14 @@ describe('compileBlueUiNode', () => {
     expect(refreshed.component.render(40).join('')).not.toContain('AB')
 
     const selectDraft = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: null, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
-    selectDraft.focusTarget!.handleInput?.('\x1b[A')
+    selectDraft.focusTarget!.handleInput?.('\x1b[D')
     expect(selectDraft.component.render(40).join('')).toContain('Beta')
     const selectRefresh = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: 'b', options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
     expect(selectRefresh.component.render(40).join('')).toContain('Beta')
 
     const noOptionsEvents: unknown[] = []
     const noOptions = compiled(ui.form({ id: 'empty-select', fields: [{ kind: 'select', id: 'empty', label: 'Empty', value: null, options: [{ id: 'disabled', label: 'Disabled', disabled: true }] }] }), fixture({ emit: event => noOptionsEvents.push(event) }).options)
-    noOptions.focusTarget!.handleInput?.('\x1b[B')
+    noOptions.focusTarget!.handleInput?.('\x1b[D')
     noOptions.focusTarget!.handleInput?.('\r')
     expect(noOptionsEvents).toEqual([{ kind: 'value-change', controlId: 'empty', value: null }])
 
@@ -669,6 +676,32 @@ describe('compileBlueUiNode', () => {
     expect(unknown.component.render(20).join('')).toContain('unknown')
   })
 
+  it('keeps text direction keys inside the editor while Tab traverses form fields', () => {
+    const notes = createTestEditor()
+    const name = createTestEditor()
+    const notesInput = vi.spyOn(notes, 'handleInput')
+    const result = compiled(ui.form({
+      id: 'form-navigation',
+      fields: [
+        { kind: 'textarea', id: 'notes', label: 'Notes', value: '' },
+        { kind: 'input', id: 'name', label: 'Name', value: '' },
+      ],
+      submitActionId: 'Save',
+    }), fixture({ resolveTextEditor: id => id === 'notes' ? notes : name }).options)
+    const focus = result.focusTarget!
+
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('\x1b[B')
+    expect(notesInput).toHaveBeenNthCalledWith(1, '\x1b[A')
+    expect(notesInput).toHaveBeenNthCalledWith(2, '\x1b[B')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('x')
+    expect(name.getText()).toBe('x')
+    focus.handleInput?.('\t')
+    focus.focused = true
+    expect(stripTerminalSequences(focus.render(40).find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Save')
+  })
+
   it('requires two activation gestures for confirmed actions and clears pending state locally', () => {
     const escapes: string[] = []
     const { options, events } = fixture({ onUnhandledEscape: () => escapes.push('escape') })
@@ -701,12 +734,12 @@ describe('compileBlueUiNode', () => {
     expect(events).toEqual([])
     focus.handleInput?.(' ')
     expect(events).toEqual([{ kind: 'activate', controlId: 'delete' }])
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'keep' })
   })
 
-  it('routes direction keys within the active pattern while Tab crosses controls', () => {
+  it('routes direction keys within the active group while Tab crosses groups', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
       ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'b', label: 'B' }] }),
@@ -729,6 +762,97 @@ describe('compileBlueUiNode', () => {
     ])
   })
 
+  it('traverses nested tabs, lists, actions, and forms by group preference', () => {
+    const { options, events } = fixture()
+    const tree = ui.stack.column([
+      ui.tabs({ id: 'primary-tabs', activeId: 'details', items: [
+        { id: 'overview', label: 'Overview' },
+        { id: 'details', label: 'Details' },
+        { id: 'accounts', label: 'Accounts' },
+      ] }),
+      ui.tabs({ id: 'detail-tabs', activeId: 'models', items: [
+        { id: 'sites', label: 'Sites' },
+        { id: 'disabled', label: 'Disabled', disabled: true },
+        { id: 'models', label: 'Models' },
+        { id: 'activity', label: 'Activity' },
+      ] }),
+      ui.list({ id: 'rows', selectedIds: ['selected'], items: [
+        { id: 'disabled-row', label: 'Disabled row', disabled: true },
+        { id: 'plain', label: 'Plain row' },
+        { id: 'selected', label: 'Selected row' },
+        { id: 'last', label: 'Last row' },
+      ] }),
+      ui.actions({ id: 'actions', items: [
+        { id: 'regular', label: 'Regular' },
+        { id: 'disabled-action', label: 'Disabled', disabled: true },
+        { id: 'primary', label: 'Primary', intent: 'primary' },
+      ] }),
+      ui.form({
+        id: 'form',
+        fields: [
+          { kind: 'input', id: 'disabled-field', label: 'Disabled field', value: '', disabled: true },
+          { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+          { kind: 'select', id: 'choice', label: 'Choice', value: null, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] },
+        ],
+        submitActionId: 'Save',
+      }),
+    ])
+    const result = compiled(tree, options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    const expectFocused = (label: string): void => {
+      for (const rows of [result.component.render(100), layout(result.component as Component, 100, 12).lines]) {
+        expect(rows.join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+        const focusedRow = rows.find(row => row.includes(CURSOR_MARKER))
+        expect(stripTerminalSequences(focusedRow ?? '')).toContain(label)
+      }
+    }
+
+    expectFocused('Details')
+    focus.handleInput?.('\x1b[C')
+    expectFocused('Accounts')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    expectFocused('Models')
+    focus.handleInput?.('\x1b[C')
+    expectFocused('Activity')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    expectFocused('Selected row')
+    focus.handleInput?.('\x1b[B')
+    expectFocused('Last row')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    expectFocused('Primary')
+    focus.handleInput?.('\x1b[D')
+    expectFocused('Regular')
+    focus.handleInput?.('\t')
+    expectFocused('Enabled')
+    focus.handleInput?.('\t')
+    expectFocused('Choice')
+    focus.handleInput?.('\x1b[D')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    expectFocused('Save')
+    focus.handleInput?.('\x1b[Z')
+    expectFocused('Choice')
+    focus.handleInput?.('\x1b[Z')
+    expectFocused('Enabled')
+    focus.handleInput?.('\x1b[Z')
+    expectFocused('Primary')
+    focus.handleInput?.('\x1b[Z')
+    expectFocused('Selected row')
+    focus.handleInput?.('\x1b[Z')
+    expectFocused('Models')
+
+    expect(events).toEqual([
+      { kind: 'tab-change', controlId: 'primary-tabs', tabId: 'accounts' },
+      { kind: 'tab-change', controlId: 'detail-tabs', tabId: 'activity' },
+      { kind: 'selection-change', controlId: 'rows', value: 'last' },
+      { kind: 'value-change', controlId: 'choice', value: 'b' },
+    ])
+  })
+
   it('dispatches list-add, form toggle/submit/cancel, loader and empty actions', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
@@ -738,10 +862,19 @@ describe('compileBlueUiNode', () => {
       ui.empty({ title: 'Empty', actions: ui.actions({ id: 'empty-actions', items: [{ id: 'empty-go', label: 'Go' }] }) }),
     ])
     const focus = compiled(tree, options).focusTarget!
-    for (let index = 0; index < 7; index += 1) {
-      focus.handleInput?.('\r')
-      focus.handleInput?.('\t')
-    }
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
     expect(events).toEqual([
       { kind: 'selection-change', controlId: 'list', value: ['item'] },
       { kind: 'value-change', controlId: 'toggle', value: true },
@@ -797,6 +930,10 @@ describe('compileBlueUiNode', () => {
     const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), fixture({ colors: trackedColors }).options)
     tabs.focusTarget!.focused = true
     tabs.focusTarget!.handleInput?.('\t')
+    expect(tabs.component.render(40).join('')).toContain(`${CURSOR_MARKER} → ‹ Active ›`)
+    tabs.focusTarget!.handleInput?.('\x1b[C')
+    tabs.focusTarget!.handleInput?.('\t')
+    tabs.focusTarget!.handleInput?.('\x1b[Z')
     const tabRow = tabs.component.render(40).join('')
     expect(tabRow).toContain('‹ Active ›')
     expect(tabRow).toContain(`${CURSOR_MARKER} → Focused`)
