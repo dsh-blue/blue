@@ -58,17 +58,20 @@ describe('private UI pattern painters', () => {
     ] })
     const wide = renderTabs(node, 80, idle, colors)[0]!
     expect(wide).toContain('‹ ● Alpha › 12')
-    expect(wide).toContain('Beta 3')
+    expect(wide).toContain('○ Beta 3')
     const forty = renderTabs(node, 40, { key: 'c', focused: true, marker: '|' }, colors)[0]!
     expect(forty).not.toContain('12')
-    expect(forty).toContain('|→ Gamma')
+    expect(forty).toContain('|→ ○ Gamma')
     expect(renderTabs(node, 40, { key: 'a', focused: true, marker: '|' }, colors)[0]).toContain('| ‹ ● Alpha ›')
     const disabled = renderTabs(node, 40, { key: 'b', focused: true, marker: '|' }, colors)[0]!
+    expect(disabled).toContain('○ Beta')
     expect(disabled).not.toContain('|')
     expect(disabled).not.toContain('→')
-    const narrow = renderTabs(node, 9, { key: 'c', focused: true, marker: '|' }, colors)[0]!
-    expect(visibleWidth(narrow)).toBeLessThanOrEqual(9)
-    expect(narrow).toContain('|→ Gamma')
+    const disabledActive = renderTabs({ ...node, activeId: 'b' }, 40, idle, colors)[0]!
+    expect(disabledActive).toContain('‹ ● Beta ›')
+    const narrow = renderTabs(node, 11, { key: 'c', focused: true, marker: '|' }, colors)[0]!
+    expect(visibleWidth(narrow)).toBeLessThanOrEqual(11)
+    expect(narrow).toContain('|→ ○ Gamma')
     expect(renderTabs(node, 5, idle, colors)[0]).toHaveLength(5)
     expect(renderTabs(node, 1, { key: 'c', focused: true, marker: '|' }, colors)[0]).toHaveLength(1)
     const primary = vi.fn(identity)
@@ -76,7 +79,7 @@ describe('private UI pattern painters', () => {
     const palette = new Proxy(colors, { get: (target, key, receiver) => key === 'primary' ? primary : key === 'text' ? text : Reflect.get(target, key, receiver) })
     renderTabs(node, 40, { key: 'c', focused: true, marker: '|' }, palette)
     expect(primary).toHaveBeenCalledWith('‹ ● Alpha ›')
-    expect(text).toHaveBeenCalledWith('Gamma')
+    expect(text).toHaveBeenCalledWith('○ Gamma')
   })
 
   it('renders list selection, focus, groups, filtering, detail degradation, and windows', () => {

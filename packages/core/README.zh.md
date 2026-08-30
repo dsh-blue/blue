@@ -30,7 +30,7 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 `compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` 必定先经过上述 validator，再返回 canonical node、pi-tui 支撑的 component，以及至多一个 composite focus target。该 composite 独占 roving focus、实时响应式可见性协调和 event/render 异常隔离；单个控件不会作为 focusable 泄漏。公共文本无法注入 pi-tui cursor marker 或 core 私有 focus sentinel。Component 会暴露真实的 pi-tui layout node，使嵌套 stack/scroll 获得实际分配高度。Direct render（包括 AltScreen stop replay）使用私有 sentinel，在完整合成后替换；AltScreen layout pass 中 pi-tui 会刻意绕过 wrapper `render`，因此 active leaf 在 composite focus 协调后使用等宽 cursor-marker adapter。两条路径均保证聚焦时恰好一个 marker、失焦时没有 marker，并由真实 layout-frame 测试锁定 HStack 文本完整性。
 
-当 canonical tree 含 tabs 时，`Tab` / `Shift+Tab` 只在标签组之间循环。左右键移动当前标签组候选，Enter 或 Space 激活，向下键进入内容区；进入后用上下键浏览纵向条目及相邻内容控件组，在第一个内容条目按向上键会返回此前标签组。不含 tabs 的界面仍用 Tab 遍历全部交互控件组。surface refresh 后，只要原 canonical control/item 仍可见，就会恢复同一候选及此前标签层级，因此确认候选不会重置焦点。active tab 显示为 `‹ ● 标签 ›`；聚焦 active tab 时不再显示多余箭头，只有聚焦的非 active 候选保留 `→`。
+当 canonical tree 含 tabs 时，`Tab` / `Shift+Tab` 只在标签组之间循环。左右键移动当前标签组候选，Enter 或 Space 激活，向下键进入内容区；进入后用上下键浏览纵向条目及相邻内容控件组，在第一个内容条目按向上键会返回此前标签组。不含 tabs 的界面仍用 Tab 遍历全部交互控件组。surface refresh 后，只要原 canonical control/item 仍可见，就会恢复同一候选及此前标签层级，因此确认候选不会重置焦点。Core 统一把 active tab 显示为 `‹ ● 标签 ›`、inactive tab 显示为 `○ 标签`，disabled tab 也保留该状态语义；`BlueTabItem.label` 只承载业务文本，不应自行包含状态点、焦点箭头或 chip 定界符。聚焦 active tab 时不再显示多余箭头，只有聚焦的非 active 候选保留 `→`。
 
 action 可通过 `shortcutFor` 把语义 `pageup` / `pagedown` shortcut 绑定到 tabs、list 或 form id；只有焦点位于对应 scope 时才会分派。`focusable: false` 会让分页控件完全退出 roving-focus 路径。
 

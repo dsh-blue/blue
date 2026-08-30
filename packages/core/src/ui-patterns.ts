@@ -238,7 +238,7 @@ export function renderTabs(node: TabsNode, width: number, focus: PatternFocus, c
   const tokens = node.items.map(item => {
     const active = item.id === node.activeId
     const focused = focus.focused && focus.key === item.id && item.disabled !== true
-    const label = `${active ? `‹ ● ${item.label} ›` : item.label}${showCounts && item.count !== undefined ? ` ${String(item.count)}` : ''}`
+    const label = `${active ? `‹ ● ${item.label} ›` : `○ ${item.label}`}${showCounts && item.count !== undefined ? ` ${String(item.count)}` : ''}`
     const content = item.disabled === true ? colors.muted(label) : active ? colors.primary(label) : colors.text(label)
     const prefix = focused ? active ? `${focus.marker} ` : `${focus.marker}→ ` : '  '
     return { value: `${prefix}${content}`, focused, active }

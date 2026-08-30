@@ -193,7 +193,7 @@ status
 
 - 聚焦选择行：`→ ` + primary label + selectedBg。
 - 持久选中但未聚焦：`✓` 或 control 自身状态，不使用整行背景。
-- active tab：`‹ label ›` + primary + bold；非 active 使用 muted。
+- tabs 的状态 chrome 由 core 统一生成：active 为 `‹ ● label ›` + primary，inactive 为 `○ label`；disabled 保留 `●` / `○` 状态语义并使用 muted。`label` 只含业务文本，不自行添加状态点、箭头或 chip 定界符。
 - 下钻：行尾 `›`；当前值：`← current`；更多内容：`↑/↓` 或计数。
 - disabled：textMuted，无指针、无 background、不可获得焦点。
 - error：字段下方一行 error，不只改变边框颜色。
