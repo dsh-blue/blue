@@ -398,6 +398,37 @@
       }
     },
     {
+      "id": "projection-resource-too-long",
+      "valid": false,
+      "code": "BLUE_PLUGIN_MANIFEST_SCHEMA_INVALID",
+      "manifest": {
+        "$schema": "https://dsh-blue.dev/schema/blue.plugin.v1.schema.json",
+        "schemaVersion": 1,
+        "id": "@acme/example",
+        "entry": "./blue",
+        "api": "^1.0.0-beta.1",
+        "compatibility": {
+          "blue": ">=0.1.1-rc.2",
+          "harness": "^0.1.1-rc.2",
+          "node": ">=22.19.0"
+        },
+        "capabilities": {
+          "required": [
+            {
+              "name": "session.projections.read",
+              "version": "^1.0.0",
+              "resources": {
+                "keys": [
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "optional": []
+        }
+      }
+    },
+    {
       "id": "missing-compatibility",
       "valid": false,
       "code": "BLUE_PLUGIN_MANIFEST_SCHEMA_INVALID",

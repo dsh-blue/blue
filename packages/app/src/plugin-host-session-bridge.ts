@@ -6,7 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueRegistration, BlueSessionProjectionOwner } from '@dsh-blue/blue-api'
+import type { BlueRegistration } from '@dsh-blue/blue-api'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-plugin-session-bridge'
@@ -17,7 +17,7 @@ export const inject = ['bluePluginControl', 'blueSessionReader', 'blueSessionPro
 /** Attach the app-owned session facades for this bridge Fiber's lifetime. */
 export function apply(ctx: Context): void {
   ctx.bluePluginControl.attachSessionReader(ctx, ctx.blueSessionReader)
-  const projections: BlueSessionProjectionOwner = {
+  ctx.bluePluginControl.attachSessionProjections(ctx, {
     currentMany(keys) {
       if (ctx.blueSessionReader.current() === null) return null
       return ctx.blueSessionProjections.currentMany(keys)
@@ -35,6 +35,5 @@ export function apply(ctx: Context): void {
       }
       return registration
     },
-  }
-  ctx.bluePluginControl.attachSessionProjections(ctx, projections)
+  })
 }

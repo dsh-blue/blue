@@ -24,7 +24,6 @@ export {
   type BluePluginHostOptions,
   type BluePluginHostOverlayEntry,
   type BluePluginHostPaneEntry,
-  type BlueSessionProjectionOwner,
 } from './host.ts'
 export {
   BLUE_CAPABILITY_CATALOG_V1,

@@ -1963,7 +1963,7 @@ describe('BluePluginHostService', () => {
     })
     expect(snapshotBluePluginHost(host).overlays).toEqual([])
     const overlappingOwner = attach(host, ['commands', 'status', 'panes', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
-    await ctx.fiber.dispose()
     overlappingOwner.dispose()
+    await ctx.fiber.dispose()
   })
 })

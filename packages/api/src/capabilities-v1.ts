@@ -23,6 +23,14 @@ import {
 } from './manifest-v1.generated.ts'
 import {
   BLUE_PROJECTION_CUT_MAX_BYTES,
+  BLUE_PROJECTION_FINGERPRINT_MAX_BYTES,
+  BLUE_PROJECTION_FINGERPRINT_MAX_KEYS,
+  BLUE_PROJECTION_JSON_KEY_MAX_BYTES,
+  BLUE_PROJECTION_KEY_MAX_LENGTH,
+  BLUE_PROJECTION_MAX_DEPTH,
+  BLUE_PROJECTION_MAX_NODES,
+  BLUE_PROJECTION_MAX_PROPERTIES,
+  BLUE_PROJECTION_PRIMITIVE_MAX_BYTES,
   BLUE_PROJECTION_VALUE_MAX_BYTES,
 } from './session-data.ts'
 
@@ -151,8 +159,16 @@ const DEFINITIONS: readonly BlueCapabilityDefinition[] = [
     // projection registry.
     limits: Object.freeze({
       maxKeys: RESOURCE_LIMITS.keys,
+      maxKeyLength: BLUE_PROJECTION_KEY_MAX_LENGTH,
       maxValueBytes: BLUE_PROJECTION_VALUE_MAX_BYTES,
       maxCutBytes: BLUE_PROJECTION_CUT_MAX_BYTES,
+      maxDepth: BLUE_PROJECTION_MAX_DEPTH,
+      maxNodes: BLUE_PROJECTION_MAX_NODES,
+      maxProperties: BLUE_PROJECTION_MAX_PROPERTIES,
+      maxPrimitiveBytes: BLUE_PROJECTION_PRIMITIVE_MAX_BYTES,
+      maxObjectKeyBytes: BLUE_PROJECTION_JSON_KEY_MAX_BYTES,
+      maxTrackedFingerprints: BLUE_PROJECTION_FINGERPRINT_MAX_KEYS,
+      maxFingerprintBytes: BLUE_PROJECTION_FINGERPRINT_MAX_BYTES,
     }),
     quotas: Object.freeze({}),
   },

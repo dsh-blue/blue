@@ -96,6 +96,19 @@ describe('canonical v1 capability admission', () => {
       maxProperties: 8_192,
       maxPrimitiveBytes: 32_768,
     })
+    expect(definitions.get('session.projections.read')?.limits).toEqual({
+      maxKeys: 64,
+      maxKeyLength: 128,
+      maxValueBytes: 262_144,
+      maxCutBytes: 1_048_576,
+      maxDepth: 64,
+      maxNodes: 16_384,
+      maxProperties: 16_384,
+      maxPrimitiveBytes: 262_144,
+      maxObjectKeyBytes: 1_024,
+      maxTrackedFingerprints: 256,
+      maxFingerprintBytes: 4_194_304,
+    })
 
     let now = 0
     const host = new BluePluginHostService(new Context(), { now: () => now })

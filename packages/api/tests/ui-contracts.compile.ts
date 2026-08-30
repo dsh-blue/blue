@@ -1,4 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
+// @ts-expect-error projection owner sources are composition-private.
+import type { BlueSessionProjectionOwner } from '@dsh-blue/blue-api'
 import type {
   BlueCapability,
   BlueEditorCompletionRequest,
@@ -20,6 +22,8 @@ import type {
   BlueUiEvent,
   BlueUiNode,
 } from '@dsh-blue/blue-api'
+
+export type PrivateProjectionOwnerMustStayUnexported = BlueSessionProjectionOwner
 
 declare const pluginHost: BluePluginHost
 export const contextConsumer = pluginHost.open(new Context(), {

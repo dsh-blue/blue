@@ -19,6 +19,13 @@ import {
   type BluePluginManifestV1,
 } from '../src/protocol-v1.ts'
 import {
+  BLUE_PROJECTION_FINGERPRINT_MAX_KEYS,
+  BLUE_PROJECTION_JSON_KEY_MAX_BYTES,
+  BLUE_PROJECTION_KEY_MAX_LENGTH,
+  BLUE_PROJECTION_MAX_DEPTH,
+  BLUE_PROJECTION_MAX_NODES,
+  BLUE_PROJECTION_MAX_PROPERTIES,
+  BLUE_SESSION_STRING_MAX_BYTES,
   scopeBlueProjectionCut,
   validateBlueSessionSnapshot,
 } from '../src/session-data.ts'
@@ -145,6 +152,18 @@ const projectionRead = (keys: readonly string[]) => ({
 })
 
 describe('canonical session.read data plane', () => {
+  it('bounds every session string before enforcing the aggregate snapshot budget', () => {
+    const exact = 'x'.repeat(BLUE_SESSION_STRING_MAX_BYTES)
+    expect(validateBlueSessionSnapshot({ ...snapshot(), id: exact })?.id).toBe(exact)
+    expect(() => validateBlueSessionSnapshot({ ...snapshot(), cwd: `${exact}x` })).toThrow('session cwd exceeds')
+    expect(() => validateBlueSessionSnapshot({
+      ...snapshot(),
+      id: exact,
+      cwd: exact,
+      model: { id: exact, provider: exact, effort: exact },
+    })).toThrow('session snapshot exceeds')
+  })
+
   it('returns only granted fields plus mandatory epoch/revision fencing metadata', () => {
     const host = new BluePluginHostService(new Context())
     const source = sessionSource()
@@ -397,6 +416,7 @@ describe('canonical session.projections.read data plane', () => {
     expect(opened.value.projections!.currentMany([])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany(['costUsage', 'costUsage'])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany(['bad key'])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(opened.value.projections!.currentMany(['a'.repeat(BLUE_PROJECTION_KEY_MAX_LENGTH + 1)])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany('costUsage' as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany(Array(1) as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany(Array(1_000_000_000) as never)).toEqual({
@@ -510,9 +530,9 @@ describe('canonical session.projections.read data plane', () => {
     const seen: BlueResult<BlueSessionProjectionCut | null>[] = []
     opened.value.projections!.subscribe(['costUsage'], result => { seen.push(result) })
 
-    projections.set(null)
     sessions.publish(null)
     expect(seen.at(-1)).toEqual({ ok: true, value: null })
+    expect(opened.value.projections!.current('costUsage')).toEqual({ ok: true, value: null })
 
     projections.set({ sessionEpoch: 2, asOfSeq: 0, values: { costUsage: 2 } })
     sessions.publish(snapshot(2, 1, 'session-b'))
@@ -838,7 +858,76 @@ describe('canonical session.projections.read data plane', () => {
     const exactCut = { sessionEpoch: 4, asOfSeq: 2, values: { a: 'ok' } }
     const exactCutBytes = new TextEncoder().encode(JSON.stringify(exactCut)).byteLength
     expect(scopeBlueProjectionCut(exactCut, ['a'], 4, exactCutBytes)).toEqual(exactCut)
+    expect(() => scopeBlueProjectionCut(exactCut, ['a'], 3, exactCutBytes)).toThrow('projection key "a" exceeds')
     expect(() => scopeBlueProjectionCut(exactCut, ['a'], 4, exactCutBytes - 1)).toThrow('projection cut exceeds')
+  })
+
+  it('bounds projection fingerprints retained at one epoch and sequence', () => {
+    const countKeys = Array.from({ length: BLUE_PROJECTION_FINGERPRINT_MAX_KEYS + 1 }, (_, index) => `key${String(index)}`)
+    const countValues = Object.fromEntries(countKeys.map((key, index) => [key, index]))
+    const countHost = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionProjections(countHost, consumer(), projectionSource({ sessionEpoch: 30, asOfSeq: 1, values: countValues }).source)
+
+    for (let index = 0; index < countKeys.length; index += 1) {
+      const key = countKeys[index]!
+      const opened = countHost.open(consumer(), manifest([projectionRead([key])], `@acme/fingerprint-count-${String(index)}`))
+      expect(opened.ok).toBe(true)
+      if (!opened.ok) continue
+      expect(opened.value.projections!.current(key)).toMatchObject(index < BLUE_PROJECTION_FINGERPRINT_MAX_KEYS
+        ? { ok: true }
+        : { ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+    }
+
+    const byteKeys = Array.from({ length: 17 }, (_, index) => `bytes${String(index)}`)
+    const byteValues = Object.fromEntries(byteKeys.map(key => [key, 'x'.repeat(250_000)]))
+    const byteSource = projectionSource({ sessionEpoch: 40, asOfSeq: 1, values: byteValues })
+    const byteHost = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionProjections(byteHost, consumer(), byteSource.source)
+    const byteOpened = byteHost.open(consumer(), manifest([projectionRead(byteKeys)], '@acme/fingerprint-bytes'))
+    expect(byteOpened.ok).toBe(true)
+    if (!byteOpened.ok) return
+    for (const key of byteKeys.slice(0, 16)) expect(byteOpened.value.projections!.current(key)).toMatchObject({ ok: true })
+    expect(byteOpened.value.projections!.current(byteKeys[16]!)).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+
+    byteSource.set({ sessionEpoch: 40, asOfSeq: 2, values: byteValues })
+    expect(byteOpened.value.projections!.current(byteKeys[16]!)).toMatchObject({ ok: true })
+  })
+
+  it('rejects hostile projection structure before unbounded descriptor traversal', () => {
+    let deep: unknown = 'leaf'
+    for (let depth = 0; depth <= BLUE_PROJECTION_MAX_DEPTH; depth += 1) deep = { child: deep }
+    expect(() => scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { x: deep } }, ['x'])).toThrow('levels')
+
+    const manyNodes: Record<string, number> = {}
+    for (let index = 0; index < BLUE_PROJECTION_MAX_NODES; index += 1) manyNodes[`n${String(index)}`] = index
+    expect(() => scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { x: manyNodes } }, ['x'])).toThrow('JSON values')
+
+    const remainingBudgetOverflow = Array.from({ length: BLUE_PROJECTION_MAX_NODES - 1 }, () => 0)
+    expect(() => scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { first: 0, second: remainingBudgetOverflow } }, ['first', 'second'])).toThrow('JSON values')
+
+    let descriptorReads = 0
+    const tooManyProperties = new Proxy({}, {
+      ownKeys: () => Array.from({ length: BLUE_PROJECTION_MAX_PROPERTIES + 1 }, (_, index) => `p${String(index)}`),
+      getOwnPropertyDescriptor() {
+        descriptorReads += 1
+        return { configurable: true, enumerable: true, value: 1 }
+      },
+    })
+    expect(() => scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { x: tooManyProperties } }, ['x'])).toThrow('inspected properties')
+    expect(descriptorReads).toBe(0)
+
+    const oversizedKey = 'k'.repeat(BLUE_PROJECTION_JSON_KEY_MAX_BYTES + 1)
+    expect(() => scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { x: { [oversizedKey]: 1 } } }, ['x'])).toThrow('object keys')
+    const symbol = Symbol('ignored')
+    expect(scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { x: { visible: 1, [symbol]: 'hidden' } } }, ['x'])).toEqual({
+      sessionEpoch: 1,
+      asOfSeq: 1,
+      values: { x: { visible: 1 } },
+    })
+
+    const revoked = Proxy.revocable({}, {})
+    revoked.revoke()
+    expect(() => scopeBlueProjectionCut({ sessionEpoch: 1, asOfSeq: 1, values: { x: revoked.proxy } }, ['x'])).toThrow()
   })
 
   it('distinguishes null session, absent backing/key, and invalid owner payloads', () => {

@@ -55,7 +55,7 @@ interface BluePluginSessionSnapshot {
 }
 ```
 
-Only granted fields become own properties. Even when `model` is granted, it is omitted when no model is selected. The host copies and deeply freezes every snapshot. `null` means the owner is online with no active session; it never means the capability is missing.
+Only granted fields become own properties. Even when `model` is granted, it is omitted when no model is selected. The host copies and deeply freezes every snapshot. Each string is limited to 16,384 UTF-8 bytes and the complete snapshot to 65,536 encoded bytes. `null` means the owner is online with no active session; it never means the capability is missing.
 
 Within one session epoch, the session id cannot change and the host accepts only increasing revisions. The epoch/revision/id high-water survives owner gaps; an equal position can restore visibility after owner reload only when the complete canonical snapshot is unchanged, while a conflicting snapshot returns `BLUE_STALE`. A same-id session may restart at a lower revision after its epoch advances. Old epochs and callbacks arriving after the old owner unloads are rejected.
 
@@ -89,9 +89,9 @@ interface BlueSessionProjectionCut {
 }
 ```
 
-Each value must be finite, acyclic JSON. Accessors, sparse arrays, `undefined`, symbols, non-finite numbers, and cycles are rejected. The host detaches and deeply freezes every value. One value is limited to 262,144 encoded bytes and one complete cut to 1,048,576 bytes.
+Resource keys use the canonical ASCII syntax and are limited to 128 characters. Each value must be finite, acyclic JSON. Accessors, sparse arrays, `undefined`, symbols, non-finite numbers, and cycles are rejected. The host detaches and deeply freezes every value. The bounded clone admits at most 64 levels, 16,384 JSON values, and 16,384 inspected own properties across the requested cut; one primitive is limited to 262,144 encoded bytes and one nested object key to 1,024 UTF-8 bytes. The authoritative post-clone limits remain 262,144 encoded bytes per value and 1,048,576 bytes per complete cut.
 
-A missing or unloaded key returns `BLUE_CAPABILITY_ABSENT` without reusing an old value. An old epoch or lower `asOfSeq` returns `BLUE_STALE`. The high-water survives owner gaps; values at an equal position are compared as canonical JSON independently of object key order, and conflicting values return `BLUE_STALE`. Requested key count is bounded by the exact grant before traversal. `subscribe(keys, listener)` replays one consistent cut after registration and reads a new cut only when one of those keys changes. Exact duplicates, stale, malformed, or late owner notifications never reach the listener. When the current session becomes `null`, existing projection subscriptions immediately replay `null` instead of retaining values from the old session.
+A missing or unloaded key returns `BLUE_CAPABILITY_ABSENT` without reusing an old value. An old epoch or lower `asOfSeq` returns `BLUE_STALE`. The high-water survives owner gaps; values at an equal position are compared as canonical JSON independently of object key order, and conflicting values return `BLUE_STALE`. At one epoch/sequence position the host retains at most 256 key fingerprints and 4,194,304 UTF-8 bytes, then clears that bounded set when the position advances. Requested key count is bounded by the exact grant before traversal. `subscribe(keys, listener)` replays one consistent cut after registration and reads a new cut only when one of those keys changes. Exact duplicates, stale, malformed, or late owner notifications never reach the listener. When the current session becomes `null`, existing projection subscriptions immediately replay `null`; subsequent projection reads also return `null` without consulting the backing source, so no old-session value survives.
 
 ```ts
 const projections = opened.value.projections
@@ -120,4 +120,4 @@ When a feature needs followup, steer, interrupt, or another domain mutation:
 - perform the write in the domain package and project a renderer-neutral result to the Blue adapter;
 - when no public domain boundary exists, stop and propose one to the capability owner instead of reading package internals or copying Session state.
 
-A plugin must not directly inject owner-only `blueSessionReader`, `blueSessionProjections`, `blueSessionActions`, or `bluePluginControl`, and must not unwrap `bluePluginHost` to obtain them. The default bundle isolates those unscoped services in its private runtime realm; public plugins use only manifest-scoped facades.
+A plugin must not directly inject owner-only `blueSessionReader`, `blueSessionProjections`, `blueSessionActions`, or `bluePluginControl`, and must not unwrap `bluePluginHost` to obtain them. The composition-private projection-owner type is also absent from the `@dsh-blue/blue-api` package root. The default bundle isolates those unscoped services in its private runtime realm; public plugins use only manifest-scoped facades.

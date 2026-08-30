@@ -105,6 +105,8 @@ has required `revision` and `sessionEpoch` fences, is validated, cloned, and
 deeply frozen, and is scoped to the exact granted fields. `null` means the
 owner is online without a current session. An owner gap returns
 `BLUE_CAPABILITY_ABSENT`; unload permanently returns `BLUE_ACTION_REJECTED`.
+Every owner string is limited to 16,384 UTF-8 bytes and the complete canonical
+snapshot to 65,536 encoded bytes before it can enter host state.
 The host retains the epoch/revision/id high-water and a canonical snapshot
 fingerprint across owner gaps. A session id cannot change inside one epoch;
 lower positions and conflicting data at an equal position are rejected, while
@@ -118,11 +120,21 @@ consistent-cut `currentMany`, and key-set `subscribe`, all scoped to the exact
 granted keys. A cut carries `sessionEpoch` and `asOfSeq`; each value is bounded
 to 262,144 encoded bytes and the complete metadata-plus-values cut to 1,048,576
 bytes. Values must be finite, acyclic JSON and are detached and deeply frozen.
+Projection resource keys use canonical ASCII syntax and stop at 128 characters.
+The pre-clone structural budget is shared by the complete requested cut: depth
+64, 16,384 JSON values, 16,384 inspected own properties, 262,144 encoded bytes
+per primitive, and 1,024 UTF-8 bytes per nested object key. Descriptor reads
+start only after the own-key count fits; exact post-clone value/cut checks remain
+authoritative for JSON syntax and escaping overhead.
 Requested key-array length is rejected before entry traversal when it exceeds
 the exact grant. The global epoch/sequence high-water and canonical per-key
 fingerprints survive owner gaps; JSON object key order is not identity, while
-conflicting values at one position return `BLUE_STALE`. Every valid source
-event advances that global fence before interested subscriptions replay.
+conflicting values at one position return `BLUE_STALE`. Fingerprints retained
+at one position stop at 256 distinct keys or 4,194,304 UTF-8 bytes and are
+cleared when the epoch/sequence fence advances. Every valid source event
+advances that global fence before interested subscriptions replay. When the
+active session owner has published `null`, projection reads return `null`
+without consulting the projection source.
 Unhandled owner throws map to a fixed internal-failure message through a
 non-reflective branded-error path; only host-owned session-data errors retain
 their controlled detail. Key unload and missing backing data produce structured
@@ -134,6 +146,8 @@ a stable listener snapshot. A source subscription returned after reentrant
 owner cleanup is disposed. The owner-only
 `attachSessionProjections` seam is
 separate from generic capability attachment and never enters the guarded host.
+Its source type is composition-private and is not exported from the package
+root; app wiring relies on `bluePluginControl` contextual typing.
 Generic `session.act` and its requester types are absent from the public API;
 domain writes continue through their owning Harness or Blue-internal action
 service. Host state lives in a Host-realm `Symbol.for`-keyed WeakMap rather than

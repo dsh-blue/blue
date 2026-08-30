@@ -20,6 +20,36 @@ export const BLUE_PROJECTION_VALUE_MAX_BYTES = 262_144
 /** Maximum encoded size of one multi-key projection cut. */
 export const BLUE_PROJECTION_CUT_MAX_BYTES = 1_048_576
 
+/** Maximum UTF-8 size of one string in an app-owned session snapshot. */
+export const BLUE_SESSION_STRING_MAX_BYTES = 16_384
+
+/** Maximum encoded size of one app-owned session snapshot. */
+export const BLUE_SESSION_SNAPSHOT_MAX_BYTES = 65_536
+
+/** Maximum nesting depth admitted for one projection value. */
+export const BLUE_PROJECTION_MAX_DEPTH = 64
+
+/** Maximum JSON values visited across one projection cut. */
+export const BLUE_PROJECTION_MAX_NODES = 16_384
+
+/** Maximum own properties inspected across one projection cut. */
+export const BLUE_PROJECTION_MAX_PROPERTIES = 16_384
+
+/** Maximum encoded size of one projection primitive. */
+export const BLUE_PROJECTION_PRIMITIVE_MAX_BYTES = BLUE_PROJECTION_VALUE_MAX_BYTES
+
+/** Maximum UTF-8 size of one nested projection object key. */
+export const BLUE_PROJECTION_JSON_KEY_MAX_BYTES = 1_024
+
+/** Maximum ASCII length of a canonical projection resource key. */
+export const BLUE_PROJECTION_KEY_MAX_LENGTH = 128
+
+/** Maximum distinct key fingerprints retained at one epoch/sequence fence. */
+export const BLUE_PROJECTION_FINGERPRINT_MAX_KEYS = 256
+
+/** Maximum UTF-8 bytes retained by fingerprints at one epoch/sequence fence. */
+export const BLUE_PROJECTION_FINGERPRINT_MAX_BYTES = 4_194_304
+
 interface BlueSessionDataFailure {
   readonly code: BlueErrorCode
   readonly message: string
@@ -72,8 +102,70 @@ function integer(value: unknown, label: string, minimum: number): number {
   return value
 }
 
-function cloneJson(input: unknown, seen = new Set<object>()): BlueJson {
-  if (input === null || typeof input === 'string' || typeof input === 'boolean') return input
+function encodedBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function boundedString(value: unknown, label: string, allowEmpty = true): string {
+  if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) {
+    throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', `${label} must be ${allowEmpty ? 'a string' : 'a non-empty string'}`)
+  }
+  if (utf8Bytes(value) > BLUE_SESSION_STRING_MAX_BYTES) {
+    throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `${label} exceeds ${String(BLUE_SESSION_STRING_MAX_BYTES)} bytes`)
+  }
+  return value
+}
+
+interface ProjectionBudget {
+  nodes: number
+  properties: number
+}
+
+function consumeProjectionNode(budget: ProjectionBudget): void {
+  if (budget.nodes <= 0) {
+    throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `projection cut exceeds ${String(BLUE_PROJECTION_MAX_NODES)} JSON values`)
+  }
+  budget.nodes -= 1
+}
+
+function reserveProjectionProperties(budget: ProjectionBudget, count: number): void {
+  if (count > budget.properties) {
+    throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `projection cut exceeds ${String(BLUE_PROJECTION_MAX_PROPERTIES)} inspected properties`)
+  }
+  budget.properties -= count
+}
+
+function projectionOwnKeys(input: object, budget: ProjectionBudget): readonly PropertyKey[] {
+  const keys = Reflect.ownKeys(input)
+  reserveProjectionProperties(budget, keys.length)
+  for (const key of keys) {
+    if (typeof key === 'string' && utf8Bytes(key) > BLUE_PROJECTION_JSON_KEY_MAX_BYTES) {
+      throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `projection object keys are limited to ${String(BLUE_PROJECTION_JSON_KEY_MAX_BYTES)} bytes`)
+    }
+  }
+  return keys
+}
+
+function cloneJson(
+  input: unknown,
+  budget: ProjectionBudget,
+  seen = new Set<object>(),
+  depth = 0,
+): BlueJson {
+  if (depth > BLUE_PROJECTION_MAX_DEPTH) {
+    throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `projection values are limited to ${String(BLUE_PROJECTION_MAX_DEPTH)} levels`)
+  }
+  consumeProjectionNode(budget)
+  if (input === null || typeof input === 'string' || typeof input === 'boolean') {
+    if (encodedBytes(input) > BLUE_PROJECTION_PRIMITIVE_MAX_BYTES) {
+      throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `projection primitives are limited to ${String(BLUE_PROJECTION_PRIMITIVE_MAX_BYTES)} bytes`)
+    }
+    return input
+  }
   if (typeof input === 'number') {
     if (!Number.isFinite(input)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'projection numbers must be finite')
     return input
@@ -82,36 +174,39 @@ function cloneJson(input: unknown, seen = new Set<object>()): BlueJson {
     throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'projection values must be finite, acyclic JSON data')
   }
   seen.add(input)
-  const descriptors = Object.getOwnPropertyDescriptors(input)
+  const keys = projectionOwnKeys(input, budget)
   if (Array.isArray(input)) {
-    const length = descriptors.length
+    const length = Object.getOwnPropertyDescriptor(input, 'length')
     /* v8 ignore next -- every JavaScript Array has this non-configurable descriptor. */
     if (length === undefined || !('value' in length) || typeof length.value !== 'number') {
       throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'projection array length must be an own data property')
     }
+    if (length.value > budget.nodes) {
+      throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `projection cut exceeds ${String(BLUE_PROJECTION_MAX_NODES)} JSON values`)
+    }
     const copy: BlueJson[] = []
     for (let index = 0; index < length.value; index += 1) {
-      const descriptor = descriptors[String(index)]
+      const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
       if (descriptor === undefined || !('value' in descriptor)) {
         throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'projection arrays must not be sparse or accessor-backed')
       }
-      copy.push(cloneJson(descriptor.value, seen))
+      copy.push(cloneJson(descriptor.value, budget, seen, depth + 1))
     }
     seen.delete(input)
     return Object.freeze(copy)
   }
   const copy: Record<string, BlueJson> = {}
-  for (const [key, descriptor] of Object.entries(descriptors)) {
+  for (const key of keys) {
+    if (typeof key !== 'string') continue
+    const descriptor = Object.getOwnPropertyDescriptor(input, key)
+    /* v8 ignore next -- Reflect.ownKeys returned this key from the same object. */
+    if (descriptor === undefined) continue
     if (!descriptor.enumerable) continue
     if (!('value' in descriptor)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', `projection field ${JSON.stringify(key)} must be a data property`)
-    Object.defineProperty(copy, key, { enumerable: true, value: cloneJson(descriptor.value, seen) })
+    Object.defineProperty(copy, key, { enumerable: true, value: cloneJson(descriptor.value, budget, seen, depth + 1) })
   }
   seen.delete(input)
   return Object.freeze(copy)
-}
-
-function encodedBytes(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength
 }
 
 /**
@@ -124,27 +219,28 @@ export function validateBlueSessionSnapshot(input: unknown): BlueSessionSnapshot
   if (!object(input)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session snapshot must be an object or null')
   const revision = integer(own(input, 'revision'), 'session revision', 0)
   const sessionEpoch = integer(own(input, 'sessionEpoch'), 'session epoch', 0)
-  const id = own(input, 'id')
-  const cwd = own(input, 'cwd')
+  const id = boundedString(own(input, 'id'), 'session id', false)
+  const cwd = boundedString(own(input, 'cwd'), 'session cwd')
   const status = own(input, 'status')
   const mode = own(input, 'mode')
-  if (typeof id !== 'string' || id.length === 0) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session id must be a non-empty string')
-  if (typeof cwd !== 'string') throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session cwd must be a string')
   if (!['idle', 'running', 'waiting', 'failed'].includes(status as string)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session status is invalid')
   if (!['normal', 'plan', 'yolo'].includes(mode as string)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session mode is invalid')
   const rawModel = own(input, 'model')
   let model: BlueSessionSnapshot['model']
   if (rawModel !== undefined) {
     if (!object(rawModel)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session model must be an object')
-    const modelId = own(rawModel, 'id')
-    const provider = own(rawModel, 'provider')
-    const effort = own(rawModel, 'effort')
-    if (typeof modelId !== 'string' || modelId.length === 0) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session model id must be a non-empty string')
-    if (provider !== undefined && typeof provider !== 'string') throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session model provider must be a string')
-    if (effort !== undefined && typeof effort !== 'string') throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session model effort must be a string')
+    const modelId = boundedString(own(rawModel, 'id'), 'session model id', false)
+    const rawProvider = own(rawModel, 'provider')
+    const rawEffort = own(rawModel, 'effort')
+    const provider = rawProvider === undefined ? undefined : boundedString(rawProvider, 'session model provider')
+    const effort = rawEffort === undefined ? undefined : boundedString(rawEffort, 'session model effort')
     model = Object.freeze({ id: modelId, ...(provider === undefined ? {} : { provider }), ...(effort === undefined ? {} : { effort }) })
   }
-  return Object.freeze({ revision, sessionEpoch, id, cwd, status, mode, ...(model === undefined ? {} : { model }) }) as BlueSessionSnapshot
+  const snapshot = Object.freeze({ revision, sessionEpoch, id, cwd, status, mode, ...(model === undefined ? {} : { model }) }) as BlueSessionSnapshot
+  if (encodedBytes(snapshot) > BLUE_SESSION_SNAPSHOT_MAX_BYTES) {
+    throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `session snapshot exceeds ${String(BLUE_SESSION_SNAPSHOT_MAX_BYTES)} bytes`)
+  }
+  return snapshot
 }
 
 /**
@@ -191,12 +287,13 @@ export function scopeBlueProjectionCut(
   const inputValues = own(input, 'values')
   if (!object(inputValues) || Array.isArray(inputValues)) throw new BlueSessionDataError('BLUE_INTERNAL_FAILURE', 'session projection values must be an object')
   const values: Record<string, BlueJson> = {}
+  const budget: ProjectionBudget = { nodes: BLUE_PROJECTION_MAX_NODES, properties: BLUE_PROJECTION_MAX_PROPERTIES }
   for (const key of keys) {
     const descriptor = Object.getOwnPropertyDescriptor(inputValues, key)
     if (descriptor === undefined || !('value' in descriptor) || descriptor.value === undefined) {
       throw new BlueSessionDataError('BLUE_CAPABILITY_ABSENT', `session projection key ${JSON.stringify(key)} is unavailable`)
     }
-    const value = cloneJson(descriptor.value)
+    const value = cloneJson(descriptor.value, budget)
     if (encodedBytes(value) > maxValueBytes) {
       throw new BlueSessionDataError('BLUE_LIMIT_EXCEEDED', `session projection key ${JSON.stringify(key)} exceeds ${String(maxValueBytes)} bytes`)
     }

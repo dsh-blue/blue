@@ -55,7 +55,7 @@ interface BluePluginSessionSnapshot {
 }
 ```
 
-只有获准字段会成为 own property；即使获准了 `model`，当前没有模型时也会省略该字段。Host 会复制并深冻结 snapshot。`null` 只表示 owner 在线但当前没有 active session，不表示 capability 缺失。
+只有获准字段会成为 own property；即使获准了 `model`，当前没有模型时也会省略该字段。Host 会复制并深冻结 snapshot。每个字符串最多 16,384 UTF-8 bytes，完整 snapshot 最多 65,536 encoded bytes。`null` 只表示 owner 在线但当前没有 active session，不表示 capability 缺失。
 
 同一个 session epoch 内，session id 不得改变，host 只接受递增的 `revision`。epoch/revision/id high-water 会跨 owner gap 保留；相同位置只有在完整 canonical snapshot 不变时才允许 owner reload 恢复可见性，冲突 snapshot 返回 `BLUE_STALE`。同 id session 切换到新 epoch 后可以从较低 revision 重新开始；旧 epoch 和旧 owner 卸载后的 late callback 都会被拒绝。
 
@@ -89,9 +89,9 @@ interface BlueSessionProjectionCut {
 }
 ```
 
-每个 value 必须是 finite、acyclic JSON；accessor、sparse array、`undefined`、symbol、非有限数字和循环引用都会被拒绝。Host 会分离并深冻结每个 value，单 value 上限为 262,144 encoded bytes，整个 cut 上限为 1,048,576 bytes。
+resource key 必须使用 canonical ASCII syntax，最长 128 字符。每个 value 必须是 finite、acyclic JSON；accessor、sparse array、`undefined`、symbol、非有限数字和循环引用都会被拒绝。Host 会分离并深冻结每个 value。bounded clone 对整份 cut 最多接纳 64 层、16,384 个 JSON value 和 16,384 个被检查的 own property；单 primitive 最多 262,144 encoded bytes，嵌套 object key 最多 1,024 UTF-8 bytes。clone 后仍以单 value 262,144 encoded bytes、整个 cut 1,048,576 bytes 为最终权威上限。
 
-缺失或已卸载的 key 返回 `BLUE_CAPABILITY_ABSENT`，不会复用旧值。旧 epoch 或较小 `asOfSeq` 返回 `BLUE_STALE`。high-water 会跨 owner gap 保留；相同位置的值按 canonical JSON 比较，不受 object key 顺序影响，冲突值返回 `BLUE_STALE`。请求 key 数在遍历前受 exact grant 上界约束。`subscribe(keys, listener)` 在注册后 replay 一次一致 cut，只在指定 key 变化时读取新 cut；完全重复、过期、非法或迟到的 owner 通知不会进入 listener。当前 session 变为 `null` 时，已有 projection subscription 会立即 replay `null`，不会保留旧 session 值。
+缺失或已卸载的 key 返回 `BLUE_CAPABILITY_ABSENT`，不会复用旧值。旧 epoch 或较小 `asOfSeq` 返回 `BLUE_STALE`。high-water 会跨 owner gap 保留；相同位置的值按 canonical JSON 比较，不受 object key 顺序影响，冲突值返回 `BLUE_STALE`。同一 epoch/sequence 位置最多保留 256 个 key fingerprint 和 4,194,304 UTF-8 bytes；位置前进时清空这组有界记录。请求 key 数在遍历前受 exact grant 上界约束。`subscribe(keys, listener)` 在注册后 replay 一次一致 cut，只在指定 key 变化时读取新 cut；完全重复、过期、非法或迟到的 owner 通知不会进入 listener。当前 session 变为 `null` 时，已有 projection subscription 会立即 replay `null`，后续 projection read 也直接返回 `null` 而不查询 backing source，因此不会保留旧 session 值。
 
 ```ts
 const projections = opened.value.projections
@@ -120,4 +120,4 @@ if (projections !== undefined) {
 - 在 domain 包中完成写入，把 renderer-neutral 结果投影给 Blue adapter；
 - 没有公开领域边界时，停止并向能力 owner 提案，不要读取 package internal 或复制 Session 状态。
 
-插件不得直接 inject owner-only 的 `blueSessionReader`、`blueSessionProjections`、`blueSessionActions` 或 `bluePluginControl`，也不得 unwrap `bluePluginHost` 获取它们。默认 bundle 将这些未收窄服务隔离在 private runtime realm 中；公共插件只能使用 manifest-scoped facade。
+插件不得直接 inject owner-only 的 `blueSessionReader`、`blueSessionProjections`、`blueSessionActions` 或 `bluePluginControl`，也不得 unwrap `bluePluginHost` 获取它们。composition-private projection owner 类型也不从 `@dsh-blue/blue-api` package root 导出。默认 bundle 将这些未收窄服务隔离在 private runtime realm 中；公共插件只能使用 manifest-scoped facade。
