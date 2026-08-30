@@ -125,7 +125,7 @@ export const pane = {
         { node: { kind: 'divider', label: 'Metrics' } },
         { node: { kind: 'progress', label: 'Context', value: 42, max: 100 } },
         { node: { kind: 'spacer' }, when: { minHeight: 10 } },
-        { node: { kind: 'actions', id: 'actions', items: [{ id: 'refresh', label: 'Refresh' }] } },
+        { node: { kind: 'actions', id: 'actions', items: [{ id: 'refresh', label: 'Refresh', shortcut: 'pagedown', shortcutFor: 'view', focusable: false }] } },
       ],
     },
   }),

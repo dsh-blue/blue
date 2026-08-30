@@ -466,6 +466,56 @@ describe('plugin surface bridge panes', () => {
     owner.scope.dispose()
   })
 
+  it('keeps the confirmed tab candidate and level focused across pane refreshes', async () => {
+    const host = new BluePluginHostService(new Context())
+    const runtime = createRuntime()
+    const owner = mount(host, runtime.runtime)
+    const consumer = openPanes(host)
+    const events: BlueUiEvent[] = []
+    let range = 'today'
+    registerPane(consumer.api, {
+      id: 'tab-refresh',
+      render: () => ui.stack.column([
+        ui.tabs({ id: 'page-tabs', activeId: 'overview', items: [{ id: 'overview', label: 'Overview' }, { id: 'details', label: 'Details' }] }),
+        ui.tabs({ id: 'range-tabs', activeId: range, items: [{ id: 'today', label: 'Today' }, { id: 'month', label: 'Month' }] }),
+      ]),
+      onEvent: event => {
+        events.push(event)
+        if (event.kind === 'tab-change' && event.controlId === 'range-tabs') range = event.tabId
+        return success()
+      },
+    })
+    await flushMicrotasks()
+    let target = entry(runtime.surfaces, 'tab-refresh').focusTarget!
+    runtime.runtime.setFocus(target)
+    target.handleInput?.('\t')
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\r')
+    await flushMicrotasks()
+
+    target = entry(runtime.surfaces, 'tab-refresh').focusTarget!
+    expect(target.captureFocusIdentity?.()).toEqual({ controlId: 'range-tabs', itemId: 'month', tabControlId: 'range-tabs' })
+    expect(target.render(80).join('')).toContain('‹ ● Month ›')
+    expect(target.render(80).join('')).not.toContain('→ ‹ ● Month ›')
+    target.handleInput?.('\x1b[D')
+    target.handleInput?.(' ')
+    await flushMicrotasks()
+
+    target = entry(runtime.surfaces, 'tab-refresh').focusTarget!
+    expect(target.captureFocusIdentity?.()).toEqual({ controlId: 'range-tabs', itemId: 'today', tabControlId: 'range-tabs' })
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\r')
+    await flushMicrotasks()
+    expect(events).toEqual([
+      { kind: 'tab-change', controlId: 'range-tabs', tabId: 'month' },
+      { kind: 'tab-change', controlId: 'range-tabs', tabId: 'today' },
+      { kind: 'tab-change', controlId: 'range-tabs', tabId: 'month' },
+    ])
+
+    consumer.scope.dispose()
+    owner.scope.dispose()
+  })
+
   it('preserves FIFO events across success refreshes and contains handler failures', async () => {
     const host = new BluePluginHostService(new Context())
     const runtime = createRuntime()

@@ -189,6 +189,48 @@ describe('validateBlueUiNode', () => {
     expect(validateBlueUiNode(ui.list({ id: 'disabled-list', selectedIds: [], items: [{ id: 'disabled', label: 'Disabled', disabled: true }] })).ok).toBe(true)
   })
 
+  it('validates scoped page shortcuts and non-focusable action metadata', () => {
+    const valid = validateBlueUiNode({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'list', id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] } },
+        { node: { kind: 'actions', id: 'paging', items: [
+          { id: 'previous', label: 'Previous', shortcut: 'pageup', shortcutFor: 'rows', focusable: false },
+          { id: 'next', label: 'Next', shortcut: 'pagedown', shortcutFor: 'rows' },
+        ] } },
+      ],
+    })
+    expect(valid).toMatchObject({ ok: true })
+    if (!valid.ok || valid.value.kind !== 'stack') throw new Error('expected stack')
+    expect(valid.value.children[1]?.node).toMatchObject({
+      kind: 'actions',
+      items: [
+        { id: 'previous', shortcut: 'pageup', shortcutFor: 'rows', focusable: false },
+        { id: 'next', shortcut: 'pagedown', shortcutFor: 'rows' },
+      ],
+    })
+
+    for (const [item, message] of [
+      [{ id: 'bad', label: 'Bad', shortcut: 'home', shortcutFor: 'rows' }, '.shortcut is invalid'],
+      [{ id: 'bad', label: 'Bad', shortcut: 'pageup' }, 'shortcut and shortcutFor must be provided together'],
+      [{ id: 'bad', label: 'Bad', shortcutFor: 'rows' }, 'shortcut and shortcutFor must be provided together'],
+      [{ id: 'bad', label: 'Bad', focusable: 'no' }, '.focusable must be a boolean'],
+    ] as const) {
+      expect(validateBlueUiNode({ kind: 'actions', id: 'actions', items: [item] })).toMatchObject({ ok: false, message: expect.stringContaining(message) })
+    }
+    expect(validateBlueUiNode({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'list', id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] } },
+        { node: { kind: 'actions', id: 'first', items: [{ id: 'first-page', label: 'First', shortcut: 'pageup', shortcutFor: 'rows' }] } },
+        { node: { kind: 'actions', id: 'second', items: [{ id: 'second-page', label: 'Second', shortcut: 'pageup', shortcutFor: 'rows' }] } },
+      ],
+    })).toMatchObject({ ok: false, message: expect.stringContaining('duplicates pageup') })
+    expect(validateBlueUiNode({ kind: 'actions', id: 'actions', items: [{ id: 'page', label: 'Page', shortcut: 'pageup', shortcutFor: 'missing' }] })).toMatchObject({ ok: false, message: expect.stringContaining('does not name a tabs, list, or form control') })
+  })
+
   it('contains proxies/accessors, ignores unknown getters, and never freezes caller data', () => {
     const proxy = new Proxy({}, { getPrototypeOf: () => { throw new Error('boom') } })
     expect(validateBlueUiNode(proxy)).toEqual({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue UI validation failed safely' })

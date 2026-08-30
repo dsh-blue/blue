@@ -76,7 +76,20 @@ export type BlueFormField =
   | { readonly kind: 'select', readonly id: string, readonly label: string, readonly value: string | null, readonly options: readonly BlueListItem[], readonly error?: string, readonly disabled?: boolean }
   | { readonly kind: 'toggle', readonly id: string, readonly label: string, readonly value: boolean, readonly error?: string, readonly disabled?: boolean }
 export interface BlueFormNode { readonly kind: 'form', readonly id: string, readonly fields: readonly BlueFormField[], readonly submitActionId?: string, readonly cancelActionId?: string }
-export interface BlueActionItem { readonly id: string, readonly label: string, readonly intent?: 'primary' | 'secondary' | 'danger', readonly disabled?: boolean, readonly busy?: boolean, readonly confirm?: string }
+export interface BlueActionItem {
+  readonly id: string
+  readonly label: string
+  readonly intent?: 'primary' | 'secondary' | 'danger'
+  readonly disabled?: boolean
+  readonly busy?: boolean
+  readonly confirm?: string
+  /** Page key routed while focus is inside the group named by `shortcutFor`. */
+  readonly shortcut?: 'pageup' | 'pagedown'
+  /** Stable tabs/list/form control id whose focused group owns `shortcut`. */
+  readonly shortcutFor?: string
+  /** False keeps the action visible and shortcut-addressable but out of roving focus. */
+  readonly focusable?: boolean
+}
 export interface BlueActionsNode { readonly kind: 'actions', readonly id: string, readonly items: readonly BlueActionItem[] }
 export interface BlueLoaderNode { readonly kind: 'loader', readonly message: string, readonly variant?: 'braille' | 'tide', readonly elapsedMs?: number, readonly cancelActionId?: string }
 export interface BlueEmptyNode { readonly kind: 'empty', readonly title: string, readonly description?: string, readonly actions?: BlueActionsNode }

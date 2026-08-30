@@ -222,8 +222,10 @@ class OverlayComponent implements BlueFocusable {
     if (this.targetValue.focusTarget !== null) this.targetValue.focusTarget.focused = value
   }
   replace(compiled: BlueCompiledUi): void {
+    const identity = this.targetValue.focusTarget?.captureFocusIdentity?.()
     if (this.targetValue.focusTarget !== null) this.targetValue.focusTarget.focused = false
     this.targetValue = compiled
+    if (identity !== undefined) compiled.focusTarget?.restoreFocusIdentity?.(identity)
     if (compiled.focusTarget !== null) compiled.focusTarget.focused = this.focusedValue
   }
   render(width: number): string[] {

@@ -238,9 +238,10 @@ export function renderTabs(node: TabsNode, width: number, focus: PatternFocus, c
   const tokens = node.items.map(item => {
     const active = item.id === node.activeId
     const focused = focus.focused && focus.key === item.id && item.disabled !== true
-    const label = `${active ? `‹ ${item.label} ›` : item.label}${showCounts && item.count !== undefined ? ` ${String(item.count)}` : ''}`
+    const label = `${active ? `‹ ● ${item.label} ›` : item.label}${showCounts && item.count !== undefined ? ` ${String(item.count)}` : ''}`
     const content = item.disabled === true ? colors.muted(label) : active ? colors.primary(label) : colors.text(label)
-    return { value: `${focused ? `${focus.marker}→ ` : '  '}${content}`, focused, active }
+    const prefix = focused ? active ? `${focus.marker} ` : `${focus.marker}→ ` : '  '
+    return { value: `${prefix}${content}`, focused, active }
   })
   return [compactTokens(tokens, width)]
 }
@@ -306,7 +307,7 @@ export function renderFormField(field: BlueFormField, width: number, focus: Patt
 function actionToken(item: ActionsNode['items'][number], focus: PatternFocus, colors: BlueSemanticColors): { readonly value: string, readonly focused: boolean, readonly active: boolean } {
   const busy = item.busy === true
   const focused = focus.focused && focus.key === item.id && item.disabled !== true && !busy
-  const pending = focused && focus.pendingKey === item.id && item.confirm !== undefined
+  const pending = focus.pendingKey === item.id && item.confirm !== undefined
   const label = `${busy ? '… ' : ''}${item.label}${pending ? ` ? ${item.confirm}` : ''}`
   const framed = item.intent === 'primary' ? `[ ${label} ]` : item.intent === 'danger' ? `! ${label}` : label
   const content = item.disabled === true || busy ? colors.muted(framed) : item.intent === 'danger' ? colors.error(framed) : focused || item.intent === 'primary' ? colors.primary(framed) : colors.text(framed)

@@ -125,23 +125,38 @@ interaction owner remains responsible for restoring the screen's stable focus
 delegate after an atomic provider swap. A shell whose only interactive control
 is that editor delegates Tab and Shift-Tab to the stable editing engine, so
 provider chrome cannot suppress completion acceptance or an explicit completion
-request. Shells with additional controls retain composite-owned Tab roving.
-Across every canonical tree, Tab/Shift-Tab traverse ordered interactive groups:
-tabs, lists, and action rows are one group each, while every form field is its
-own group and a form's submit/cancel row is one final horizontal group. Entering
-a group selects its active, selected, or primary control and otherwise chooses
-its first enabled control. Left/Right roves horizontal groups, Up/Down roves
-vertical groups, and Enter confirms the current candidate; Tab cannot retarget
-an item when only one group is available. Form selects use Left/Right for their
-draft while text editors retain their direction keys. Responsive reconciliation
+request. Shells with additional controls retain composite-owned navigation.
+Canonical trees containing tabs split interaction into a tab domain and a
+content domain. Tab/Shift-Tab cycle only tab groups; lists, action rows, and
+form fields never enter that cycle. Down enters the first content group from a
+tab, Up/Down moves through vertical entries and adjacent content groups, and Up
+from the first content entry returns to the remembered tab group. Pressing Tab
+from content also returns to that remembered group. Left/Right roves a tab or
+other horizontal group, and Enter/Space confirms the current candidate. A tree with
+no tabs retains ordered Tab/Shift-Tab traversal across all interactive groups,
+so standalone forms and dialogs keep their established keyboard path. Entering
+any group selects its active, selected, or primary control and otherwise its
+first enabled control. Form selects use Left/Right for their draft. In a tree
+with tabs, Up/Down belongs to content-group traversal even on a text field;
+tabless text fields retain their direction keys. Responsive reconciliation
 keeps the active control when present and otherwise chooses the same ordered
-group slot.
+group slot. A compiled surface captures a canonical control/item identity plus
+its remembered tab-control id. Pane and overlay replacements restore that
+identity before their outer focus transition, preserving the current
+level/candidate across a successful semantic refresh without exposing renderer
+paths publicly.
 
-`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Active tabs retain their chevrons while the enabled roving-focus tab receives the unique hardware cursor marker plus a visible `→`, so navigation remains legible without color; disabled tabs never receive either focus marker. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Badges precede truncatable detail so state such as `← current` survives a closed overlay's inner-width budget. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
+An action's paired `shortcut` / `shortcutFor` metadata is admitted only for a
+unique `pageup` or `pagedown` claim whose target is a tabs, list, or form id in
+the same tree. The compiler dispatches its ordinary activate event only when
+the active control carries that target scope. `focusable: false` actions remain
+rendered and shortcut-addressable but never enter the control inventory.
+
+`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Active tabs render as `‹ ● label ›`. A focused active tab receives the unique hardware cursor marker without a redundant arrow; a focused inactive candidate retains `→`, so navigation remains legible without color. Disabled tabs never receive either focus marker. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Badges precede truncatable detail so state such as `← current` survives a closed overlay's inner-width budget. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
 
 The former `src/frontend-renderer.ts` conversion bridge and its `renderFrontendView`, `renderFrontendModel`, and `FrontendModelComponent` exports are physically deleted. Frontend, transcript, context, and tool producers now publish canonical `BlueUiNode` values; renderer adapters call `compileBlueUiNode` at the core boundary. Do not restore a frontend-specific converter or painter. Public `BlueView` remains the safe content-leaf subset of the canonical schema; its diff alignment, semantic paint, sanitation, and width containment still have one core owner through the canonical compiler.
 
-The compiler composite owns the L2 interaction drafts. Canonical `input`, `textarea`, and `secret` fields may resolve a stable core-created `BlueEditor` from the official compatibility adapter, preserving cursor, IME, bracketed-paste, and submit behavior across controlled recompiles. `renderContent(width, masked?)` exposes only the editor's unframed rows to the core form painter; secret rendering temporarily substitutes bullets and restores plaintext in `finally`, so neither the renderer nor error output leaks the value. Controlled synchronization calls `setText` only when the expanded value differs, and `value-change` remains the renderer-neutral outward event. Select Left/Right updates a local enabled-option candidate, toggles retain their proposed boolean, Tab/Shift-Tab traverses field groups, text fields keep their editor direction keys, and Escape remains composite-owned. None of these drafts or editor objects enter the validated frozen node. Delete the private editor resolver once the canonical editor-control/form contract natively carries full editor semantics.
+The compiler composite owns the L2 interaction drafts. Canonical `input`, `textarea`, and `secret` fields may resolve a stable core-created `BlueEditor` from the official compatibility adapter, preserving cursor, IME, bracketed-paste, and submit behavior across controlled recompiles. `renderContent(width, masked?)` exposes only the editor's unframed rows to the core form painter; secret rendering temporarily substitutes bullets and restores plaintext in `finally`, so neither the renderer nor error output leaks the value. Controlled synchronization calls `setText` only when the expanded value differs, and `value-change` remains the renderer-neutral outward event. Select Left/Right updates a local enabled-option candidate, toggles retain their proposed boolean, tabless forms use Tab/Shift-Tab across field groups, text fields keep their editor direction keys, and Escape remains composite-owned. None of these drafts or editor objects enter the validated frozen node. Delete the private editor resolver once the canonical editor-control/form contract natively carries full editor semantics.
 
 `BlueEditor.removeLatestHistory(text)` is the narrow retraction helper over pi-tui's private history array: it removes index 0 only on an exact match. The method stays optional on the L1 contract so structural fakes and out-of-tree adapters remain compatible; core's sole real adapter implements it.
 

@@ -30,6 +30,10 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
 `compileBlueUiNode(value, { components, colors, getViewport, screenMode, emit })` 必定先经过上述 validator，再返回 canonical node、pi-tui 支撑的 component，以及至多一个 composite focus target。该 composite 独占 roving focus、实时响应式可见性协调和 event/render 异常隔离；单个控件不会作为 focusable 泄漏。公共文本无法注入 pi-tui cursor marker 或 core 私有 focus sentinel。Component 会暴露真实的 pi-tui layout node，使嵌套 stack/scroll 获得实际分配高度。Direct render（包括 AltScreen stop replay）使用私有 sentinel，在完整合成后替换；AltScreen layout pass 中 pi-tui 会刻意绕过 wrapper `render`，因此 active leaf 在 composite focus 协调后使用等宽 cursor-marker adapter。两条路径均保证聚焦时恰好一个 marker、失焦时没有 marker，并由真实 layout-frame 测试锁定 HStack 文本完整性。
 
+当 canonical tree 含 tabs 时，`Tab` / `Shift+Tab` 只在标签组之间循环。左右键移动当前标签组候选，Enter 或 Space 激活，向下键进入内容区；进入后用上下键浏览纵向条目及相邻内容控件组，在第一个内容条目按向上键会返回此前标签组。不含 tabs 的界面仍用 Tab 遍历全部交互控件组。surface refresh 后，只要原 canonical control/item 仍可见，就会恢复同一候选及此前标签层级，因此确认候选不会重置焦点。active tab 显示为 `‹ ● 标签 ›`；聚焦 active tab 时不再显示多余箭头，只有聚焦的非 active 候选保留 `→`。
+
+action 可通过 `shortcutFor` 把语义 `pageup` / `pagedown` shortcut 绑定到 tabs、list 或 form id；只有焦点位于对应 scope 时才会分派。`focusable: false` 会让分页控件完全退出 roving-focus 路径。
+
 Canonical `chrome: 'overlay'` surface 由 core 统一绘制单一闭合边框。左右边框与显式内距只扣减一次，窄标题仍保留右上角；终端缩放经过 1/2 列时，边框会让位给宽度安全的 body 内容；overlay 内容只贡献 body，不再重复绘制 frame。
 
 私有 plugin-surface bridge 持有 live `panes`/`overlays` generation。Pane definition 会在 renderer reload 后从 API host replay，overlay open 则保持 transient：owner 替换或卸载会先关闭 host entry 与本地 handle，replacement renderer 无法观察到旧 overlay。Value/selection/tab event 采用 latest-wins，activate/submit/dismiss 采用 FIFO；timeout、abort、refresh、semantic close 与迟到 settlement 都由捕获的 owner generation 约束。插件 render 失败（包括 hostile thrown value）会变成有界 danger-node fallback，不会逃出 renderer。

@@ -1444,7 +1444,7 @@ describe('BluePluginHostService', () => {
     let invoked = 0
     const before = { kind: 'text' as const, content: 'before' }
     const diagnostics = [{ id: 'd', message: 'message' }]
-    const actions = [{ id: 'act', label: 'Act' }]
+    const actions = [{ id: 'act', label: 'Act', shortcut: 'pageup' as const, shortcutFor: 'rows', focusable: false }]
     const onEvent = () => { invoked += 1; return { ok: true as const, value: undefined } }
     const complete = () => { invoked += 1; return { ok: true as const, value: [] } }
     const completeV2 = () => { invoked += 1; return { ok: true as const, value: [] } }
@@ -1461,7 +1461,7 @@ describe('BluePluginHostService', () => {
     const storedExtension = first.value.editorExtensions!.list()[0]!
     expect(storedExtension.before).toEqual({ kind: 'text', content: 'before' })
     expect(storedExtension.diagnostics).toEqual([{ id: 'd', message: 'message' }])
-    expect(storedExtension.actions).toEqual([{ id: 'act', label: 'Act' }])
+    expect(storedExtension.actions).toEqual([{ id: 'act', label: 'Act', shortcut: 'pageup', shortcutFor: 'rows', focusable: false }])
     expect(Object.isFrozen(storedExtension)).toBe(true)
     expect(Object.isFrozen(storedExtension.before)).toBe(true)
     expect(Object.isFrozen(storedExtension.diagnostics)).toBe(true)

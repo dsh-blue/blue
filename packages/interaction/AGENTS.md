@@ -40,6 +40,10 @@ when both exist. Callback revisions are local to one editor runtime generation,
 and only `onEvent` receives an owner-minted user gesture.
 Changing whether the BTW pane is connected likewise fences a pending main
 submit transform before Enter can cross routes; a busy-only refresh does not.
+The normalized extension snapshot preserves every canonical action field,
+including scoped paging shortcuts and `focusable`, before composing the action
+row around a provider shell; core remains the sole owner of shortcut admission,
+focus scope, and dispatch.
 
 `editor.extensions` is retained as an Experimental/reference capability in the
 Beta host. Its mature lifecycle runtime remains covered, but it is not part of

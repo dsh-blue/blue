@@ -34,6 +34,16 @@ export interface BlueComponent {
   invalidate(): void
 }
 
+/** Stable renderer-owned identity used only while replacing compiled UI. */
+export interface BlueFocusIdentity {
+  /** Canonical control id, or the action/field id for a scalar control. */
+  readonly controlId: string
+  /** Stable item id for a tabs or list candidate. */
+  readonly itemId?: string
+  /** Tabs control id returned to when content focus leaves its current domain. */
+  readonly tabControlId?: string
+}
+
 /** Row-allocation metadata for a flexible component in the bottom dock. */
 export interface BlueDockOptions {
   /** Larger values receive scarce rows first and render closer to fixed slots. */
@@ -48,6 +58,10 @@ export interface BlueDockOptions {
 export interface BlueFocusable extends BlueComponent {
   /** Whether the component currently holds focus. Managed by the screen. */
   focused: boolean
+  /** Capture the current canonical control without exposing renderer paths. */
+  captureFocusIdentity?(): BlueFocusIdentity | undefined
+  /** Restore a visible canonical control after a compiled component replacement. */
+  restoreFocusIdentity?(identity: BlueFocusIdentity): boolean
 }
 
 /** Absolute column/row count or a percentage of the terminal dimension. */

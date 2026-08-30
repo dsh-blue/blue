@@ -730,6 +730,9 @@ export class EditorExtensionRuntime implements BlueFocusable {
             ...(action.disabled === undefined ? {} : { disabled: action.disabled }),
             ...(action.busy === undefined ? {} : { busy: action.busy }),
             ...(action.confirm === undefined ? {} : { confirm: action.confirm }),
+            ...(action.shortcut === undefined ? {} : { shortcut: action.shortcut }),
+            ...(action.shortcutFor === undefined ? {} : { shortcutFor: action.shortcutFor }),
+            ...(action.focusable === undefined ? {} : { focusable: action.focusable }),
           }))),
         }),
       })

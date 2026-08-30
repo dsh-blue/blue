@@ -515,7 +515,7 @@ describe('editor provider composition', () => {
         ],
         actions: [
           { id: 'plain', label: 'Plain' },
-          { id: 'full', label: 'Full', intent: 'primary', disabled: true, busy: true, confirm: 'Confirm?' },
+          { id: 'full', label: 'Full', intent: 'primary', disabled: true, busy: true, confirm: 'Confirm?', shortcut: 'pageup', shortcutFor: 'provider-form', focusable: false },
         ],
       },
       {
@@ -541,7 +541,7 @@ describe('editor provider composition', () => {
           ],
           actions: [
             { id: 'plain', label: 'Plain' },
-            { id: 'full', label: 'Full', intent: 'primary', disabled: true, busy: true, confirm: 'Confirm?' },
+            { id: 'full', label: 'Full', intent: 'primary', disabled: true, busy: true, confirm: 'Confirm?', shortcut: 'pageup', shortcutFor: 'provider-form', focusable: false },
           ],
         },
         { id: 'rejected-passive-fields' },

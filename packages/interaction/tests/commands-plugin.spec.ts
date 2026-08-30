@@ -844,10 +844,10 @@ describe('blue-commands plugin', () => {
     const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
     const panel = screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
-    expect(panel.render(100).join('\n')).toContain('‹ Installed ›')
+    expect(panel.render(100).join('\n')).toContain('‹ ● Installed ›')
     expect(panel.render(100).join('\n')).toContain('Available')
     panel.handleInput(KEY.right)
-    expect(panel.render(100).join('\n')).toContain('‹ Available ›')
+    expect(panel.render(100).join('\n')).toContain('‹ ● Available ›')
   })
 
   it('/plugin shows a loading notice while marketplace data is pending', async () => {

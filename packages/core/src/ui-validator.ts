@@ -55,6 +55,9 @@ interface ValidationState {
   scrollDepth: number
   editorControls: number
   readonly controlIds: Set<string>
+  readonly focusGroupIds: Set<string>
+  readonly shortcutPairs: Set<string>
+  readonly shortcutTargets: { readonly id: string, readonly path: string }[]
 }
 
 function invalid(message: string): never {
@@ -225,6 +228,18 @@ function actionItem(value: unknown, path: string, state: ValidationState): BlueA
     const intentValue = own(object, 'intent', path)
     const disabledValue = own(object, 'disabled', path)
     const busyValue = own(object, 'busy', path)
+    const shortcutValue = own(object, 'shortcut', path)
+    const shortcutForValue = own(object, 'shortcutFor', path)
+    const focusableValue = own(object, 'focusable', path)
+    const shortcut = shortcutValue === undefined ? undefined : enumeration(shortcutValue, ['pageup', 'pagedown'], `${path}.shortcut`)
+    const shortcutFor = shortcutForValue === undefined ? undefined : identifier(shortcutForValue, `${path}.shortcutFor`, state)
+    if ((shortcut === undefined) !== (shortcutFor === undefined)) invalid(`${path}.shortcut and shortcutFor must be provided together`)
+    if (shortcut !== undefined && shortcutFor !== undefined) {
+      const pair = JSON.stringify([shortcutFor, shortcut])
+      if (state.shortcutPairs.has(pair)) invalid(`${path} duplicates ${shortcut} for control "${shortcutFor}"`)
+      state.shortcutPairs.add(pair)
+      state.shortcutTargets.push({ id: shortcutFor, path: `${path}.shortcutFor` })
+    }
     return {
       id: text(required(object, 'id', path), `${path}.id`, state),
       label: text(required(object, 'label', path), `${path}.label`, state),
@@ -232,6 +247,9 @@ function actionItem(value: unknown, path: string, state: ValidationState): BlueA
       ...optional(disabledValue === undefined ? undefined : boolean(disabledValue, `${path}.disabled`), 'disabled'),
       ...optional(busyValue === undefined ? undefined : boolean(busyValue, `${path}.busy`), 'busy'),
       ...optional(optionalText(object, 'confirm', path, state), 'confirm'),
+      ...optional(shortcut, 'shortcut'),
+      ...optional(shortcutFor, 'shortcutFor'),
+      ...optional(focusableValue === undefined ? undefined : boolean(focusableValue, `${path}.focusable`), 'focusable'),
     }
   })
 }
@@ -241,7 +259,17 @@ function uniqueIds(items: readonly { readonly id: string }[], path: string): voi
 }
 
 function viewportCondition(value: unknown, path: string): BlueViewportCondition {
-  return enter(value, path, { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, controlIds: new Set() }, object => {
+  return enter(value, path, {
+    active: new WeakSet(),
+    nodes: 0,
+    text: 0,
+    scrollDepth: 0,
+    editorControls: 0,
+    controlIds: new Set(),
+    focusGroupIds: new Set(),
+    shortcutPairs: new Set(),
+    shortcutTargets: [],
+  }, object => {
     const result: { minWidth?: number, maxWidth?: number, minHeight?: number, maxHeight?: number } = {}
     for (const key of ['minWidth', 'maxWidth', 'minHeight', 'maxHeight'] as const) {
       const item = own(object, key, path)
@@ -404,7 +432,9 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
         uniqueIds(items, `${path}.items`)
         const activeId = identifier(required(object, 'activeId', path), `${path}.activeId`, state)
         if (!items.some(item => item.id === activeId)) invalid(`${path}.activeId is not present in items`)
-        return { kind, id: identifier(required(object, 'id', path), `${path}.id`, state, true), activeId, items }
+        const id = identifier(required(object, 'id', path), `${path}.id`, state, true)
+        state.focusGroupIds.add(id)
+        return { kind, id, activeId, items }
       }
       case 'list': {
         const modeValue = own(object, 'mode', path)
@@ -415,12 +445,15 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
         if (new Set(selectedIds).size !== selectedIds.length) invalid(`${path}.selectedIds contains duplicate ids`)
         if ((modeValue ?? 'single') === 'single' && selectedIds.length > 1) invalid(`${path}.selectedIds has more than one id in single mode`)
         if (selectedIds.some(id => !items.some(item => item.id === id))) invalid(`${path}.selectedIds contains an unknown id`)
-        return { kind, id: identifier(required(object, 'id', path), `${path}.id`, state, true), ...optional(modeValue === undefined ? undefined : enumeration(modeValue, ['single', 'multiple'], `${path}.mode`), 'mode'), selectedIds, items, ...optional(optionalText(object, 'filter', path, state), 'filter'), ...optional(emptyValue === undefined ? undefined : node(emptyValue, `${path}.empty`, state, depth + 1, 'ui'), 'empty') }
+        const id = identifier(required(object, 'id', path), `${path}.id`, state, true)
+        state.focusGroupIds.add(id)
+        return { kind, id, ...optional(modeValue === undefined ? undefined : enumeration(modeValue, ['single', 'multiple'], `${path}.mode`), 'mode'), selectedIds, items, ...optional(optionalText(object, 'filter', path, state), 'filter'), ...optional(emptyValue === undefined ? undefined : node(emptyValue, `${path}.empty`, state, depth + 1, 'ui'), 'empty') }
       }
       case 'form': {
         const fields = collection(required(object, 'fields', path), `${path}.fields`).map((item, index) => formField(item, `${path}.fields[${String(index)}]`, state))
         uniqueIds(fields, `${path}.fields`)
         const id = identifier(required(object, 'id', path), `${path}.id`, state, true)
+        state.focusGroupIds.add(id)
         for (const field of fields) {
           if (field.id.trim().length === 0) invalid(`${path}.fields id must not be empty`)
           if (state.controlIds.has(field.id)) invalid(`control id "${field.id}" is duplicated`)
@@ -512,13 +545,26 @@ function assertEditorControlVisible(node: BlueEditorShellNode, path = '$'): void
 }
 
 function validate<Value>(value: unknown, mode: ValidationMode): BlueResult<Value> {
-  const state: ValidationState = { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, controlIds: new Set() }
+  const state: ValidationState = {
+    active: new WeakSet(),
+    nodes: 0,
+    text: 0,
+    scrollDepth: 0,
+    editorControls: 0,
+    controlIds: new Set(),
+    focusGroupIds: new Set(),
+    shortcutPairs: new Set(),
+    shortcutTargets: [],
+  }
   try {
     const result = mode === 'ui'
       ? node(value, '$', state, 0, 'ui')
       : mode === 'status'
         ? node(value, '$', state, 0, 'status')
         : node(value, '$', state, 0, 'editor', false, true)
+    for (const target of state.shortcutTargets) {
+      if (!state.focusGroupIds.has(target.id)) invalid(`${target.path} does not name a tabs, list, or form control`)
+    }
     if (mode === 'editor') {
       if (state.editorControls !== 1) invalid(`editor shell must contain exactly one editor-control; received ${String(state.editorControls)}`)
       assertEditorControlVisible(result as BlueEditorShellNode)

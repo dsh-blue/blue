@@ -6,12 +6,12 @@
  * @module @dsh-blue/blue-core/ui-compiler
  */
 
-import type { BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
+import type { BlueActionItem, BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { ownDataErrorMessage } from './error-message.ts'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
-import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueSemanticColors } from './types.ts'
+import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueFocusIdentity, BlueSemanticColors } from './types.ts'
 import {
   renderActions,
   renderDivider,
@@ -179,8 +179,10 @@ interface RuntimeCompilerOptions extends BlueUiCompilerOptions {
 
 interface ControlBase {
   readonly key: string
+  readonly identity: BlueFocusIdentity
   readonly preferred: boolean
   readonly group: string
+  readonly shortcutScope?: string
   readonly navigation: 'horizontal' | 'vertical' | 'none'
 }
 
@@ -201,10 +203,11 @@ interface FocusState {
   activeKey: string | undefined
   lastIndex: number
   lastGroupIndex: number
+  lastTabGroupIndex: number
   focused: boolean
   layoutPass: boolean
   pendingConfirmation: string | undefined
-  controls(): readonly ControlDescriptor[]
+  inventory(): ControlInventory
   emit(event: BlueUiEvent): void
   field(field: BlueFormField, key: string): BlueFormField
   fieldValue(field: BlueFormField, key: string): string | boolean | null
@@ -217,22 +220,50 @@ interface FocusState {
 
 interface ControlGroup {
   readonly id: string
+  readonly kind: 'tabs' | 'content'
   readonly entries: readonly { readonly control: ControlDescriptor, readonly index: number }[]
 }
 
 function controlGroups(controls: readonly ControlDescriptor[]): ControlGroup[] {
-  const groups: { id: string, entries: { control: ControlDescriptor, index: number }[] }[] = []
-  const byId = new Map<string, { id: string, entries: { control: ControlDescriptor, index: number }[] }>()
+  const groups: { id: string, kind: 'tabs' | 'content', entries: { control: ControlDescriptor, index: number }[] }[] = []
+  const byId = new Map<string, { id: string, kind: 'tabs' | 'content', entries: { control: ControlDescriptor, index: number }[] }>()
   for (const [index, control] of controls.entries()) {
     let group = byId.get(control.group)
     if (group === undefined) {
-      group = { id: control.group, entries: [] }
+      group = {
+        id: control.group,
+        kind: control.kind === 'event' && control.event.kind === 'tab-change' ? 'tabs' : 'content',
+        entries: [],
+      }
       byId.set(control.group, group)
       groups.push(group)
     }
     group.entries.push({ control, index })
   }
   return groups
+}
+
+type ActionShortcut = NonNullable<BlueActionItem['shortcut']>
+
+interface ShortcutDescriptor {
+  readonly shortcut: ActionShortcut
+  readonly scope: string
+  readonly controlKey: string
+  readonly event: Extract<BlueUiEvent, { readonly kind: 'activate' }>
+  readonly confirm?: string
+}
+
+interface ControlInventory {
+  readonly controls: readonly ControlDescriptor[]
+  readonly shortcuts: readonly ShortcutDescriptor[]
+}
+
+function focusIdentity(controlId: string, itemId?: string): BlueFocusIdentity {
+  return itemId === undefined ? { controlId } : { controlId, itemId }
+}
+
+function sameFocusIdentity(left: BlueFocusIdentity, right: BlueFocusIdentity): boolean {
+  return left.controlId === right.controlId && left.itemId === right.itemId
 }
 
 function preferredControlIndex(group: ControlGroup): number {
@@ -473,12 +504,13 @@ function surfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surfac
   return pad(component, node.padding ?? 0, options)
 }
 
-function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
+function controlInventoryForNode(node: CompilableNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlInventory {
   const controls: ControlDescriptor[] = []
+  const shortcuts: ShortcutDescriptor[] = []
   const visit = (current: CompilableNode, currentPath: string): void => {
     switch (current.kind) {
       case 'editor-control':
-        controls.push({ kind: 'editor', key: currentPath, preferred: true, group: currentPath, navigation: 'none' })
+        controls.push({ kind: 'editor', key: currentPath, identity: focusIdentity('editor-control'), preferred: true, group: currentPath, navigation: 'none' })
         break
       case 'stack':
         for (const [index, child] of current.children.entries()) {
@@ -491,40 +523,69 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
         break
       case 'scroll': visit(current.child, `${currentPath}.scroll`); break
       case 'tabs':
-        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.id === current.activeId, group: currentPath, navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
+        for (const item of current.items) if (item.disabled !== true) controls.push({
+          kind: 'event',
+          key: `${currentPath}:${item.id}`,
+          identity: focusIdentity(current.id, item.id),
+          preferred: item.id === current.activeId,
+          group: currentPath,
+          shortcutScope: current.id,
+          navigation: 'horizontal',
+          event: { kind: 'tab-change', controlId: current.id, tabId: item.id },
+        })
         break
       case 'list':
         for (const item of current.items) if (item.disabled !== true) {
           const value = current.mode === 'multiple'
             ? current.selectedIds.includes(item.id) ? current.selectedIds.filter(id => id !== item.id) : [...current.selectedIds, item.id]
             : item.id
-          controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: current.selectedIds.includes(item.id), group: currentPath, navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
+          controls.push({
+            kind: 'event',
+            key: `${currentPath}:${item.id}`,
+            identity: focusIdentity(current.id, item.id),
+            preferred: current.selectedIds.includes(item.id),
+            group: currentPath,
+            shortcutScope: current.id,
+            navigation: 'vertical',
+            event: { kind: 'selection-change', controlId: current.id, value },
+          })
         }
         if (current.items.length === 0 && current.empty !== undefined) visit(current.empty, `${currentPath}.empty`)
         break
       case 'form':
         for (const field of current.fields) if (field.disabled !== true) {
           const key = `${currentPath}:field:${field.id}`
-          const base: ControlBase = { key, preferred: true, group: key, navigation: 'none' }
+          const base: ControlBase = { key, identity: focusIdentity(field.id), preferred: true, group: key, shortcutScope: current.id, navigation: 'none' }
           if (field.kind === 'toggle') controls.push({ ...base, kind: 'toggle', field })
           else if (field.kind === 'select') controls.push({ ...base, kind: 'select', field })
           else controls.push({ ...base, kind: 'text', field })
         }
-        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: `${currentPath}:submit`, preferred: true, group: `${currentPath}:actions`, navigation: 'horizontal', form: current, formPath: currentPath })
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: `${currentPath}:actions`, navigation: 'horizontal', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: `${currentPath}:submit`, identity: focusIdentity(current.submitActionId), preferred: true, group: `${currentPath}:actions`, shortcutScope: current.id, navigation: 'horizontal', form: current, formPath: currentPath })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, identity: focusIdentity(current.cancelActionId), preferred: false, group: `${currentPath}:actions`, shortcutScope: current.id, navigation: 'horizontal', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'actions':
-        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.intent === 'primary', group: currentPath, navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
+        for (const item of current.items) if (item.disabled !== true && item.busy !== true) {
+          if (item.shortcut !== undefined && item.shortcutFor !== undefined) {
+            shortcuts.push({
+              shortcut: item.shortcut,
+              scope: item.shortcutFor,
+              controlKey: `${currentPath}:${item.id}`,
+              event: { kind: 'activate', controlId: item.id },
+              ...(item.confirm === undefined ? {} : { confirm: item.confirm }),
+            })
+          }
+          if (item.focusable !== false) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, identity: focusIdentity(item.id), preferred: item.intent === 'primary', group: currentPath, navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
+        }
         break
       case 'loader':
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: currentPath, navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, identity: focusIdentity(current.cancelActionId), preferred: false, group: currentPath, navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'empty': if (current.actions !== undefined) visit(current.actions, `${currentPath}.actions`); break
       default: break
     }
   }
   visit(node, path)
-  return controls
+  return { controls, shortcuts }
 }
 
 function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
@@ -649,20 +710,25 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
   }
 }
 
-function reconcile(state: FocusState): readonly ControlDescriptor[] {
-  const controls = state.controls()
+function reconcile(state: FocusState, inventory = state.inventory()): readonly ControlDescriptor[] {
+  const controls = inventory.controls
   if (controls.length === 0) {
     state.activeKey = undefined
     state.pendingConfirmation = undefined
     state.lastIndex = 0
     state.lastGroupIndex = 0
+    state.lastTabGroupIndex = 0
     return controls
   }
   const groups = controlGroups(controls)
+  const tabGroups = groups.filter(group => group.kind === 'tabs')
+  state.lastTabGroupIndex = Math.min(state.lastTabGroupIndex, Math.max(0, tabGroups.length - 1))
   const current = controls.findIndex(control => control.key === state.activeKey)
   if (current >= 0) {
     state.lastIndex = current
     state.lastGroupIndex = groups.findIndex(group => group.id === controls[current]!.group)
+    const tabGroupIndex = tabGroups.findIndex(group => group.id === controls[current]!.group)
+    if (tabGroupIndex >= 0) state.lastTabGroupIndex = tabGroupIndex
     return controls
   }
   state.lastGroupIndex = Math.min(state.lastGroupIndex, groups.length - 1)
@@ -670,6 +736,8 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
   state.lastIndex = preferredControlIndex(group)
   state.pendingConfirmation = undefined
   state.activeKey = controls[state.lastIndex]!.key
+  const tabGroupIndex = tabGroups.findIndex(candidate => candidate.id === group.id)
+  if (tabGroupIndex >= 0) state.lastTabGroupIndex = tabGroupIndex
   return controls
 }
 
@@ -738,10 +806,11 @@ class CompiledSurface implements BlueEditorShellComponent {
       activeKey: undefined,
       lastIndex: 0,
       lastGroupIndex: 0,
+      lastTabGroupIndex: 0,
       focused: false,
       layoutPass: false,
       pendingConfirmation: undefined,
-      controls: () => controlsForNode(node, runtimeOptions),
+      inventory: () => controlInventoryForNode(node, runtimeOptions),
       emit: event => {
         try { options.emit(event) } catch { /* event failures are host-owned */ }
       },
@@ -762,6 +831,31 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.state.focused = value
     if (!value && this.editor !== undefined) this.editor.focused = false
     if (!value) this.state.pendingConfirmation = undefined
+  }
+
+  captureFocusIdentity(): BlueFocusIdentity | undefined {
+    this.viewport = safeViewport(this.options.getViewport)
+    const controls = reconcile(this.state)
+    const active = controls[this.state.lastIndex]
+    if (active === undefined) return undefined
+    const tab = controlGroups(controls).filter(group => group.kind === 'tabs')[this.state.lastTabGroupIndex]?.entries[0]?.control.identity.controlId
+    return tab === undefined ? active.identity : { ...active.identity, tabControlId: tab }
+  }
+
+  restoreFocusIdentity(identity: BlueFocusIdentity): boolean {
+    this.viewport = safeViewport(this.options.getViewport)
+    const controls = this.state.inventory().controls
+    const index = controls.findIndex(control => sameFocusIdentity(control.identity, identity))
+    if (index < 0) return false
+    this.state.activeKey = controls[index]!.key
+    this.state.lastIndex = index
+    const groups = controlGroups(controls)
+    this.state.lastGroupIndex = groups.findIndex(group => group.id === controls[index]!.group)
+    const tabGroups = groups.filter(group => group.kind === 'tabs')
+    const tabGroupIndex = tabGroups.findIndex(group => group.entries[0]?.control.identity.controlId === identity.tabControlId)
+    if (tabGroupIndex >= 0) this.state.lastTabGroupIndex = tabGroupIndex
+    this.state.pendingConfirmation = undefined
+    return true
   }
 
   [LAYOUT_NODE](): LayoutNode {
@@ -825,6 +919,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       activeKey: this.state.activeKey,
       lastIndex: this.state.lastIndex,
       lastGroupIndex: this.state.lastGroupIndex,
+      lastTabGroupIndex: this.state.lastTabGroupIndex,
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
       pendingConfirmation: this.state.pendingConfirmation,
@@ -841,6 +936,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.activeKey = focus.activeKey
       this.state.lastIndex = focus.lastIndex
       this.state.lastGroupIndex = focus.lastGroupIndex
+      this.state.lastTabGroupIndex = focus.lastTabGroupIndex
       this.state.focused = focus.focused
       this.state.layoutPass = focus.layoutPass
       this.state.pendingConfirmation = focus.pendingConfirmation
@@ -852,7 +948,7 @@ class CompiledSurface implements BlueEditorShellComponent {
 
   focusEditor(): void {
     this.viewport = safeViewport(this.options.getViewport)
-    const controls = this.state.controls()
+    const controls = this.state.inventory().controls
     const index = controls.findIndex(control => control.kind === 'editor')
     this.state.activeKey = controls[index]!.key
     this.state.lastIndex = index
@@ -865,21 +961,41 @@ class CompiledSurface implements BlueEditorShellComponent {
 
   handleInput(data: string): void {
     this.viewport = safeViewport(this.options.getViewport)
-    const controls = reconcile(this.state)
+    const inventory = this.state.inventory()
+    const controls = reconcile(this.state, inventory)
     if (data === '\x1b') {
       const consumed = this.state.pendingConfirmation !== undefined
       this.state.pendingConfirmation = undefined
       if (!consumed) this.options.onUnhandledEscape?.()
       return
     }
+    const shortcut = data === '\x1b[5~' ? 'pageup' : data === '\x1b[6~' ? 'pagedown' : undefined
+    if (shortcut !== undefined) {
+      const scope = controls[this.state.lastIndex]?.shortcutScope
+      const matched = scope === undefined ? undefined : inventory.shortcuts.find(candidate => candidate.shortcut === shortcut && candidate.scope === scope)
+      if (matched !== undefined) {
+        if (matched.confirm !== undefined && this.state.pendingConfirmation !== matched.controlKey) {
+          this.state.pendingConfirmation = matched.controlKey
+          return
+        }
+        this.state.pendingConfirmation = undefined
+        this.state.emit(matched.event)
+        return
+      }
+    }
     if (controls.length === 0) return
     const active = controls[this.state.lastIndex]!
     const groups = controlGroups(controls)
+    const tabGroups = groups.filter(group => group.kind === 'tabs')
+    const contentGroups = groups.filter(group => group.kind === 'content')
     const moveTo = (index: number): void => {
       this.state.pendingConfirmation = undefined
       this.state.lastIndex = index
       this.state.activeKey = controls[index]!.key
-      this.state.lastGroupIndex = groups.findIndex(group => group.id === controls[index]!.group)
+      const groupIndex = groups.findIndex(group => group.id === controls[index]!.group)
+      this.state.lastGroupIndex = groupIndex
+      const tabGroupIndex = tabGroups.findIndex(group => group.id === groups[groupIndex]?.id)
+      if (tabGroupIndex >= 0) this.state.lastTabGroupIndex = tabGroupIndex
     }
     if (data === '\t' || data === '\x1b[Z') {
       // An editor-only provider shell has nowhere to rove. Preserve the
@@ -887,6 +1003,21 @@ class CompiledSurface implements BlueEditorShellComponent {
       // autocomplete without the canonical wrapper consuming the key.
       if (controls.length === 1 && active.kind === 'editor') {
         this.editor?.handleInput?.(data)
+        return
+      }
+      if (tabGroups.length > 0) {
+        const activeTabIndex = tabGroups.findIndex(group => group.id === active.group)
+        if (activeTabIndex < 0) {
+          moveTo(preferredControlIndex(tabGroups[this.state.lastTabGroupIndex]!))
+          return
+        }
+        if (tabGroups.length === 1) {
+          this.state.pendingConfirmation = undefined
+          return
+        }
+        const delta = data === '\t' ? 1 : -1
+        const nextTab = tabGroups[(activeTabIndex + tabGroups.length + delta) % tabGroups.length]!
+        moveTo(preferredControlIndex(nextTab))
         return
       }
       if (groups.length === 1) {
@@ -916,6 +1047,32 @@ class CompiledSurface implements BlueEditorShellComponent {
         ? direction > 0 ? 0 : enabled.length - 1
         : (currentIndex + enabled.length + direction) % enabled.length
       this.state.setSelectValue(active.key, active.field.value, enabled[nextIndex]!.id)
+      return
+    }
+    const activeGroup = groups[this.state.lastGroupIndex]!
+    if (tabGroups.length > 0 && (data === '\x1b[A' || data === '\x1b[B')) {
+      if (activeGroup.kind === 'tabs') {
+        if (direction > 0 && contentGroups.length > 0) moveTo(preferredControlIndex(contentGroups[0]!))
+        return
+      }
+      if (active.navigation === 'vertical') {
+        const siblings = activeGroup.entries
+        const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
+        const nextSibling = siblings[siblingIndex + direction]
+        if (nextSibling !== undefined) {
+          moveTo(nextSibling.index)
+          return
+        }
+      }
+      const contentGroupIndex = contentGroups.findIndex(group => group.id === active.group)
+      const nextContentGroup = contentGroups[contentGroupIndex + direction]
+      if (nextContentGroup !== undefined) {
+        moveTo(preferredControlIndex(nextContentGroup))
+        return
+      }
+      if (direction < 0 && contentGroupIndex === 0) {
+        moveTo(preferredControlIndex(tabGroups[this.state.lastTabGroupIndex]!))
+      }
       return
     }
     if (matchingDirection) {
@@ -994,7 +1151,7 @@ export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions
   }
   try {
     const surface = admittedSurface(admitted.value, options, 'ui')
-    const focusTarget = controlsForNode(admitted.value, options, '$', true).length === 0 ? null : surface
+    const focusTarget = controlInventoryForNode(admitted.value, options, '$', true).controls.length === 0 ? null : surface
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
     const message = 'Blue UI compilation failed safely'

@@ -53,6 +53,8 @@ owner attach、aggregate observe、notification observe、gesture mint、semanti
 
 `BlueUiNode` 保留 `BlueView` 作为经过清洗的 text/fields/code/diff/sections 内容叶，并增加 rich text、stack、surface、scroll、tabs、list、form、actions、loader、empty、progress、spacer 和 divider。响应式显示只存在于 `BlueUiChild.when`，并相对于获配的 surface viewport 计算。
 
+action 可成对声明 `shortcut` / `shortcutFor`，在焦点位于指定 tabs、list 或 form control 时，把 `pageup` 或 `pagedown` 映射为该 action 的普通 `activate` event。`focusable: false` 让分页操作保持可见且可由快捷键触发，但不进入 roving focus。字段必须成对出现，同一目标 control 的 shortcut 不得重复。
+
 node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`、`onEvent`、`AbortSignal` 和 registration handle 是进程内执行边界。插件只收到语义事件，不接触 raw key。value/selection/tab change 按 control latest-wins；activate/submit/dismiss 按 surface FIFO。revision、abort、timeout 和合并 refresh 由 Blue 托管。
 
 `BlueStatusNode` 递归只允许 text、rich text、fields、progress 和 stack，`BluePluginApi.status` 已由最终 additive registry 实现。host 同时接纳 pane、overlay、editor extension 和 status/editor provider 候选。每个 contribution 在滚动一秒内最多成功 refresh 20 次，同 tick 调用会合并 owner 通知。capturing overlay 必须携带 host 为 owner 创建的 `BlueUserGesture`；proof 只消费一次，owner 卸载时其未消费 proof 全部失效。

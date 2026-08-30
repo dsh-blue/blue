@@ -276,7 +276,7 @@ describe('registerPluginCommand', () => {
     await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
     const panel = world.screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
     expect(panel.render(100).join('\n')).toContain('Installed plugin')
-    expect(panel.render(100).join('\n')).toContain('‹ Installed ›')
+    expect(panel.render(100).join('\n')).toContain('‹ ● Installed ›')
 
     // The first installed row is behind an upgrade confirmation form.
     panel.handleInput(KEY.enter)
@@ -293,7 +293,7 @@ describe('registerPluginCommand', () => {
 
     // Switch to the marketplace page and install its selected entry.
     panel.handleInput(KEY.tab)
-    expect(panel.render(100).join('\n')).toContain('‹ Available ›')
+    expect(panel.render(100).join('\n')).toContain('‹ ● Available ›')
     panel.handleInput(KEY.enter)
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('installed; restart Blue to apply'))
@@ -302,7 +302,7 @@ describe('registerPluginCommand', () => {
     // Return to Installed and choose the up-to-date row to exercise removal.
     panel.handleInput(KEY.shiftTab)
     expect((panel as unknown as { group: number }).group).toBe(0)
-    expect(panel.render(100).join('\n')).toContain('‹ Installed ›')
+    expect(panel.render(100).join('\n')).toContain('‹ ● Installed ›')
     panel.handleInput(KEY.down)
     const selectedNoVersion = panel.render(100).find(row => row.includes('No version')) ?? ''
     expect(selectedNoVersion).toContain('●')

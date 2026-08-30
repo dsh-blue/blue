@@ -739,7 +739,7 @@ describe('compileBlueUiNode', () => {
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'keep' })
   })
 
-  it('routes direction keys within the active group while Tab crosses groups', () => {
+  it('keeps Tab in the tab domain and uses Down to enter content controls', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
       ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'b', label: 'B' }] }),
@@ -751,8 +751,11 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('\r')
     focus.handleInput?.('\t')
     focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     expect(events).toEqual([
@@ -762,7 +765,7 @@ describe('compileBlueUiNode', () => {
     ])
   })
 
-  it('traverses nested tabs, lists, actions, and forms by group preference', () => {
+  it('traverses nested tab levels separately from content groups', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
       ui.tabs({ id: 'primary-tabs', activeId: 'details', items: [
@@ -818,31 +821,39 @@ describe('compileBlueUiNode', () => {
     expectFocused('Activity')
     focus.handleInput?.('\r')
     focus.handleInput?.('\t')
+    expectFocused('Details')
+    focus.handleInput?.('\x1b[Z')
+    expectFocused('Models')
+    focus.handleInput?.('\x1b[B')
     expectFocused('Selected row')
     focus.handleInput?.('\x1b[B')
     expectFocused('Last row')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
     expectFocused('Primary')
     focus.handleInput?.('\x1b[D')
     expectFocused('Regular')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
     expectFocused('Enabled')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
     expectFocused('Choice')
     focus.handleInput?.('\x1b[D')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
     expectFocused('Save')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[B')
+    expectFocused('Save')
+    focus.handleInput?.('\x1b[A')
     expectFocused('Choice')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[A')
     expectFocused('Enabled')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[A')
     expectFocused('Primary')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[A')
     expectFocused('Selected row')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[A')
+    expectFocused('Plain row')
+    focus.handleInput?.('\x1b[A')
     expectFocused('Models')
 
     expect(events).toEqual([
@@ -851,6 +862,82 @@ describe('compileBlueUiNode', () => {
       { kind: 'selection-change', controlId: 'rows', value: 'last' },
       { kind: 'value-change', controlId: 'choice', value: 'b' },
     ])
+  })
+
+  it('restores the semantic candidate and remembered tab level after recompilation', () => {
+    const tree = ui.stack.column([
+      ui.tabs({ id: 'primary-tabs', activeId: 'overview', items: [{ id: 'overview', label: 'Overview' }, { id: 'details', label: 'Details' }] }),
+      ui.tabs({ id: 'detail-tabs', activeId: 'sites', items: [{ id: 'sites', label: 'Sites' }, { id: 'models', label: 'Models' }] }),
+      ui.list({ id: 'rows', selectedIds: ['selected'], items: [{ id: 'selected', label: 'Selected row' }] }),
+    ])
+    const first = compiled(tree, fixture().options)
+    first.focusTarget!.handleInput?.('\t')
+    first.focusTarget!.handleInput?.('\x1b[B')
+    expect(first.focusTarget!.captureFocusIdentity?.()).toEqual({ controlId: 'rows', itemId: 'selected', tabControlId: 'detail-tabs' })
+
+    const second = compiled(tree, fixture().options)
+    expect(second.focusTarget!.restoreFocusIdentity?.(first.focusTarget!.captureFocusIdentity!())).toBe(true)
+    second.focusTarget!.focused = true
+    expect(stripTerminalSequences(second.component.render(80).find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Selected row')
+    second.focusTarget!.handleInput?.('\x1b[A')
+    expect(stripTerminalSequences(second.component.render(80).find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Sites')
+    expect(second.focusTarget!.restoreFocusIdentity?.({ controlId: 'missing' })).toBe(false)
+
+    const { options, viewport } = fixture()
+    viewport.columns = 20
+    const hidden = compiled(ui.stack.column([
+      ui.child(ui.tabs({ id: 'later', activeId: 'a', items: [{ id: 'a', label: 'Later' }] }), { when: { minWidth: 40 } }),
+    ]), options)
+    expect(hidden.focusTarget!.captureFocusIdentity?.()).toBeUndefined()
+  })
+
+  it('routes page shortcuts only inside their declared scope without focusing paging actions', () => {
+    const { options, events } = fixture()
+    const result = compiled(ui.stack.column([
+      ui.tabs({ id: 'pages', activeId: 'details', items: [{ id: 'details', label: 'Details' }, { id: 'accounts', label: 'Accounts' }] }),
+      ui.list({ id: 'rows', selectedIds: ['two'], items: [{ id: 'one', label: 'One' }, { id: 'two', label: 'Two' }] }),
+      ui.actions({ id: 'pagination', items: [
+        { id: 'previous', label: 'Previous', shortcut: 'pageup', shortcutFor: 'rows', focusable: false },
+        { id: 'next', label: 'Next', shortcut: 'pagedown', shortcutFor: 'rows', focusable: false },
+      ] }),
+    ]), options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    expect(result.component.render(80).join('')).toContain('Previous')
+    focus.handleInput?.('\x1b[6~')
+    expect(events).toEqual([])
+    focus.handleInput?.('\x1b[B')
+    expect(stripTerminalSequences(result.component.render(80).find(row => row.includes(CURSOR_MARKER)) ?? '')).toContain('Two')
+    focus.handleInput?.('\x1b[6~')
+    focus.handleInput?.('\x1b[5~')
+    expect(events).toEqual([
+      { kind: 'activate', controlId: 'next' },
+      { kind: 'activate', controlId: 'previous' },
+    ])
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[6~')
+    expect(events).toHaveLength(2)
+
+    const disabledEvents: unknown[] = []
+    const disabled = compiled(ui.stack.column([
+      ui.list({ id: 'disabled-scope', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      ui.actions({ id: 'disabled-pages', items: [{ id: 'disabled-next', label: 'Next', shortcut: 'pagedown', shortcutFor: 'disabled-scope', focusable: false, disabled: true }] }),
+    ]), fixture({ emit: event => disabledEvents.push(event) }).options)
+    disabled.focusTarget!.handleInput?.('\x1b[6~')
+    expect(disabledEvents).toEqual([])
+
+    const confirmedEvents: unknown[] = []
+    const confirmed = compiled(ui.stack.column([
+      ui.list({ id: 'confirm-scope', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      ui.actions({ id: 'confirmed-pages', items: [{ id: 'confirmed-previous', label: 'Previous', shortcut: 'pageup', shortcutFor: 'confirm-scope', focusable: false, confirm: 'Page back?' }] }),
+    ]), fixture({ emit: event => confirmedEvents.push(event) }).options)
+    confirmed.focusTarget!.handleInput?.('\x1b[5~')
+    expect(confirmedEvents).toEqual([])
+    expect(confirmed.component.render(80).join('')).toContain('Page back?')
+    confirmed.focusTarget!.handleInput?.('\x1b')
+    confirmed.focusTarget!.handleInput?.('\x1b[5~')
+    confirmed.focusTarget!.handleInput?.('\x1b[5~')
+    expect(confirmedEvents).toEqual([{ kind: 'activate', controlId: 'confirmed-previous' }])
   })
 
   it('dispatches list-add, form toggle/submit/cancel, loader and empty actions', () => {
@@ -894,11 +981,16 @@ describe('compileBlueUiNode', () => {
     expect(passive.component.render(20)).toEqual([])
 
     const focus = compiled(ui.actions({ id: 'a', items: [{ id: 'one', label: 'One' }, { id: 'busy', label: 'Busy', busy: true }, { id: 'two', label: 'Two' }] }), options).focusTarget!
+    focus.handleInput?.('\x1b[5~')
     focus.handleInput?.('\x1b[A')
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\x1b[D')
     focus.handleInput?.('\x1b[C')
     focus.handleInput?.('x')
+
+    const tabsOnly = compiled(ui.tabs({ id: 'tabs-only', activeId: 'one', items: [{ id: 'one', label: 'One' }] }), options).focusTarget!
+    tabsOnly.handleInput?.('\x1b[A')
+    tabsOnly.handleInput?.('\x1b[B')
   })
 
   it('renders optional and disabled control variants', () => {
@@ -930,12 +1022,14 @@ describe('compileBlueUiNode', () => {
     const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), fixture({ colors: trackedColors }).options)
     tabs.focusTarget!.focused = true
     tabs.focusTarget!.handleInput?.('\t')
-    expect(tabs.component.render(40).join('')).toContain(`${CURSOR_MARKER} → ‹ Active ›`)
+    const activeTabRow = tabs.component.render(40).join('')
+    expect(activeTabRow).toContain(`${CURSOR_MARKER}  ‹ ● Active ›`)
+    expect(activeTabRow).not.toContain('→ ‹ ● Active ›')
     tabs.focusTarget!.handleInput?.('\x1b[C')
     tabs.focusTarget!.handleInput?.('\t')
     tabs.focusTarget!.handleInput?.('\x1b[Z')
     const tabRow = tabs.component.render(40).join('')
-    expect(tabRow).toContain('‹ Active ›')
+    expect(tabRow).toContain('‹ ● Active ›')
     expect(tabRow).toContain(`${CURSOR_MARKER} → Focused`)
     expect(tabRow.replaceAll(CURSOR_MARKER, '')).toContain('→ Focused')
     const tabLayoutRow = layout(tabs.component as Component, 40, 1).lines.join('')

@@ -58,6 +58,8 @@ Owner attachment, aggregate observation, notification observation, gesture minti
 
 `BlueUiNode` retains `BlueView` as the sanitized text/fields/code/diff/sections leaf and adds rich text, stack, surface, scroll, tabs, list, form, actions, loader, empty, progress, spacer, and divider nodes. Responsive visibility exists only on `BlueUiChild.when` and is relative to the allocated surface viewport.
 
+An action may declare the paired `shortcut` / `shortcutFor` fields to map `pageup` or `pagedown` to its ordinary `activate` event while focus is inside the named tabs, list, or form control. `focusable: false` leaves that paging affordance visible and shortcut-addressable without adding it to roving focus. Shortcut pairs must be complete and unique per target control.
+
 Nodes, event payloads, and snapshots are readonly JSON-shaped data. `render`, `onEvent`, `AbortSignal`, and registration handles are process-local execution boundaries. Plugins receive semantic events, never raw keys. Value, selection, and tab changes are latest-wins per control; activate, submit, and dismiss are FIFO per surface. Blue owns revision checks, abort, timeout, and coalesced refresh.
 
 `BlueStatusNode` recursively permits only text, rich text, fields, progress, and stack, and `BluePluginApi.status` is backed by its final additive registry. Panes, overlays, editor extensions, and status/editor provider candidates are also admitted by the host. Refresh is limited to 20 successful calls per contribution in a rolling second and same-tick calls coalesce their owner notification. Capturing overlays require a host-minted, owner-scoped `BlueUserGesture`; the host consumes the proof once and invalidates outstanding proofs when their owner unloads.

@@ -219,13 +219,15 @@ export class SurfaceManager {
       replace: (component, focusTarget) => {
         if (disposed || registered.contribution.component === component) return
         const previous = contributionFocusTarget(registered.contribution)
+        const identity = previous?.captureFocusIdentity?.()
         const { focusTarget: _previousTarget, ...metadata } = registered.contribution
         registered.contribution = focusTarget === undefined
           ? { ...metadata, component }
           : { ...metadata, component, focusTarget }
+        const next = contributionFocusTarget(registered.contribution)
+        if (identity !== undefined) next?.restoreFocusIdentity?.(identity)
         this.options.onChange?.()
         if (this.focusedIdValue === contribution.id) {
-          const next = contributionFocusTarget(registered.contribution)
           if (next === null) this.focusedIdValue = undefined
           if (previous !== null) this.options.onSurfaceFocusTransition?.(previous, next)
         }
