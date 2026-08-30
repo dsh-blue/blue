@@ -44,7 +44,7 @@ Copied files paste as one ordered batch on every platform: `text/uri-list` in Ub
 
 ## Editor-context keys
 
-With the editor focused, a contextual key chain applies (see [Key bindings](/en/reference/keys)): Escape first dismisses the completion popup, then closes a side-question pane mounted above, then clears the draft, then interrupts a running agent; Ctrl-C clears → interrupts → a second press within 1 second exits; Ctrl-S steers the non-empty draft into the current turn. ↑/↓ always belong to editor history (the queue pane only lists pending messages — it never takes those keys); the mouse wheel and PageUp/PageDown scroll a docked side-question pane when one is mounted, and the transcript otherwise.
+With the editor focused, a contextual key chain applies (see [Key bindings](/en/reference/keys)): Escape first dismisses the completion popup, then closes a side-question pane mounted above, then clears the draft, then safely retracts the just-submitted message (falling back to interruption when retraction is unavailable). Ctrl-C never retracts: it always interrupts current work first and preserves a next-message draft; only when there is nothing to interrupt does it clear an idle draft or enter the double-press-within-1-second exit path. Ctrl-S steers the non-empty draft into the current turn. ↑/↓ always belong to editor history (the queue pane only lists pending messages — it never takes those keys); the mouse wheel and PageUp/PageDown scroll a docked side-question pane when one is mounted, and the transcript otherwise.
 
 ## Draft survival
 
