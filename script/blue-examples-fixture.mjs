@@ -318,7 +318,6 @@ try {
     effect(callback) { this.cleanups.push(callback()) }
     dispose() { for (const cleanup of this.cleanups.splice(0).reverse()) cleanup() }
   }
-  const controls = new WeakMap()
   function world(capabilities) {
     const ctx = new cordis.Context()
     const host = new api.BluePluginHostService(ctx)
@@ -326,14 +325,13 @@ try {
     const owner = new Scope(host)
     const openRequests = []
     const consumer = new Scope(host, openRequests)
-    control.attachCapabilities(owner, capabilities)
-    controls.set(host, control)
-    return { host, control, owner, consumer, openRequests }
+    const lease = control.attachCapabilities(owner, capabilities)
+    return { host, control, lease, owner, consumer, openRequests }
   }
-  function snapshot(host) {
-    const control = controls.get(host)
-    ensure(control !== undefined, 'EXAMPLES_CONTROL_MISSING', 'test composition did not retain its private control')
-    return control.snapshot()
+  function snapshot(lease) {
+    const result = lease.snapshot()
+    ensure(result.ok, 'EXAMPLES_OWNER_STALE', result.message ?? 'test composition owner lease is stale')
+    return result.value
   }
   function expectOpenRequest(active, name) {
     const manifest = packedPluginManifests.get(name)
@@ -356,30 +354,30 @@ try {
     ['bottom-log.pane-lifecycle', bottomLog, 'example.log.recent', 'bottom'],
   ]) {
     await scenario(scenarioName, async () => {
-      const denied = world([])
+      const denied = world(['commands'])
       module.apply(denied.consumer)
       expectOpenRequest(denied, module.name)
-      ensure(snapshot(denied.host).panes.length === 0, 'EXAMPLES_CAPABILITY_REJECTION', `${scenarioName} bypassed host admission`)
+      ensure(snapshot(denied.lease).panes.length === 0, 'EXAMPLES_CAPABILITY_REJECTION', `${scenarioName} bypassed host admission`)
       denied.consumer.dispose(); denied.owner.dispose()
 
       const active = world(['panes'])
       module.apply(active.consumer)
       expectOpenRequest(active, module.name)
-      const entry = snapshot(active.host).panes[0]
+      const entry = snapshot(active.lease).panes[0]
       ensure(entry?.id === expectedId && entry.contribution.placement === expectedPlacement, 'EXAMPLES_PANE_ADMISSION', `${scenarioName} did not register its pane`)
       scanUi(expectedId, entry.contribution.render())
       active.consumer.dispose()
-      ensure(snapshot(active.host).panes.length === 0, 'EXAMPLES_PANE_UNLOAD', `${scenarioName} survived consumer unload`)
+      ensure(snapshot(active.lease).panes.length === 0, 'EXAMPLES_PANE_UNLOAD', `${scenarioName} survived consumer unload`)
       active.owner.dispose()
     })
   }
 
   await scenario('overlay.gesture-and-late-containment', async () => {
     const denied = world(['commands'])
-    await denied.control.runUserGesture(denied.owner, async retainedGesture => {
+    await denied.lease.runUserGesture('commands', async retainedGesture => {
       overlay.apply(denied.consumer)
       expectOpenRequest(denied, overlay.name)
-      ensure(snapshot(denied.host).commands.length === 0 && snapshot(denied.host).overlays.length === 0, 'EXAMPLES_OVERLAY_CAPABILITY_REJECTION', 'overlay registered partial state without its complete capability set')
+      ensure(snapshot(denied.lease).commands.length === 0 && snapshot(denied.lease).overlays.length === 0, 'EXAMPLES_OVERLAY_CAPABILITY_REJECTION', 'overlay registered partial state without its complete capability set')
       const overlayLease = denied.control.attachCapabilities(denied.owner, ['overlays'])
       const probe = new Scope(denied.host)
       const probeOpened = denied.host.open(probe, { id: 'fixture.gesture-probe', api: '^1.0.0-beta.1', capabilities: ['overlays'] })
@@ -394,20 +392,20 @@ try {
     const active = world(['commands', 'overlays'])
     overlay.apply(active.consumer)
     expectOpenRequest(active, overlay.name)
-    const command = snapshot(active.host).commands[0]
+    const command = snapshot(active.lease).commands[0]
     ensure(command !== undefined, 'EXAMPLES_OVERLAY_COMMAND', 'overlay command was not registered')
     const withoutGesture = await command.execute([], {})
-    ensure(!withoutGesture.ok && withoutGesture.code === 'BLUE_ACTION_REJECTED' && snapshot(active.host).overlays.length === 0, 'EXAMPLES_OVERLAY_GESTURE', 'overlay opened without a gesture')
-    await active.control.runUserGesture(active.owner, async userGesture => {
+    ensure(!withoutGesture.ok && withoutGesture.code === 'BLUE_ACTION_REJECTED' && snapshot(active.lease).overlays.length === 0, 'EXAMPLES_OVERLAY_GESTURE', 'overlay opened without a gesture')
+    await active.lease.runUserGesture('commands', async userGesture => {
       const opened = await command.execute([], { userGesture })
       ensure(opened.ok, 'EXAMPLES_OVERLAY_OPEN', opened.message ?? 'overlay did not open')
     })
-    const entry = snapshot(active.host).overlays[0]
+    const entry = snapshot(active.lease).overlays[0]
     ensure(entry !== undefined, 'EXAMPLES_OVERLAY_MISSING', 'capturing overlay is missing')
     scanUi('overlay', entry.request.render())
     active.consumer.dispose()
-    ensure(snapshot(active.host).commands.length === 0 && snapshot(active.host).overlays.length === 0, 'EXAMPLES_OVERLAY_UNLOAD', 'overlay state survived unload')
-    await active.control.runUserGesture(active.owner, async userGesture => {
+    ensure(snapshot(active.lease).commands.length === 0 && snapshot(active.lease).overlays.length === 0, 'EXAMPLES_OVERLAY_UNLOAD', 'overlay state survived unload')
+    await active.lease.runUserGesture('commands', async userGesture => {
       const late = await command.execute([], { userGesture })
       ensure(!late.ok, 'EXAMPLES_OVERLAY_LATE', 'retained command reopened an overlay after unload')
     })
@@ -415,42 +413,42 @@ try {
   })
 
   await scenario('status-provider.inert-candidate', async () => {
-    const denied = world([])
+    const denied = world(['commands'])
     status.apply(denied.consumer)
     expectOpenRequest(denied, status.name)
-    ensure(snapshot(denied.host).statusProviders.length === 0, 'EXAMPLES_STATUS_CAPABILITY_REJECTION', 'status provider registered while its capability was absent')
+    ensure(snapshot(denied.lease).statusProviders.length === 0, 'EXAMPLES_STATUS_CAPABILITY_REJECTION', 'status provider registered while its capability was absent')
     denied.consumer.dispose(); denied.owner.dispose()
 
     const active = world(['status.provider'])
     status.apply(active.consumer)
     expectOpenRequest(active, status.name)
-    const candidate = snapshot(active.host).statusProviders[0]
+    const candidate = snapshot(active.lease).statusProviders[0]
     ensure(candidate?.id === 'example.status.compact', 'EXAMPLES_STATUS_CANDIDATE', 'status candidate was not registered')
     const node = candidate.render({ session: { id: 's', cwd: '/tmp', status: 'running', mode: 'plan', model: { id: 'deepseek-chat' } }, entries: [], busy: true })
     scanStatus('status-provider', node)
     active.consumer.dispose()
-    ensure(snapshot(active.host).statusProviders.length === 0, 'EXAMPLES_STATUS_UNLOAD', 'status candidate survived unload')
+    ensure(snapshot(active.lease).statusProviders.length === 0, 'EXAMPLES_STATUS_UNLOAD', 'status candidate survived unload')
     active.owner.dispose()
   })
 
   await scenario('editor-provider.one-control-candidate', async () => {
-    const denied = world([])
+    const denied = world(['commands'])
     editor.apply(denied.consumer)
     expectOpenRequest(denied, editor.name)
-    ensure(snapshot(denied.host).editorProviders.length === 0, 'EXAMPLES_EDITOR_CAPABILITY_REJECTION', 'editor provider registered while its capability was absent')
+    ensure(snapshot(denied.lease).editorProviders.length === 0, 'EXAMPLES_EDITOR_CAPABILITY_REJECTION', 'editor provider registered while its capability was absent')
     denied.consumer.dispose(); denied.owner.dispose()
 
     const active = world(['editor.provider'])
     editor.apply(active.consumer)
     expectOpenRequest(active, editor.name)
-    const candidate = snapshot(active.host).editorProviders[0]
+    const candidate = snapshot(active.lease).editorProviders[0]
     ensure(candidate?.id === 'example.editor.focused', 'EXAMPLES_EDITOR_CANDIDATE', 'editor candidate was not registered')
     const node = candidate.render({ mode: 'plan', busy: true, attachments: [{ id: 'a', label: 'image.png' }], extensions: [{ id: 'ext' }] })
     const controls = JSON.stringify(node).match(/editor-control/gu)?.length ?? 0
     ensure(controls === 1, 'EXAMPLES_EDITOR_CONTROL', `editor shell has ${String(controls)} editor controls`)
     scanEditor('editor-provider', node)
     active.consumer.dispose()
-    ensure(snapshot(active.host).editorProviders.length === 0, 'EXAMPLES_EDITOR_UNLOAD', 'editor candidate survived unload')
+    ensure(snapshot(active.lease).editorProviders.length === 0, 'EXAMPLES_EDITOR_UNLOAD', 'editor candidate survived unload')
     active.owner.dispose()
   })
 
@@ -459,7 +457,8 @@ try {
     api.apply(ctx)
     const host = ctx.bluePluginHost
     const control = ctx.get('bluePluginControl')
-    controls.set(host, control)
+    const auditOwner = new Scope(host)
+    const auditLease = control.attachCapabilities(auditOwner, ['notifications.publish'])
     const consumer = new Scope(ctx.bluePluginHost)
 
     overlay.apply(consumer)
@@ -475,7 +474,7 @@ try {
     ensure(additive.value.status?.register({ id: 'durable-status', render: () => ({ kind: 'text', content: 'durable status' }) }).ok === true, 'EXAMPLES_DURABLE_STATUS', 'status did not register before its owner')
     ensure(additive.value.editorExtensions?.register({ id: 'durable-extension', hint: 'durable hint' }).ok === true, 'EXAMPLES_DURABLE_EXTENSION', 'editor extension did not register before its owner')
 
-    const buffered = snapshot(host)
+    const buffered = snapshot(auditLease)
     ensure(buffered.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_COMMAND', 'command did not buffer before its owner')
     ensure(buffered.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_STATUS', 'status did not buffer before its owner')
     ensure(buffered.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_EXTENSION', 'editor extension did not buffer before its owner')
@@ -483,12 +482,10 @@ try {
     ensure(buffered.editorProviders.some(entry => entry.id === 'example.editor.focused'), 'EXAMPLES_DURABLE_EDITOR_PROVIDER', 'editor provider did not buffer before its owner')
 
     const owner = new Scope(host)
-    let earlyGestureRejected = false
-    try { await control.runUserGesture(owner, () => undefined) } catch { earlyGestureRejected = true }
-    ensure(earlyGestureRejected, 'EXAMPLES_DURABLE_OWNER_EARLY', 'owner minted a gesture before its bridge attached')
+    ensure(!('runUserGesture' in control), 'EXAMPLES_DURABLE_OWNER_EARLY', 'raw control exposed dispatch authority before an owner lease attached')
     const ownerLease = control.attachCapabilities(owner, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     let replay
-    const replaySubscription = control.subscribe(next => { replay = next })
+    const replaySubscription = ownerLease.subscribe(next => { replay = next })
     ensure(replay?.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_COMMAND_REPLAY', 'late command owner did not receive the buffered command')
     ensure(replay?.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_STATUS_REPLAY', 'late status owner did not receive the buffered status')
     ensure(replay?.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_EXTENSION_REPLAY', 'late editor-extension owner did not receive the buffered extension')
@@ -497,21 +494,21 @@ try {
 
     const command = replay.commands.find(entry => entry.id === 'example-overlay')
     ensure(command !== undefined, 'EXAMPLES_DURABLE_COMMAND_REPLAY', 'replayed overlay command is missing')
-    await control.runUserGesture(owner, async userGesture => {
+    await ownerLease.runUserGesture('commands', async userGesture => {
       const opened = await command.execute([], { userGesture })
       ensure(opened.ok, 'EXAMPLES_DURABLE_OVERLAY', opened.message ?? 'replayed command did not open its overlay')
     })
-    ensure(snapshot(host).overlays.some(entry => entry.id === 'example.overlay.details'), 'EXAMPLES_DURABLE_OVERLAY_REPLAY', 'overlay did not reach its late owner')
+    ensure(snapshot(auditLease).overlays.some(entry => entry.id === 'example.overlay.details'), 'EXAMPLES_DURABLE_OVERLAY_REPLAY', 'overlay did not reach its late owner')
 
     replaySubscription.dispose()
     ownerLease.dispose()
-    ensure(snapshot(host).commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_OWNER_GAP', 'buffered contributions disappeared with their owner')
+    ensure(snapshot(auditLease).commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_OWNER_GAP', 'buffered contributions disappeared with their owner')
     owner.dispose()
 
     const replacement = new Scope(host)
     const replacementLease = control.attachCapabilities(replacement, ['commands', 'status', 'overlays', 'editor.extensions', 'status.provider', 'editor.provider'])
     let replacementReplay
-    const replacementSubscription = control.subscribe(next => { replacementReplay = next })
+    const replacementSubscription = replacementLease.subscribe(next => { replacementReplay = next })
     ensure(replacementReplay?.commands.some(entry => entry.id === 'example-overlay'), 'EXAMPLES_DURABLE_RELOAD_COMMAND', 'replacement owner did not replay the buffered command')
     ensure(replacementReplay?.status.some(entry => entry.id === 'durable-status'), 'EXAMPLES_DURABLE_RELOAD_STATUS', 'replacement owner did not replay the buffered status')
     ensure(replacementReplay?.editorExtensions.some(entry => entry.id === 'durable-extension'), 'EXAMPLES_DURABLE_RELOAD_EXTENSION', 'replacement owner did not replay the buffered editor extension')
@@ -522,8 +519,9 @@ try {
     replacement.dispose()
 
     consumer.dispose()
-    const unloaded = snapshot(host)
+    const unloaded = snapshot(auditLease)
     ensure(unloaded.commands.length === 0 && unloaded.status.length === 0 && unloaded.overlays.length === 0 && unloaded.editorExtensions.length === 0 && unloaded.statusProviders.length === 0 && unloaded.editorProviders.length === 0, 'EXAMPLES_DURABLE_UNLOAD', 'buffered contributions survived consumer unload')
+    auditOwner.dispose()
     await ctx.fiber.dispose()
   })
 } catch (error) {
