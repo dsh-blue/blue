@@ -69,7 +69,9 @@ subset. All three share the renderer-neutral content leaves below:
 
 The full `BlueUiNode` vocabulary also includes rich text, stacks, surfaces,
 scroll, tabs, lists, forms, actions, loaders, empty states, progress, spacers,
-and dividers. See the [public UI kit](/en/plugins/ui-kit) for builders.
+and dividers. See the [public UI kit](/en/plugins/ui-kit) for the builder
+overview and the [UI node reference](/en/plugins/ui-reference) for the complete
+field contracts.
 
 Styling has only two dimensions:
 

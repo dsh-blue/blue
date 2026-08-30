@@ -176,6 +176,7 @@ const sidebarZh = {
     {
       text: '参考',
       items: [
+        { text: 'UI 节点参考', link: '/plugins/ui-reference' },
         { text: 'Seam 参考', link: '/plugins/seams' },
         { text: '插件包规范', link: '/plugins/manifest' },
         { text: '内置插件', link: '/plugins/builtins' },
@@ -279,6 +280,7 @@ const sidebarEn = {
     {
       text: 'Reference',
       items: [
+        { text: 'UI node reference', link: '/en/plugins/ui-reference' },
         { text: 'Seam reference', link: '/en/plugins/seams' },
         { text: 'Plugin package spec', link: '/en/plugins/manifest' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },

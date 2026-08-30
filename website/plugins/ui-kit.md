@@ -28,6 +28,8 @@ layout metadata 才需要 `ui.child()`。
 可用构造器包括内容 leaf（text、rich-text、fields、code、diff、sections）、
 stack/surface/scroll、tabs/list/form/actions，以及 loader/empty/progress/spacer/divider。
 节点只表达语义，不表达 ANSI、终端列数、focus handle 或 renderer key binding。
+每个构造器的字段、默认值、约束、事件 payload 与 surface 兼容性见
+[UI 节点参考](/plugins/ui-reference)。
 
 ## 可复用组件
 

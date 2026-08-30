@@ -141,4 +141,5 @@ dsh --profile blue-header-dev
 [调试与验证](/plugins/testing)。
 
 下一步可阅读 [Pane 与 Overlay](/plugins/dock)、[公共 UI Kit](/plugins/ui-kit)、
-[示例目录](/plugins/examples)和[旧 UI API 迁移](/plugins/ui-migration)。
+[UI 节点参考](/plugins/ui-reference)、[示例目录](/plugins/examples)和
+[旧 UI API 迁移](/plugins/ui-migration)。

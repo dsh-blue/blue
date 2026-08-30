@@ -76,7 +76,7 @@ Generic `session.act` has been removed; writes use the owning Harness service or
 
 - [Quickstart](/en/plugins/quickstart) — run a plugin end to end in ten minutes: package skeleton, manifest, install, verification, unload;
 - [Core concepts](/en/plugins/concepts) — the Cordis tree and Fiber lifecycle, capability scoping, canonical nodes, `BlueResult` error codes, and the domain/adapter split;
-- [Public UI kit](/en/plugins/ui-kit) and [example catalog](/en/plugins/examples) — pure builders, shared components, and six packed examples.
+- [Public UI kit](/en/plugins/ui-kit), [UI node reference](/en/plugins/ui-reference), and [example catalog](/en/plugins/examples) — pure builders, field-level contracts, shared components, and six packed examples.
 
 **Contributing capabilities** — one page per capability: contract table, full example, behavior details, and common pitfalls.
 

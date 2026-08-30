@@ -31,6 +31,8 @@ Builders cover content leaves (text, rich text, fields, code, diff, sections),
 stack/surface/scroll, tabs/list/form/actions, and
 loader/empty/progress/spacer/divider. Nodes express semantics, never ANSI,
 terminal columns, focus handles, or renderer key bindings.
+For every builder's fields, defaults, constraints, event payloads, and surface
+compatibility, see the [UI node reference](/en/plugins/ui-reference).
 
 ## Reusable components
 

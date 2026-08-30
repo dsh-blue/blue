@@ -65,4 +65,5 @@ always retains the draft, history, focus, and IME engine.
 After a canonical migration, run the static validator, independent packed fixture, Fiber
 unload, late-result, and width scans. Use the [example catalog](/en/plugins/examples)
 for runnable references and the [public UI kit](/en/plugins/ui-kit) for node
-construction.
+construction. The [UI node reference](/en/plugins/ui-reference) lists every
+field, default, constraint, and event payload.

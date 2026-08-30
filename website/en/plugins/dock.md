@@ -109,4 +109,6 @@ gap/reload.
 - do no I/O in `render()`; update external state and call the registration's `refresh()`.
 
 See the runnable [header, right inspector, bottom log, and overlay examples](/en/plugins/examples).
-For migration from old `dock` contributions, use the [migration guide](/en/plugins/ui-migration).
+See the [UI node reference](/en/plugins/ui-reference) for every `BlueUiNode`
+field, default, and event payload. For migration from old `dock` contributions,
+use the [migration guide](/en/plugins/ui-migration).

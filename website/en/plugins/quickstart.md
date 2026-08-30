@@ -153,5 +153,7 @@ publishing, also run the static validator, packed-install fixture, and narrow
 width scans described in [Debugging and validation](/en/plugins/testing).
 
 Continue with [Panes and overlays](/en/plugins/dock), the
-[public UI kit](/en/plugins/ui-kit), the [example catalog](/en/plugins/examples),
-and the [legacy UI API migration guide](/en/plugins/ui-migration).
+[public UI kit](/en/plugins/ui-kit), the
+[UI node reference](/en/plugins/ui-reference), the
+[example catalog](/en/plugins/examples), and the
+[legacy UI API migration guide](/en/plugins/ui-migration).

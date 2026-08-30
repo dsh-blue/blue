@@ -69,7 +69,8 @@ renderer-neutral 内容 leaf：
 
 完整 `BlueUiNode` 还包括 rich-text、stack、surface、scroll、tabs、list、form、
 actions、loader、empty、progress、spacer 与 divider。用公开 builder 构造这些节点
-见[公共 UI Kit](/plugins/ui-kit)。
+见[公共 UI Kit](/plugins/ui-kit)；逐字段契约见
+[UI 节点参考](/plugins/ui-reference)。
 
 样式只有两个维度：
 

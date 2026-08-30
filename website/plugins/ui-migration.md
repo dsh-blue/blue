@@ -61,4 +61,5 @@ provider 只能重排 shell metadata，并且每个候选必须恰好包含一�
 
 Canonical 迁移后运行静态 validator、独立 packed fixture、Fiber unload、late-result 与宽度
 扫描。参考实现见[示例目录](/plugins/examples)，完整节点构造见
-[公共 UI Kit](/plugins/ui-kit)。
+[公共 UI Kit](/plugins/ui-kit)，逐字段契约见
+[UI 节点参考](/plugins/ui-reference)。

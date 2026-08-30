@@ -101,4 +101,5 @@ Overlay 是瞬时 action，owner gap/reload 不会缓存或重放。
 - `render()` 不做 I/O。外部状态变化后调用 registration 的 `refresh()`。
 
 完整可运行实现见 [header、right inspector、bottom log 与 overlay 示例](/plugins/examples)。
+`BlueUiNode` 的全部字段、默认值和事件载荷见 [UI 节点参考](/plugins/ui-reference)；
 从旧 `dock` contribution 迁移见[迁移指南](/plugins/ui-migration)。
