@@ -610,6 +610,7 @@ describe('blue plugin validator script', () => {
   it('reports the complete installed Harness tree before rejecting line mismatches', () => {
     const root = mkdtempTracked('blue-fixture-fake-tools-')
     const bin = join(root, 'bin')
+    const npmInstallArguments = join(root, 'npm-install-arguments.json')
     mkdirSync(bin)
     const fakePnpm = join(bin, 'pnpm')
     writeFileSync(fakePnpm, `#!/usr/bin/env node
@@ -629,6 +630,7 @@ const command = process.argv[2]
 if (command === 'view') {
   process.stdout.write('{}')
 } else if (command === 'install') {
+  writeFileSync(${JSON.stringify(npmInstallArguments)}, JSON.stringify(process.argv.slice(3)))
   for (const [name, version] of [['dsh-agent', '0.0.1'], ['dsh-session', '0.0.2']]) {
     const directory = join(process.cwd(), 'node_modules', '@deepseek-ai', name)
     mkdirSync(directory, { recursive: true })
@@ -648,6 +650,12 @@ if (command === 'view') {
     const report = JSON.parse(result.stdout)
     expect(result.signal).toBeNull()
     expect(result.status).toBe(1)
+    expect(JSON.parse(readFileSync(npmInstallArguments, 'utf8'))).toEqual([
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+    ])
+    expect(report.peerResolution).toBe('normal')
     expect(report.fixtureCleaned).toBe(true)
     expect(report.harnessPackages).toEqual({
       '@deepseek-ai/dsh-agent': '0.0.1',

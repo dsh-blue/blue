@@ -88,6 +88,11 @@ mismatch reports, indirect loader aliases, callable `apply` shape, reachable
 lifecycle ownership, and external-entry probe isolation. These assertions
 execute the CLI scripts as child processes; a pure helper assertion alone is not
 evidence for the JSON envelope.
+Independent packed installs always use npm's normal peer resolver, including
+when checking a previous Harness line; `--legacy-peer-deps` would hide an
+unsatisfied plugin contract. The fixture report records
+`peerResolution: 'normal'`, and the process-level fake-npm corpus pins the exact
+install flags so this release gate cannot silently weaken.
 The runtime-corpus case has an explicit 15-second Vitest ceiling because it
 launches one isolated validator process per corpus entry; each child still
 retains its own fail-closed process behavior, while the suite remains stable

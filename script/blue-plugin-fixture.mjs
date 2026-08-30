@@ -52,6 +52,7 @@ const report = {
   independentInstall: false,
   fixtureCleaned: false,
   harnessLine: requestedHarnessLine ?? null,
+  peerResolution: 'normal',
   harnessPackages: {},
   harnessPackageInstances: [],
   declared: [],
@@ -233,7 +234,7 @@ try {
   if (!install) {
     throw new FixtureFailure('FIXTURE_INSTALL_REQUIRED', 'independent scenarios require --install')
   }
-  const installArguments = ['install', '--ignore-scripts', '--no-audit', '--no-fund', ...(harnessLine === undefined ? [] : ['--legacy-peer-deps'])]
+  const installArguments = ['install', '--ignore-scripts', '--no-audit', '--no-fund']
   execFileSync('npm', installArguments, { cwd: fixtureRoot, stdio: 'ignore' })
   report.installed = true
   report.independentInstall = existsSync(join(fixtureRoot, 'node_modules'))
