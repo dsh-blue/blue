@@ -20,8 +20,15 @@ export const BLUE_PROJECTION_VALUE_MAX_BYTES = 262_144
 /** Maximum encoded size of one multi-key projection cut. */
 export const BLUE_PROJECTION_CUT_MAX_BYTES = 1_048_576
 
+interface BlueSessionDataFailure {
+  readonly code: BlueErrorCode
+  readonly message: string
+}
+
+const SESSION_DATA_FAILURES = new WeakMap<object, BlueSessionDataFailure>()
+
 /** Typed validation failure mapped to a public `BlueResult` by the host. */
-export class BlueSessionDataError extends Error {
+class BlueSessionDataError extends Error {
   /** Stable public error classification. */
   readonly code: BlueErrorCode
 
@@ -33,7 +40,18 @@ export class BlueSessionDataError extends Error {
   constructor(code: BlueErrorCode, message: string) {
     super(message)
     this.code = code
+    SESSION_DATA_FAILURES.set(this, Object.freeze({ code, message }))
   }
+}
+
+/**
+ * Inspect only errors minted by this module without reflecting over an
+ * untrusted thrown value.
+ * @param error - caught validation failure or hostile thrown value.
+ * @returns controlled public details for a branded validation failure.
+ */
+export function inspectBlueSessionDataError(error: unknown): BlueSessionDataFailure | undefined {
+  return SESSION_DATA_FAILURES.get(error as object)
 }
 
 function object(value: unknown): value is Record<string, unknown> {

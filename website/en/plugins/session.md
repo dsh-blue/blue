@@ -57,7 +57,7 @@ interface BluePluginSessionSnapshot {
 
 Only granted fields become own properties. Even when `model` is granted, it is omitted when no model is selected. The host copies and deeply freezes every snapshot. `null` means the owner is online with no active session; it never means the capability is missing.
 
-Within one session epoch, the host accepts only increasing revisions. A same-id session may restart at a lower revision after its epoch advances. Old epochs, duplicate revisions, and callbacks arriving after the old owner unloads are rejected.
+Within one session epoch, the session id cannot change and the host accepts only increasing revisions. The epoch/revision/id high-water survives owner gaps; an equal position can restore visibility after owner reload only when the complete canonical snapshot is unchanged, while a conflicting snapshot returns `BLUE_STALE`. A same-id session may restart at a lower revision after its epoch advances. Old epochs and callbacks arriving after the old owner unloads are rejected.
 
 `subscribe(listener)` returns `BlueResult<BlueRegistration>` and synchronously replays the current result after its effect registration succeeds. The listener also receives `BlueResult<BluePluginSessionSnapshot | null>`. An owner gap produces `BLUE_CAPABILITY_ABSENT`; owner reload replays the current generation. Once the consumer Fiber unloads, retained facades permanently return `BLUE_ACTION_REJECTED`.
 
@@ -91,7 +91,7 @@ interface BlueSessionProjectionCut {
 
 Each value must be finite, acyclic JSON. Accessors, sparse arrays, `undefined`, symbols, non-finite numbers, and cycles are rejected. The host detaches and deeply freezes every value. One value is limited to 262,144 encoded bytes and one complete cut to 1,048,576 bytes.
 
-A missing or unloaded key returns `BLUE_CAPABILITY_ABSENT` without reusing an old value. An old epoch or lower `asOfSeq` returns `BLUE_STALE`. `subscribe(keys, listener)` replays one consistent cut after registration and reads a new cut only when one of those keys changes. Duplicate, stale, malformed, or late owner notifications never reach the listener.
+A missing or unloaded key returns `BLUE_CAPABILITY_ABSENT` without reusing an old value. An old epoch or lower `asOfSeq` returns `BLUE_STALE`. The high-water survives owner gaps; values at an equal position are compared as canonical JSON independently of object key order, and conflicting values return `BLUE_STALE`. Requested key count is bounded by the exact grant before traversal. `subscribe(keys, listener)` replays one consistent cut after registration and reads a new cut only when one of those keys changes. Exact duplicates, stale, malformed, or late owner notifications never reach the listener. When the current session becomes `null`, existing projection subscriptions immediately replay `null` instead of retaining values from the old session.
 
 ```ts
 const projections = opened.value.projections

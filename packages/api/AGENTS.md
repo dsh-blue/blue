@@ -105,20 +105,33 @@ has required `revision` and `sessionEpoch` fences, is validated, cloned, and
 deeply frozen, and is scoped to the exact granted fields. `null` means the
 owner is online without a current session. An owner gap returns
 `BLUE_CAPABILITY_ABSENT`; unload permanently returns `BLUE_ACTION_REJECTED`.
-Same-id/new-epoch snapshots may restart at a lower revision, while old epochs
-and non-increasing revisions are ignored.
+The host retains the epoch/revision/id high-water and a canonical snapshot
+fingerprint across owner gaps. A session id cannot change inside one epoch;
+lower positions and conflicting data at an equal position are rejected, while
+an exactly equal owner reload may restore visibility. Same-id/new-epoch
+snapshots may restart at a lower revision. Publishing `null` clears the visible
+session and replays projection subscriptions so their old session values do not
+survive the transition.
 
 Canonical `session.projections.read` contains result-bearing `current`,
 consistent-cut `currentMany`, and key-set `subscribe`, all scoped to the exact
 granted keys. A cut carries `sessionEpoch` and `asOfSeq`; each value is bounded
 to 262,144 encoded bytes and the complete metadata-plus-values cut to 1,048,576
 bytes. Values must be finite, acyclic JSON and are detached and deeply frozen.
-Unhandled owner throws map to a fixed internal-failure message; only host-owned
-session-data errors retain their controlled detail. Key unload and missing
-backing data produce structured absence without stale reuse. Owner reload first
-replays the current cut, and owner identity plus epoch/sequence fences reject
-old or late callbacks. Reader and projection attachment also dispose a source
-subscription returned after reentrant owner cleanup. The owner-only
+Requested key-array length is rejected before entry traversal when it exceeds
+the exact grant. The global epoch/sequence high-water and canonical per-key
+fingerprints survive owner gaps; JSON object key order is not identity, while
+conflicting values at one position return `BLUE_STALE`. Every valid source
+event advances that global fence before interested subscriptions replay.
+Unhandled owner throws map to a fixed internal-failure message through a
+non-reflective branded-error path; only host-owned session-data errors retain
+their controlled detail. Key unload and missing backing data produce structured
+absence without stale reuse. Owner reload first replays the current cut, and
+owner identity plus epoch/sequence fences reject old or late callbacks. Reader
+and projection source registrations require an own data `dispose` function;
+synchronous owner cleanup prevents source subscription, and every fanout walks
+a stable listener snapshot. A source subscription returned after reentrant
+owner cleanup is disposed. The owner-only
 `attachSessionProjections` seam is
 separate from generic capability attachment and never enters the guarded host.
 Generic `session.act` and its requester types are absent from the public API;

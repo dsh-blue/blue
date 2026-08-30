@@ -57,7 +57,7 @@ interface BluePluginSessionSnapshot {
 
 只有获准字段会成为 own property；即使获准了 `model`，当前没有模型时也会省略该字段。Host 会复制并深冻结 snapshot。`null` 只表示 owner 在线但当前没有 active session，不表示 capability 缺失。
 
-同一个 session epoch 内，host 只接受递增的 `revision`。同 id session 切换到新 epoch 后可以从较低 revision 重新开始；旧 epoch、重复 revision 和旧 owner 卸载后的 late callback 都会被拒绝。
+同一个 session epoch 内，session id 不得改变，host 只接受递增的 `revision`。epoch/revision/id high-water 会跨 owner gap 保留；相同位置只有在完整 canonical snapshot 不变时才允许 owner reload 恢复可见性，冲突 snapshot 返回 `BLUE_STALE`。同 id session 切换到新 epoch 后可以从较低 revision 重新开始；旧 epoch 和旧 owner 卸载后的 late callback 都会被拒绝。
 
 `subscribe(listener)` 返回 `BlueResult<BlueRegistration>`，并在 effect 注册成功后同步 replay 当前结果。listener 收到的也是 `BlueResult<BluePluginSessionSnapshot | null>`。owner gap 产生 `BLUE_CAPABILITY_ABSENT`；owner reload 后 replay 当前 generation。consumer Fiber 卸载后，保留的 facade 永久返回 `BLUE_ACTION_REJECTED`。
 
@@ -91,7 +91,7 @@ interface BlueSessionProjectionCut {
 
 每个 value 必须是 finite、acyclic JSON；accessor、sparse array、`undefined`、symbol、非有限数字和循环引用都会被拒绝。Host 会分离并深冻结每个 value，单 value 上限为 262,144 encoded bytes，整个 cut 上限为 1,048,576 bytes。
 
-缺失或已卸载的 key 返回 `BLUE_CAPABILITY_ABSENT`，不会复用旧值。旧 epoch 或较小 `asOfSeq` 返回 `BLUE_STALE`。`subscribe(keys, listener)` 在注册后 replay 一次一致 cut，只在指定 key 变化时读取新 cut；重复、过期、非法或迟到的 owner 通知不会进入 listener。
+缺失或已卸载的 key 返回 `BLUE_CAPABILITY_ABSENT`，不会复用旧值。旧 epoch 或较小 `asOfSeq` 返回 `BLUE_STALE`。high-water 会跨 owner gap 保留；相同位置的值按 canonical JSON 比较，不受 object key 顺序影响，冲突值返回 `BLUE_STALE`。请求 key 数在遍历前受 exact grant 上界约束。`subscribe(keys, listener)` 在注册后 replay 一次一致 cut，只在指定 key 变化时读取新 cut；完全重复、过期、非法或迟到的 owner 通知不会进入 listener。当前 session 变为 `null` 时，已有 projection subscription 会立即 replay `null`，不会保留旧 session 值。
 
 ```ts
 const projections = opened.value.projections

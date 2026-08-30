@@ -61,7 +61,11 @@ node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`�
 
 app 通过私有 control 挂载唯一 active readonly session 与 projection source。Canonical `session.read` 提供带结果的 `current` 与 `subscribe`，始终携带用于 fencing 的 `revision` 和 `sessionEpoch`，且只包含精确获准的 `identity`/`cwd`/`status`/`mode`/`model` 字段。host 会校验、克隆并深冻结 snapshot，不信任 owner 对象。`null` 只表示 owner 在线但当前没有 session；owner gap 返回 `BLUE_CAPABILITY_ABSENT`，consumer 卸载后永久返回 `BLUE_ACTION_REJECTED`。同 id session 只有在 epoch 前进后才能从较低 revision 重新开始。
 
+session high-water 会跨 owner gap 保留。同一 epoch 内 session id 不得改变；相同 epoch/revision 只有在完整 canonical snapshot 不变时才能恢复。发布 `null` 会立即 replay projection subscriber，清除旧 session 数据。
+
 `session.projections.read` 为精确获准的 projection key 提供带结果的 `current`、一致 cut 的 `currentMany` 与 key-set `subscribe`。每个 cut 携带 `sessionEpoch` 与 `asOfSeq`；value 必须是有限、无环的 JSON，并会被分离和深冻结。单 value 上限为 262,144 encoded bytes，整 cut 上限为 1,048,576 bytes。key 缺失或卸载返回 `BLUE_CAPABILITY_ABSENT` 且不复用旧值；owner 重载会 replay 当前 cut，旧 epoch、过期 seq 与迟到 owner callback 会被拒绝。写操作直接使用其所属 Harness service 或 Blue 内部 domain action，不经过 generic public session gateway。
+
+请求 key 数会在遍历 key 前受 exact grant 上界约束。projection high-water 同样跨 owner gap 保留；相同位置的值按 canonical JSON 比较（不受 object key 顺序影响），冲突值返回 `BLUE_STALE`。
 
 Editor extension 可贡献静态辅助行、提示、诊断、结构化 action、completion 和异步 submit transform。`before` 与 `after` 保留 G1 的 `BlueUiNode` 源码类型，而 registration 只接纳递归的被动 `BlueEditorExtensionNode` 子集：text/rich-text/fields/code/diff/sections/progress/spacer/divider 加 stack/surface；交互控件会以 `BLUE_INVALID_CONTRIBUTION` 拒绝，extension action 通过独立的 `actions` + `onEvent` 路径处理。兼容 `complete` callback 只接收 `/`、`@` 和手动请求；插件通过 `completeV2` 与 `BlueEditorCompletionRequestV2` 显式选择接收 `#`，两者同时存在时优先 V2。registration 保持 inert：host 会克隆并冻结静态数据、保留 callback identity，但不会调用 callback。submit transform 只读 attachment metadata 且只能返回文本，因此附件继续由 Blue 持有。interaction owner 提供可中止、带 revision fence 的 callback context，并拒绝过期异步结果。
 

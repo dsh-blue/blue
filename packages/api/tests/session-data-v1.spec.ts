@@ -227,7 +227,11 @@ describe('canonical session.read data plane', () => {
     const subscribed = opened.value.session!.subscribe(result => { seen.push(result) })
     expect(subscribed.ok).toBe(true)
 
+    source.publish(snapshot(1, 9, 'different-id'))
+    expect(opened.value.session!.current()).toMatchObject({ ok: true, value: { id: 'same-id', sessionEpoch: 1, revision: 8 } })
+    expect(seen).toHaveLength(1)
     source.publish(snapshot(2, 1))
+    source.publish({ ...snapshot(2, 1), status: 'failed' })
     source.publish(snapshot(1, 99, 'old-epoch'))
     source.publish(snapshot(2, 1, 'duplicate-revision'))
     expect(opened.value.session!.current()).toMatchObject({ ok: true, value: { id: 'same-id', sessionEpoch: 2, revision: 1 } })
@@ -261,6 +265,108 @@ describe('canonical session.read data plane', () => {
     attachBluePluginHostSessionReader(host, consumer(), sessionSource(snapshot(4, 2)).reader)
     expect(seen.at(-1)).toEqual({ ok: true, value: { revision: 2, sessionEpoch: 4, mode: 'plan' } })
   })
+
+  it('retains the session identity fence through owner gaps and accepts an equal reload', () => {
+    const host = new BluePluginHostService(new Context())
+    const firstSource = sessionSource(snapshot(5, 10, 'session-a'))
+    const first = attachBluePluginHostSessionReader(host, consumer(), firstSource.reader)
+    const opened = host.open(consumer(), manifest([sessionRead(['identity'])], '@acme/session-owner-fence'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: BlueResult<unknown>[] = []
+    opened.value.session!.subscribe(result => { seen.push(result) })
+
+    firstSource.publish(null)
+    expect(seen.at(-1)).toEqual({ ok: true, value: null })
+    firstSource.publish(snapshot(4, 99, 'session-b'))
+    expect(seen.at(-1)).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    first.dispose()
+    expect(seen.at(-1)).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    const staleOwner = attachBluePluginHostSessionReader(host, consumer(), sessionSource(snapshot(4, 99, 'session-b')).reader)
+    expect(opened.value.session!.current()).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    expect(seen.at(-1)).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    staleOwner.dispose()
+
+    const conflictingOwner = attachBluePluginHostSessionReader(host, consumer(), sessionSource({ ...snapshot(5, 10, 'session-a'), mode: 'yolo' }).reader)
+    expect(opened.value.session!.current()).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    conflictingOwner.dispose()
+
+    attachBluePluginHostSessionReader(host, consumer(), sessionSource(snapshot(5, 10, 'session-a')).reader)
+    expect(opened.value.session!.current()).toEqual({
+      ok: true,
+      value: { revision: 10, sessionEpoch: 5, id: 'session-a' },
+    })
+    expect(seen.at(-1)).toEqual({ ok: true, value: { revision: 10, sessionEpoch: 5, id: 'session-a' } })
+  })
+
+  it('rejects a late owner publication that replaces its owner during snapshot validation', () => {
+    const host = new BluePluginHostService(new Context())
+    const firstSource = sessionSource(snapshot(1, 1, 'session-a'))
+    const first = attachBluePluginHostSessionReader(host, consumer(), firstSource.reader)
+    const opened = host.open(consumer(), manifest([sessionRead(['identity'])], '@acme/session-reentrant-owner'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    let replaced = false
+    const hostile = new Proxy(snapshot(3, 1, 'late-session'), {
+      getOwnPropertyDescriptor(target, key) {
+        if (!replaced && key === 'sessionEpoch') {
+          replaced = true
+          first.dispose()
+          attachBluePluginHostSessionReader(host, consumer(), sessionSource(snapshot(2, 1, 'session-b')).reader)
+        }
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      },
+    })
+    firstSource.publish(hostile)
+
+    expect(opened.value.session!.current()).toEqual({
+      ok: true,
+      value: { revision: 1, sessionEpoch: 2, id: 'session-b' },
+    })
+  })
+
+  it('does not notify a session subscriber synchronously disposed by its consumer effect', () => {
+    const host = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionReader(host, consumer(), sessionSource().reader)
+    let effects = 0
+    const immediateConsumer = {
+      effect(callback: () => void | (() => void)): void {
+        effects += 1
+        const cleanup = callback()
+        if (effects > 1 && typeof cleanup === 'function') cleanup()
+      },
+    }
+    const opened = host.open(immediateConsumer, manifest([sessionRead(['identity'])], '@acme/session-immediate-cleanup'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: BlueResult<unknown>[] = []
+    const subscribed = opened.value.session!.subscribe(result => { seen.push(result) })
+    expect(subscribed).toMatchObject({ ok: true, value: { disposed: true } })
+    expect(seen).toEqual([])
+  })
+
+  it('uses a stable session-listener snapshot during reentrant subscription', () => {
+    const host = new BluePluginHostService(new Context())
+    const source = sessionSource()
+    attachBluePluginHostSessionReader(host, consumer(), source.reader)
+    const opened = host.open(consumer(), manifest([sessionRead(['identity'])], '@acme/session-stable-fanout'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    let armed = false
+    let added = false
+    let lateCalls = 0
+    opened.value.session!.subscribe(() => {
+      if (!armed || added) return
+      added = true
+      opened.value.session!.subscribe(() => { lateCalls += 1 })
+    })
+    armed = true
+    source.publish(snapshot(1, 2))
+
+    expect(lateCalls).toBe(1)
+  })
 })
 
 describe('canonical session.projections.read data plane', () => {
@@ -291,6 +397,23 @@ describe('canonical session.projections.read data plane', () => {
     expect(opened.value.projections!.currentMany([])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany(['costUsage', 'costUsage'])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
     expect(opened.value.projections!.currentMany(['bad key'])).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(opened.value.projections!.currentMany('costUsage' as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(opened.value.projections!.currentMany(Array(1) as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    expect(opened.value.projections!.currentMany(Array(1_000_000_000) as never)).toEqual({
+      ok: false,
+      code: 'BLUE_LIMIT_EXCEEDED',
+      message: 'projection reads are limited to 2 granted keys',
+    })
+    const accessorKeys = ['costUsage']
+    Object.defineProperty(accessorKeys, '0', { get: () => 'costUsage' })
+    expect(opened.value.projections!.currentMany(accessorKeys)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
+    const revoked = Proxy.revocable(['costUsage'], {})
+    revoked.revoke()
+    expect(opened.value.projections!.currentMany(revoked.proxy)).toEqual({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: 'projection keys could not be inspected',
+    })
     expect(opened.value.projections!.subscribe(['secret'], () => {})).toMatchObject({ ok: false, code: 'BLUE_RESOURCE_DENIED' })
     expect(opened.value.projections!.subscribe(['costUsage'], null as never)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION' })
 
@@ -318,10 +441,10 @@ describe('canonical session.projections.read data plane', () => {
 
     source.set({ sessionEpoch: 5, asOfSeq: 9, values: { costUsage: { total: 0 } } })
     source.emit('costUsage', { total: 0 }, 10, 5)
-    expect(seen).toHaveLength(1)
+    expect(seen.at(-1)).toMatchObject({ ok: false, code: 'BLUE_STALE' })
     source.set({ sessionEpoch: 5, asOfSeq: 10, values: { costUsage: { total: 1 } } })
     source.emit('costUsage', { total: 1 }, 10, 5)
-    expect(seen).toHaveLength(1)
+    expect(seen.at(-1)).toEqual({ ok: true, value: { sessionEpoch: 5, asOfSeq: 10, values: { costUsage: { total: 1 } } } })
 
     source.set({ sessionEpoch: 5, asOfSeq: 11, values: {} })
     source.emit('costUsage', undefined, 11, 5)
@@ -330,6 +453,10 @@ describe('canonical session.projections.read data plane', () => {
     const afterUnavailable = seen.length
     source.emit('costUsage', undefined, 11, 5)
     expect(seen).toHaveLength(afterUnavailable)
+    source.set({ sessionEpoch: 5, asOfSeq: 10, values: { costUsage: { total: 0 } } })
+    source.emit('costUsage', { total: 0 }, 10, 5)
+    expect(seen).toHaveLength(afterUnavailable)
+    expect(opened.value.projections!.current('costUsage')).toMatchObject({ ok: false, code: 'BLUE_STALE' })
 
     source.set({ sessionEpoch: 5, asOfSeq: 12, values: { costUsage: { total: 2 } } })
     source.emit('costUsage', { total: 2 }, 12, 5)
@@ -363,8 +490,93 @@ describe('canonical session.projections.read data plane', () => {
     expect(duringGap).toMatchObject({ ok: true, value: { grants: [{ name: 'session.projections.read', availability: 'unavailable' }] } })
     if (duringGap.ok) expect(duringGap.value.projections!.current('costUsage')).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
 
-    attachBluePluginHostSessionProjections(host, consumer(), projectionSource({ sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 2 } }).source)
-    expect(seen.at(-1)).toEqual({ ok: true, value: { sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 2 } } })
+    const staleReplacement = attachBluePluginHostSessionProjections(host, consumer(), projectionSource({ sessionEpoch: 0, asOfSeq: 99, values: { costUsage: 0 } }).source)
+    expect(seen.at(-1)).toMatchObject({ ok: false, code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(first.value.projections!.current('costUsage')).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    staleReplacement.dispose()
+    attachBluePluginHostSessionProjections(host, consumer(), projectionSource({ sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 1 } }).source)
+    expect(seen.at(-1)).toEqual({ ok: true, value: { sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 1 } } })
+  })
+
+  it('replays projection subscriptions on session switches and fences late cuts after null', () => {
+    const host = new BluePluginHostService(new Context())
+    const sessions = sessionSource(snapshot(1, 1, 'session-a'))
+    attachBluePluginHostSessionReader(host, consumer(), sessions.reader)
+    const projections = projectionSource({ sessionEpoch: 1, asOfSeq: 3, values: { costUsage: 1 } })
+    attachBluePluginHostSessionProjections(host, consumer(), projections.source)
+    const opened = host.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-session-switch'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: BlueResult<BlueSessionProjectionCut | null>[] = []
+    opened.value.projections!.subscribe(['costUsage'], result => { seen.push(result) })
+
+    projections.set(null)
+    sessions.publish(null)
+    expect(seen.at(-1)).toEqual({ ok: true, value: null })
+
+    projections.set({ sessionEpoch: 2, asOfSeq: 0, values: { costUsage: 2 } })
+    sessions.publish(snapshot(2, 1, 'session-b'))
+    expect(seen.at(-1)).toEqual({ ok: true, value: { sessionEpoch: 2, asOfSeq: 0, values: { costUsage: 2 } } })
+
+    projections.set(null)
+    sessions.publish(snapshot(3, 1, 'session-c'))
+    expect(seen.at(-1)).toEqual({ ok: true, value: null })
+    const afterNull = seen.length
+    projections.set({ sessionEpoch: 2, asOfSeq: 99, values: { costUsage: 999 } })
+    projections.emit('costUsage', 999, 99, 2)
+    expect(seen).toHaveLength(afterNull)
+    expect(opened.value.projections!.current('costUsage')).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+  })
+
+  it('uses every valid projection event as a global epoch/sequence fence', () => {
+    const host = new BluePluginHostService(new Context())
+    const source = projectionSource({ sessionEpoch: 1, asOfSeq: 10, values: { costUsage: 1 } })
+    attachBluePluginHostSessionProjections(host, consumer(), source.source)
+    const opened = host.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-event-fence'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: BlueResult<BlueSessionProjectionCut | null>[] = []
+    opened.value.projections!.subscribe(['costUsage'], result => { seen.push(result) })
+
+    source.emit('costUsage', 1, 10, 1)
+    expect(seen).toHaveLength(1)
+    source.set({ sessionEpoch: 1, asOfSeq: 99, values: { costUsage: 99 } })
+    source.emit('costUsage', 2, 1, 2)
+    expect(seen.at(-1)).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    expect(opened.value.projections!.current('costUsage')).toMatchObject({ ok: false, code: 'BLUE_STALE' })
+    const afterAdvance = seen.length
+    source.emit('costUsage', 100, 100, 1)
+    expect(seen).toHaveLength(afterAdvance)
+  })
+
+  it('uses a stable projection-subscriber snapshot during reentrant event fanout', () => {
+    const host = new BluePluginHostService(new Context())
+    const source = projectionSource({ sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 1 } })
+    let reads = 0
+    attachBluePluginHostSessionProjections(host, consumer(), {
+      currentMany(keys) {
+        reads += 1
+        return source.source.currentMany(keys)
+      },
+      subscribe: source.source.subscribe,
+    })
+    const opened = host.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-stable-fanout'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    let armed = false
+    let added = false
+    opened.value.projections!.subscribe(['costUsage'], () => {
+      if (!armed || added) return
+      added = true
+      opened.value.projections!.subscribe(['costUsage'], () => {})
+    })
+    expect(reads).toBe(1)
+    armed = true
+    source.set({ sessionEpoch: 1, asOfSeq: 2, values: { costUsage: 2 } })
+    source.emit('costUsage', 2, 2, 1)
+
+    expect(reads).toBe(3)
   })
 
   it('handles null cuts, validates source events, and fences disposed projection consumers', () => {
@@ -451,6 +663,26 @@ describe('canonical session.projections.read data plane', () => {
     }
   })
 
+  it('does not replay a projection subscription synchronously disposed by its consumer effect', () => {
+    const host = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionProjections(host, consumer(), projectionSource({ sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 1 } }).source)
+    let effects = 0
+    const immediateConsumer = {
+      effect(callback: () => void | (() => void)): void {
+        effects += 1
+        const cleanup = callback()
+        if (effects > 1 && typeof cleanup === 'function') cleanup()
+      },
+    }
+    const opened = host.open(immediateConsumer, manifest([projectionRead(['costUsage'])], '@acme/projection-immediate-cleanup'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: BlueResult<BlueSessionProjectionCut | null>[] = []
+    const subscribed = opened.value.projections!.subscribe(['costUsage'], result => { seen.push(result) })
+    expect(subscribed).toMatchObject({ ok: true, value: { disposed: true } })
+    expect(seen).toEqual([])
+  })
+
   it('maps owner read failures without exposing thrown values', () => {
     const host = new BluePluginHostService(new Context())
     attachBluePluginHostSessionProjections(host, consumer(), {
@@ -481,16 +713,117 @@ describe('canonical session.projections.read data plane', () => {
         message: 'session data could not be read',
       })
     }
+
+    const revokedError = Proxy.revocable({}, {})
+    revokedError.revoke()
+    const revokedErrorHost = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionProjections(revokedErrorHost, consumer(), {
+      currentMany() { throw revokedError.proxy },
+      subscribe: projectionSource(null).source.subscribe,
+    })
+    const revokedErrorOpened = revokedErrorHost.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-revoked-error'))
+    expect(revokedErrorOpened.ok).toBe(true)
+    if (revokedErrorOpened.ok) {
+      expect(revokedErrorOpened.value.projections!.current('costUsage')).toEqual({
+        ok: false,
+        code: 'BLUE_INTERNAL_FAILURE',
+        message: 'session data could not be read',
+      })
+    }
+
+    const revokedCut = Proxy.revocable({ sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 1 } }, {})
+    revokedCut.revoke()
+    const revokedCutHost = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionProjections(revokedCutHost, consumer(), projectionSource(revokedCut.proxy).source)
+    const revokedCutOpened = revokedCutHost.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-revoked-cut'))
+    expect(revokedCutOpened.ok).toBe(true)
+    if (revokedCutOpened.ok) {
+      expect(revokedCutOpened.value.projections!.current('costUsage')).toEqual({
+        ok: false,
+        code: 'BLUE_INTERNAL_FAILURE',
+        message: 'session data could not be read',
+      })
+    }
+  })
+
+  it('rejects a cut whose owner changes while the cut is being validated', () => {
+    const host = new BluePluginHostService(new Context())
+    let switched = false
+    let firstRegistration: { dispose(): void }
+    const target = { sessionEpoch: 1, asOfSeq: 1, values: { costUsage: 1 } }
+    const hostile = new Proxy(target, {
+      getOwnPropertyDescriptor(object, key) {
+        if (!switched && key === 'sessionEpoch') {
+          switched = true
+          firstRegistration.dispose()
+          attachBluePluginHostSessionProjections(host, consumer(), projectionSource({ sessionEpoch: 2, asOfSeq: 1, values: { costUsage: 2 } }).source)
+        }
+        return Reflect.getOwnPropertyDescriptor(object, key)
+      },
+    })
+    firstRegistration = attachBluePluginHostSessionProjections(host, consumer(), projectionSource(hostile).source)
+    const opened = host.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-reentrant-owner'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    expect(opened.value.projections!.current('costUsage')).toEqual({
+      ok: false,
+      code: 'BLUE_STALE',
+      message: 'session projection owner changed while its cut was validated',
+    })
+    expect(opened.value.projections!.current('costUsage')).toMatchObject({
+      ok: true,
+      value: { sessionEpoch: 2, asOfSeq: 1, value: 2 },
+    })
+  })
+
+  it('stops attaching a session source when projection replay disposes its owner', () => {
+    const host = new BluePluginHostService(new Context())
+    const projections = projectionSource({ sessionEpoch: 2, asOfSeq: 1, values: { costUsage: 1 } })
+    attachBluePluginHostSessionProjections(host, consumer(), projections.source)
+    const opened = host.open(consumer(), manifest([projectionRead(['costUsage'])], '@acme/projection-disposes-session'))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+
+    let disposeSessionOwner: (() => void) | undefined
+    opened.value.projections!.subscribe(['costUsage'], () => { disposeSessionOwner?.() })
+    projections.set({ sessionEpoch: 2, asOfSeq: 2, values: { costUsage: 2 } })
+    let subscribeCalls = 0
+    const registration = attachBluePluginHostSessionReader(host, {
+      effect(callback) {
+        const cleanup = callback()
+        if (typeof cleanup === 'function') disposeSessionOwner = cleanup
+      },
+    }, {
+      current: () => snapshot(1, 1, 'session-a'),
+      subscribe: () => {
+        subscribeCalls += 1
+        return { disposed: false, dispose() {} }
+      },
+    })
+
+    expect(registration.disposed).toBe(true)
+    expect(subscribeCalls).toBe(0)
   })
 
   it('rejects stale cuts and bounds both individual values and aggregate cuts', () => {
-    const source = projectionSource({ sessionEpoch: 3, asOfSeq: 9, values: { a: 'ok', b: 'ok', c: 'ok', d: 'ok', e: 'ok' } })
+    const source = projectionSource({ sessionEpoch: 3, asOfSeq: 9, values: { a: { first: 1, second: 2 }, b: 'ok', c: 'ok', d: 'ok', e: 'ok' } })
     const host = new BluePluginHostService(new Context())
     attachBluePluginHostSessionProjections(host, consumer(), source.source)
     const opened = host.open(consumer(), manifest([projectionRead(['a', 'b', 'c', 'd', 'e'])], '@acme/projection-limits'))
     expect(opened.ok).toBe(true)
     if (!opened.ok) return
     expect(opened.value.projections!.current('a')).toMatchObject({ ok: true })
+
+    source.set({ sessionEpoch: 3, asOfSeq: 9, values: { a: { second: 2, first: 1 } } })
+    expect(opened.value.projections!.current('a')).toMatchObject({ ok: true })
+
+    source.set({ sessionEpoch: 3, asOfSeq: 9, values: { a: { first: 1, second: 3 } } })
+    expect(opened.value.projections!.current('a')).toEqual({
+      ok: false,
+      code: 'BLUE_STALE',
+      message: 'session projection position produced conflicting values',
+    })
 
     source.set({ sessionEpoch: 3, asOfSeq: 8, values: { a: 'old' } })
     expect(opened.value.projections!.current('a')).toMatchObject({ ok: false, code: 'BLUE_STALE' })
@@ -552,6 +885,46 @@ describe('session-data owner authority', () => {
     expect(() => attachBluePluginHostSessionProjections(host, effectFailure, source.source)).toThrow('effect failed')
     const invalidSubscription = { currentMany: () => null, subscribe: () => null as never }
     expect(() => attachBluePluginHostSessionProjections(host, consumer(), invalidSubscription)).toThrow('must return a registration')
+
+    let projectionSubscribeCalls = 0
+    const immediateProjectionOwner = {
+      effect(callback: () => () => void): void { callback()() },
+    }
+    const immediateProjection = attachBluePluginHostSessionProjections(host, immediateProjectionOwner, {
+      currentMany: () => null,
+      subscribe() {
+        projectionSubscribeCalls += 1
+        return { disposed: false, dispose() {} }
+      },
+    })
+    expect(immediateProjection.disposed).toBe(true)
+    expect(projectionSubscribeCalls).toBe(0)
+
+    const invalidSessionHost = new BluePluginHostService(new Context())
+    let disposeGetterRead = false
+    const unsafeRegistration = Object.defineProperty({ disposed: false }, 'dispose', {
+      get() {
+        disposeGetterRead = true
+        return () => {}
+      },
+    })
+    expect(() => attachBluePluginHostSessionReader(invalidSessionHost, consumer(), {
+      current: () => snapshot(),
+      subscribe: () => unsafeRegistration as never,
+    })).toThrow('own data dispose function')
+    expect(disposeGetterRead).toBe(false)
+
+    const reentrantHost = new BluePluginHostService(new Context())
+    let competing: { dispose(): void } | undefined
+    expect(() => attachBluePluginHostSessionReader(reentrantHost, consumer(), {
+      current() {
+        competing = attachBluePluginHostSessionReader(reentrantHost, consumer(), sessionSource(snapshot(1, 1, 'competing')).reader)
+        return snapshot(2, 1, 'outer')
+      },
+      subscribe: sessionSource().reader.subscribe,
+    })).toThrow('owner changed during its initial read')
+    expect(competing?.dispose).toBeTypeOf('function')
+    competing?.dispose()
   })
 
   it('validates mandatory session epoch and hostile owner properties', () => {

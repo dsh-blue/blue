@@ -1013,11 +1013,11 @@ describe('BluePluginHostService', () => {
     late(sessionValue(2, 'late-session'))
     expect(opened.value.session!.current()).toBeNull()
 
-    const secondSource = sessionSource(sessionValue(1, 'session-two'))
+    const secondSource = sessionSource({ ...sessionValue(1, 'session-two'), sessionEpoch: 2 })
     const replayingReader = {
       current: secondSource.reader.current,
       subscribe(listener: (snapshot: BlueSessionSnapshot | null) => void) {
-        listener(sessionValue(2, 'session-two'))
+        listener({ ...sessionValue(2, 'session-two'), sessionEpoch: 2 })
         return secondSource.reader.subscribe(() => {})
       },
     }
@@ -1030,6 +1030,26 @@ describe('BluePluginHostService', () => {
     expect(opened.value.session!.current()).toBeNull()
     const inert = opened.value.session!.subscribe(() => { throw new Error('inert subscription ran') })
     expect(inert.disposed).toBe(true)
+  })
+
+  it('does not replay a legacy session subscription disposed by its consumer effect', () => {
+    const host = new BluePluginHostService(new Context())
+    attachBluePluginHostSessionReader(host, consumer(), sessionSource().reader)
+    let effects = 0
+    const immediateConsumer = {
+      effect(callback: () => void | (() => void)): void {
+        effects += 1
+        const cleanup = callback()
+        if (effects > 1 && typeof cleanup === 'function') cleanup()
+      },
+    }
+    const opened = host.open(immediateConsumer, manifest(['session.read']))
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    const seen: Array<BlueSessionSnapshot | null> = []
+    const subscription = opened.value.session!.subscribe(snapshot => { seen.push(snapshot) })
+    expect(subscription.disposed).toBe(true)
+    expect(seen).toEqual([])
   })
 
   it('validates the unique session owner and its initial snapshot boundary', () => {

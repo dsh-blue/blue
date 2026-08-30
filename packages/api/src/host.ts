@@ -27,7 +27,7 @@ import {
 import {
   BLUE_PROJECTION_CUT_MAX_BYTES,
   BLUE_PROJECTION_VALUE_MAX_BYTES,
-  BlueSessionDataError,
+  inspectBlueSessionDataError,
   scopeBlueProjectionCut,
   scopeBlueSessionSnapshot,
   validateBlueSessionSnapshot,
@@ -157,9 +157,10 @@ function consumerDisposed(): BlueResult<never> { return failure('BLUE_ACTION_REJ
 function rejectDisposedAdmission(added: BlueResult<BlueRegistration>): BlueResult<never> { if (added.ok) added.value.dispose(); return consumerDisposed() }
 function invalid(error: unknown): BlueResult<never> { return failure('BLUE_INVALID_CONTRIBUTION', message(error, 'plugin input could not be inspected')) }
 function sessionDataFailure(error: unknown): BlueResult<never> {
-  return error instanceof BlueSessionDataError
-    ? failure(error.code, error.message)
-    : failure('BLUE_INTERNAL_FAILURE', 'session data could not be read')
+  const controlled = inspectBlueSessionDataError(error)
+  return controlled === undefined
+    ? failure('BLUE_INTERNAL_FAILURE', 'session data could not be read')
+    : failure(controlled.code, controlled.message)
 }
 
 function openProjection(
@@ -385,6 +386,17 @@ class Registration implements BlueRegistration {
   dispose(): void { if (!this.done) { this.done = true; this.cleanup() } }
 }
 
+function sourceRegistration(input: unknown, label: string): BlueRegistration {
+  if (!object(input)) throw new Error(`${label} must return a registration with an own data dispose function`)
+  let descriptor: PropertyDescriptor | undefined
+  try { descriptor = Object.getOwnPropertyDescriptor(input, 'dispose') } catch { /* normalized below */ }
+  if (descriptor === undefined || !('value' in descriptor) || typeof descriptor.value !== 'function') {
+    throw new Error(`${label} must return a registration with an own data dispose function`)
+  }
+  const dispose = descriptor.value
+  return new Registration(() => { try { Reflect.apply(dispose, input, []) } catch { /* owner cleanup failures are contained */ } })
+}
+
 class ConsumerLifetime {
   private done = false
   get disposed(): boolean { return this.done }
@@ -570,6 +582,13 @@ interface HostState {
   sessionOwner: SessionOwner | undefined
   projectionOwner: ProjectionOwner | undefined
   sessionSnapshot: BlueSessionSnapshot | null
+  sessionFenceEpoch: number
+  sessionFenceRevision: number
+  sessionFenceId: string | undefined
+  sessionFenceFingerprint: string | undefined
+  projectionFenceEpoch: number
+  projectionFenceSeq: number
+  readonly projectionValueFingerprints: Map<string, string>
   nextOverlayOrder: number
 }
 
@@ -586,26 +605,124 @@ interface GestureRecord {
 
 interface SessionOwner {
   subscription: BlueRegistration | undefined
-  lastEpoch: number
-  lastRevision: number
+  stale: boolean
 }
 
 function emitSession(state: HostState): void {
   for (const listener of [...state.sessionListeners]) try { listener() } catch { /* plugin observer failures are contained */ }
 }
 
-function publishSession(state: HostState, owner: SessionOwner, input: unknown): void {
-  if (state.sessionOwner !== owner) return
-  let snapshot: BlueSessionSnapshot | null
-  try { snapshot = validateBlueSessionSnapshot(input) } catch { return }
-  if (snapshot !== null && (snapshot.sessionEpoch < owner.lastEpoch || (snapshot.sessionEpoch === owner.lastEpoch && snapshot.revision <= owner.lastRevision))) return
-  if (snapshot !== null) {
-    owner.lastEpoch = snapshot.sessionEpoch
-    owner.lastRevision = snapshot.revision
+function staleSession(): BlueResult<never> {
+  return failure('BLUE_STALE', 'session snapshot is older than the active epoch/revision fence')
+}
+
+function staleProjection(): BlueResult<never> {
+  return failure('BLUE_STALE', 'session projection cut is older than the active epoch/sequence fence')
+}
+
+function advanceProjectionFence(state: HostState, sessionEpoch: number, asOfSeq: number): boolean {
+  if (sessionEpoch < state.projectionFenceEpoch
+    || (sessionEpoch === state.projectionFenceEpoch && asOfSeq < state.projectionFenceSeq)) return false
+  if (sessionEpoch > state.projectionFenceEpoch) {
+    state.projectionFenceEpoch = sessionEpoch
+    state.projectionFenceSeq = asOfSeq
+    state.projectionValueFingerprints.clear()
+  } else if (asOfSeq > state.projectionFenceSeq) {
+    state.projectionFenceSeq = asOfSeq
+    state.projectionValueFingerprints.clear()
+  } else {
+    state.projectionFenceSeq = asOfSeq
   }
-  if (snapshot === null && state.sessionSnapshot === null) return
+  return true
+}
+
+function canonicalJsonFingerprint(value: unknown): string {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return `[${value.map(canonicalJsonFingerprint).join(',')}]`
+  if (typeof value === 'object') {
+    const record = value as Readonly<Record<string, unknown>>
+    return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonicalJsonFingerprint(record[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value) as string
+}
+
+function acceptProjectionValues(
+  state: HostState,
+  cut: BlueSessionProjectionCut,
+  keys: readonly string[],
+): boolean {
+  const fingerprints = keys.map(key => [key, canonicalJsonFingerprint(cut.values[key])] as const)
+  for (const [key, fingerprint] of fingerprints) {
+    const previous = state.projectionValueFingerprints.get(key)
+    if (previous !== undefined && previous !== fingerprint) return false
+  }
+  for (const [key, fingerprint] of fingerprints) state.projectionValueFingerprints.set(key, fingerprint)
+  return true
+}
+
+function replayProjectionSubscriptions(state: HostState): void {
+  const subscriptions = Array.from(state.projectionSubscriptions)
+  for (const subscription of subscriptions) subscription.replay()
+}
+
+function publishSession(
+  state: HostState,
+  owner: SessionOwner,
+  input: unknown,
+  forceReplay = false,
+  notify = true,
+): boolean {
+  if (state.sessionOwner !== owner) return false
+  let snapshot: BlueSessionSnapshot | null
+  try { snapshot = validateBlueSessionSnapshot(input) } catch { return false }
+  if (state.sessionOwner !== owner) return false
+  if (snapshot === null) {
+    if (!forceReplay && !owner.stale && state.sessionSnapshot === null) return false
+    owner.stale = false
+    state.sessionSnapshot = null
+    if (notify) emitSession(state)
+    replayProjectionSubscriptions(state)
+    return true
+  }
+
+  const fingerprint = canonicalJsonFingerprint(snapshot)
+  const sameEpoch = snapshot.sessionEpoch === state.sessionFenceEpoch
+  const sameRevision = sameEpoch && snapshot.revision === state.sessionFenceRevision
+  const rejected = snapshot.sessionEpoch < state.sessionFenceEpoch
+    || (sameEpoch && snapshot.id !== state.sessionFenceId)
+    || (sameEpoch && snapshot.revision < state.sessionFenceRevision)
+    || (sameRevision && fingerprint !== state.sessionFenceFingerprint)
+  if (rejected) {
+    if (state.sessionSnapshot === null && !owner.stale) {
+      owner.stale = true
+      if (notify) emitSession(state)
+      return true
+    }
+    return false
+  }
+  const duplicate = sameRevision
+  if (duplicate && !forceReplay && !owner.stale && state.sessionSnapshot !== null) return false
+
+  const epochAdvanced = snapshot.sessionEpoch > state.sessionFenceEpoch
+  if (epochAdvanced) {
+    state.sessionFenceEpoch = snapshot.sessionEpoch
+    state.sessionFenceRevision = snapshot.revision
+    state.sessionFenceId = snapshot.id
+    state.sessionFenceFingerprint = fingerprint
+  } else if (snapshot.revision > state.sessionFenceRevision) {
+    state.sessionFenceRevision = snapshot.revision
+    state.sessionFenceFingerprint = fingerprint
+  }
+  owner.stale = false
   state.sessionSnapshot = snapshot
-  emitSession(state)
+  if (notify) emitSession(state)
+  if (epochAdvanced) {
+    if (snapshot.sessionEpoch > state.projectionFenceEpoch) {
+      advanceProjectionFence(state, snapshot.sessionEpoch, -1)
+    }
+    replayProjectionSubscriptions(state)
+  }
+  return true
 }
 
 class SessionReadFacade implements BlueSessionReader {
@@ -619,7 +736,7 @@ class SessionReadFacade implements BlueSessionReader {
     let handle: Registration
     handle = new Registration(() => { this.state.sessionListeners.delete(notify); this.handles.delete(handle) })
     this.handles.add(handle)
-    try { this.effect(() => () => handle.dispose()); notify() }
+    try { this.effect(() => () => handle.dispose()); if (!handle.disposed) notify() }
     catch (error) { handle.dispose(); throw error }
     return handle
   }
@@ -637,6 +754,7 @@ class CanonicalSessionReadFacade implements BluePluginSessionReader {
   current(): BlueResult<BluePluginSessionSnapshot | null> {
     if (this.lifetime.disposed) return consumerDisposed()
     if (!activeReady(this.state, 'session.read')) return absent('session.read')
+    if (this.state.sessionOwner?.stale === true) return staleSession()
     return success(this.state.sessionSnapshot === null ? null : scopeBlueSessionSnapshot(this.state.sessionSnapshot, this.allowedFields))
   }
   subscribe(listener: (result: BlueResult<BluePluginSessionSnapshot | null>) => void): BlueResult<BlueRegistration> {
@@ -647,7 +765,7 @@ class CanonicalSessionReadFacade implements BluePluginSessionReader {
     let handle: Registration
     handle = new Registration(() => { this.state.sessionListeners.delete(notify); this.handles.delete(handle) })
     this.handles.add(handle)
-    try { this.effect(() => () => handle.dispose()); notify() }
+    try { this.effect(() => () => handle.dispose()); if (!handle.disposed) notify() }
     catch (error) { handle.dispose(); return invalid(error) }
     return success(handle)
   }
@@ -657,24 +775,39 @@ class CanonicalSessionReadFacade implements BluePluginSessionReader {
 interface ProjectionOwner {
   readonly source: BlueSessionProjectionOwner
   subscription: BlueRegistration | undefined
-  latestEpoch: number
-  latestSeq: number
 }
 
 const PROJECTION_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u
 
 function projectionKeys(input: readonly string[], allowed: ReadonlySet<string>): BlueResult<readonly string[]> {
-  if (!Array.isArray(input) || input.length === 0) return failure('BLUE_INVALID_CONTRIBUTION', 'projection reads require at least one key')
-  const keys: string[] = []
-  const seen = new Set<string>()
-  for (const key of input) {
-    if (typeof key !== 'string' || !PROJECTION_KEY_PATTERN.test(key)) return failure('BLUE_INVALID_CONTRIBUTION', 'projection keys must use the canonical key syntax')
-    if (seen.has(key)) return failure('BLUE_INVALID_CONTRIBUTION', `projection key ${JSON.stringify(key)} is duplicated`)
-    if (!allowed.has(key)) return failure('BLUE_RESOURCE_DENIED', `projection key ${JSON.stringify(key)} is outside the granted session.projections.read resources`)
-    seen.add(key)
-    keys.push(key)
+  try {
+    if (!Array.isArray(input)) return failure('BLUE_INVALID_CONTRIBUTION', 'projection keys must be an array')
+    const descriptors = Object.getOwnPropertyDescriptors(input)
+    const length = (descriptors as Record<string, PropertyDescriptor>)['length']
+    /* v8 ignore next -- JavaScript Array length is a non-configurable own data descriptor. */
+    if (length === undefined || !('value' in length) || typeof length.value !== 'number' || !Number.isSafeInteger(length.value)) {
+      return failure('BLUE_INVALID_CONTRIBUTION', 'projection key array length must be an own data property')
+    }
+    if (length.value === 0) return failure('BLUE_INVALID_CONTRIBUTION', 'projection reads require at least one key')
+    if (length.value > allowed.size) return failure('BLUE_LIMIT_EXCEEDED', `projection reads are limited to ${String(allowed.size)} granted keys`)
+    const keys: string[] = []
+    const seen = new Set<string>()
+    for (let index = 0; index < length.value; index += 1) {
+      const descriptor = descriptors[String(index)]
+      if (descriptor === undefined || !('value' in descriptor)) {
+        return failure('BLUE_INVALID_CONTRIBUTION', 'projection key entries must be own data properties')
+      }
+      const key = descriptor.value
+      if (typeof key !== 'string' || !PROJECTION_KEY_PATTERN.test(key)) return failure('BLUE_INVALID_CONTRIBUTION', 'projection keys must use the canonical key syntax')
+      if (seen.has(key)) return failure('BLUE_INVALID_CONTRIBUTION', `projection key ${JSON.stringify(key)} is duplicated`)
+      if (!allowed.has(key)) return failure('BLUE_RESOURCE_DENIED', `projection key ${JSON.stringify(key)} is outside the granted session.projections.read resources`)
+      seen.add(key)
+      keys.push(key)
+    }
+    return success(Object.freeze(keys))
+  } catch {
+    return failure('BLUE_INVALID_CONTRIBUTION', 'projection keys could not be inspected')
   }
-  return success(Object.freeze(keys))
 }
 
 function readProjectionCut(
@@ -686,19 +819,15 @@ function readProjectionCut(
   const owner = state.projectionOwner
   if (owner === undefined || !activeReady(state, 'session.projections.read')) return absent('session.projections.read')
   let input: unknown
-  try { input = owner.source.currentMany(keys) } catch (error) { return sessionDataFailure(error) }
+  try { input = owner.source.currentMany(keys) } catch { return failure('BLUE_INTERNAL_FAILURE', 'session data could not be read') }
   if (state.projectionOwner !== owner) return failure('BLUE_STALE', 'session projection owner changed during the read')
   let cut: BlueSessionProjectionCut | null
   try { cut = scopeBlueProjectionCut(input, keys, maxValueBytes, maxCutBytes) } catch (error) { return sessionDataFailure(error) }
   if (cut === null) return success(null)
-  if (cut.sessionEpoch < owner.latestEpoch || (cut.sessionEpoch === owner.latestEpoch && cut.asOfSeq < owner.latestSeq)) {
-    return failure('BLUE_STALE', 'session projection cut is older than the active epoch/sequence fence')
-  }
-  if (cut.sessionEpoch > owner.latestEpoch) {
-    owner.latestEpoch = cut.sessionEpoch
-    owner.latestSeq = cut.asOfSeq
-  } else {
-    owner.latestSeq = Math.max(owner.latestSeq, cut.asOfSeq)
+  if (state.projectionOwner !== owner) return failure('BLUE_STALE', 'session projection owner changed while its cut was validated')
+  if (!advanceProjectionFence(state, cut.sessionEpoch, cut.asOfSeq)) return staleProjection()
+  if (!acceptProjectionValues(state, cut, keys)) {
+    return failure('BLUE_STALE', 'session projection position produced conflicting values')
   }
   return success(cut)
 }
@@ -720,7 +849,7 @@ class ProjectionSubscription {
   replay(force = false): void {
     if (this.done) return
     const result = this.read()
-    if (!result.ok && result.code === 'BLUE_STALE') return
+    if (!result.ok && result.code === 'BLUE_STALE' && this.state === 'unavailable') return
     if (result.ok && result.value !== null) {
       const cut = result.value
       if (!force && this.state === 'value' && (cut.sessionEpoch < this.lastEpoch || (cut.sessionEpoch === this.lastEpoch && cut.asOfSeq <= this.lastSeq))) return
@@ -801,7 +930,7 @@ class ProjectionReadFacade implements BlueSessionProjectionReader {
     this.state.projectionSubscriptions.add(handle)
     try { this.effect(() => () => handle.dispose()) }
     catch (error) { handle.dispose(); return invalid(error) }
-    handle.replay(true)
+    if (!handle.disposed) handle.replay(true)
     return success(handle)
   }
   dispose(): void { for (const handle of this.handles) handle.dispose() }
@@ -1318,18 +1447,16 @@ export function attachBluePluginHostSessionReader(host: BluePluginHostService, o
   if (state.sessionOwner !== undefined) throw new Error('Blue plugin host already has an active session owner')
   if (!object(reader) || typeof reader.current !== 'function' || typeof reader.subscribe !== 'function') throw new Error('Blue session owner requires a reader')
   const initial = validateBlueSessionSnapshot(reader.current())
+  if (state.sessionOwner !== undefined) throw new Error('Blue plugin host session owner changed during its initial read')
   declareSupported(state, ['session.read'])
   const sessionOwner: SessionOwner = {
     subscription: undefined,
-    lastEpoch: initial?.sessionEpoch ?? -1,
-    lastRevision: initial?.revision ?? -1,
+    stale: false,
   }
   state.sessionOwner = sessionOwner
-  state.sessionSnapshot = initial
+  state.sessionSnapshot = null
   state.owners.set('session.read', 1)
-  let activeOwners = state.activeOwners.get('session.read')
-  if (activeOwners === undefined) { activeOwners = new Map(); state.activeOwners.set('session.read', activeOwners) }
-  activeOwners.set(owner, (activeOwners.get(owner) ?? 0) + 1)
+  state.activeOwners.set('session.read', new Map([[owner, 1]]))
   bumpOwnerGeneration(state, 'session.read')
   const registration = new Registration(() => {
     if (state.sessionOwner !== sessionOwner) return
@@ -1346,16 +1473,19 @@ export function attachBluePluginHostSessionReader(host: BluePluginHostService, o
   })
   try {
     owner.effect(() => () => registration.dispose())
-    let replayPublished = false
-    const subscription = reader.subscribe(snapshot => {
-      const before = state.sessionSnapshot
-      publishSession(state, sessionOwner, snapshot)
-      if (state.sessionSnapshot !== before) replayPublished = true
-    })
-    if (registration.disposed) subscription.dispose()
-    else {
-      sessionOwner.subscription = subscription
-      if (!replayPublished) emitSession(state)
+    if (!registration.disposed) {
+      publishSession(state, sessionOwner, initial, true, false)
+      if (!registration.disposed) {
+        let replayPublished = false
+        const subscription = sourceRegistration(reader.subscribe(snapshot => {
+          if (publishSession(state, sessionOwner, snapshot)) replayPublished = true
+        }), 'Blue session reader subscribe')
+        if (registration.disposed) subscription.dispose()
+        else {
+          sessionOwner.subscription = subscription
+          if (!replayPublished) emitSession(state)
+        }
+      }
     }
   } catch (error) { registration.dispose(); throw error }
   return registration
@@ -1372,7 +1502,7 @@ export function attachBluePluginHostSessionProjections(
   if (!object(source) || typeof source.currentMany !== 'function' || typeof source.subscribe !== 'function') {
     throw new Error('Blue session projection owner requires currentMany and subscribe')
   }
-  const projectionOwner: ProjectionOwner = { source, subscription: undefined, latestEpoch: -1, latestSeq: -2 }
+  const projectionOwner: ProjectionOwner = { source, subscription: undefined }
   state.projectionOwner = projectionOwner
   state.supportedCapabilities.add('session.projections.read')
   state.owners.set('session.projections.read', 1)
@@ -1387,26 +1517,27 @@ export function attachBluePluginHostSessionProjections(
     bumpOwnerGeneration(state, 'session.projections.read')
     projectionOwner.subscription?.dispose()
     projectionOwner.subscription = undefined
-    for (const subscription of state.projectionSubscriptions) subscription.ownerUnavailable()
+    const subscriptions = Array.from(state.projectionSubscriptions)
+    for (const subscription of subscriptions) subscription.ownerUnavailable()
   })
   try {
     owner.effect(() => () => registration.dispose())
-    const subscription = source.subscribe((key, _value, seq, sessionEpoch) => {
-      if (state.projectionOwner !== projectionOwner) return
-      if (typeof key !== 'string' || !PROJECTION_KEY_PATTERN.test(key)) return
-      if (!Number.isSafeInteger(seq) || seq < -1 || !Number.isSafeInteger(sessionEpoch) || sessionEpoch < 0) return
-      if (sessionEpoch < projectionOwner.latestEpoch || (sessionEpoch === projectionOwner.latestEpoch && seq < projectionOwner.latestSeq)) return
-      for (const subscription of state.projectionSubscriptions) {
-        if (subscription.keys.includes(key)) subscription.replay()
+    if (!registration.disposed) {
+      const subscription = sourceRegistration(source.subscribe((key, _value, seq, sessionEpoch) => {
+        if (state.projectionOwner !== projectionOwner) return
+        if (typeof key !== 'string' || !PROJECTION_KEY_PATTERN.test(key)) return
+        if (!Number.isSafeInteger(seq) || seq < -1 || !Number.isSafeInteger(sessionEpoch) || sessionEpoch < 0) return
+        if (!advanceProjectionFence(state, sessionEpoch, seq)) return
+        const subscriptions = Array.from(state.projectionSubscriptions)
+        for (const activeSubscription of subscriptions) {
+          if (activeSubscription.keys.includes(key)) activeSubscription.replay()
+        }
+      }), 'Blue session projection source subscribe')
+      if (registration.disposed) subscription.dispose()
+      else {
+        projectionOwner.subscription = subscription
+        replayProjectionSubscriptions(state)
       }
-    })
-    if (!object(subscription) || typeof subscription.dispose !== 'function') {
-      throw new Error('Blue session projection source subscribe must return a registration')
-    }
-    if (registration.disposed) subscription.dispose()
-    else {
-      projectionOwner.subscription = subscription
-      for (const activeSubscription of state.projectionSubscriptions) activeSubscription.replay(true)
     }
   } catch (error) {
     registration.dispose()
@@ -1583,7 +1714,7 @@ export class BluePluginHostService extends Service implements BluePluginHost {
     const revision = { value: 0 }
     const changed = () => { revision.value += 1 }
     HOST_STATES.set(this, {
-      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), supportedCapabilities: new Set(), activeOwners: new Map(), ownerGenerations: new Map(), currentOwners: new Map(), ownerLeases: new Map(), ownerHandoff: false, consumerIds: new Map(), commandCounts: new Map(), statusCounts: new Map(), notificationQuotas: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Map(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), projectionSubscriptions: new Set(), sessionOwner: undefined, projectionOwner: undefined, sessionSnapshot: null, nextOverlayOrder: 0,
+      lifetimes: new Set(), registries: new Set(), notificationObservers: new Set(), commands: new Aggregate(false, changed), status: new Aggregate(true, changed), panes: new Aggregate(true, changed), overlays: new Ordered(changed), extensions: new Aggregate(true, changed), statusProviders: new Aggregate(true, changed), editorProviders: new Aggregate(true, changed), owners: new Map(), supportedCapabilities: new Set(), activeOwners: new Map(), ownerGenerations: new Map(), currentOwners: new Map(), ownerLeases: new Map(), ownerHandoff: false, consumerIds: new Map(), commandCounts: new Map(), statusCounts: new Map(), notificationQuotas: new Map(), gestures: new Map(), ownerGestures: new Map(), overlayClosers: new Map(), paneCounts: new Map(), capturingConsumers: new Map(), revision, now: options.now ?? Date.now, sessionListeners: new Set(), projectionSubscriptions: new Set(), sessionOwner: undefined, projectionOwner: undefined, sessionSnapshot: null, sessionFenceEpoch: -1, sessionFenceRevision: -1, sessionFenceId: undefined, sessionFenceFingerprint: undefined, projectionFenceEpoch: -1, projectionFenceSeq: -2, projectionValueFingerprints: new Map(), nextOverlayOrder: 0,
     })
     ctx.provide('bluePluginControl', createBluePluginControl(this))
     ctx.effect(() => () => disposeHost(this))
