@@ -176,6 +176,7 @@ describe('openPermissionPanel', () => {
     // The validation error holds the form; nothing dispatched yet.
     expect(gate.hidden).toBe(false)
     expect(mounted.runs).toEqual([])
+    gate.component.handleInput(KEY.enter)
     gate.component.handleInput('\x7f')
     gate.component.handleInput('y')
     gate.component.handleInput(KEY.enter)

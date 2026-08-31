@@ -329,7 +329,7 @@ export function registerMcpCommands(ctx: Context): () => void {
         components: display.components,
         rows: buildServerPanelRows(server),
         title: server.serverName,
-        titleHint: `· ${STATUS_LABEL[server.status]} · esc back`,
+        footer: STATUS_LABEL[server.status],
         onSelect: selected => {
           if (selected.value === CONFIG_ROW_VALUE) {
             const restoreConfig = mountEditorReplacement(ctx, new InfoPanel({
@@ -357,7 +357,6 @@ export function registerMcpCommands(ctx: Context): () => void {
       components: display.components,
       rows: buildServerPickerRows(catalog),
       title: 'MCP servers',
-      titleHint: '· esc cancel · ↵ open',
       onSelect: selected => {
         openServer(byEntryId.get(selected.value)!)
       },

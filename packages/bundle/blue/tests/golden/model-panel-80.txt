@@ -25,6 +25,6 @@
 │mock                                                                          │
 │ → mock/Mock — ← current [Low] [High]                                         │
 │   mock/Mock Pro — [Low] [High]                                               │
-│Enter choose · Esc close                                                      │
+│  ↑↓ rows · Enter choose · ←→ actions                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

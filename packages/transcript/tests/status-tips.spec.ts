@@ -36,4 +36,8 @@ describe('buildTipRotation', () => {
     // Deterministic: a second build matches.
     expect(tips.buildTipRotation(STATUS_TIPS)).toEqual(rotation)
   })
+
+  it('does not duplicate context-sensitive keyboard guidance', () => {
+    expect(STATUS_TIPS.map(tip => tip.text).join('\n')).not.toMatch(/ctrl\+|shift\+tab|esc to/iu)
+  })
 })

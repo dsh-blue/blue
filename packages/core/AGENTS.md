@@ -44,6 +44,15 @@ definitions may survive an owner gap in the API host; open overlay instances
 do not. A capturing overlay consumes a live one-shot gesture and closes through
 the composition-private semantic close path.
 
+Each registered public surface owns one private `BlueUiSurfaceRuntime` and a
+stable wrapper. Internal event settlement recompiles while preserving semantic
+focus, editor/cursor, draft, and confirmation state; an external host snapshot
+accepts canonical values and clears local value drafts while retaining
+compatible focus/editor identity. Focus keys come from canonical ids rather
+than compiler paths, so legal reorder is stable. Replacement or unload
+retargets renderer focus only when it still points at the retired target, then
+disposes callbacks and makes every old compiled generation inert.
+
 ## Change Rules
 
 - `BlueComponent.render(width)` must emit only rows whose visible width is at
@@ -56,6 +65,16 @@ the composition-private semantic close path.
   node kinds, depth/count/text/action quotas, plain-record constraints, and
   allowed status/editor subsets before constructing renderer objects. Failure
   produces bounded canonical fallback content.
+- Stateful surface compilation keeps navigation separate from editing. Text
+  controls enter edit explicitly, Enter confirms, Escape exits editing before
+  overlay dismissal, and Tab advances semantic groups. Select adjustment has
+  an explicit Enter-confirm/Escape-or-Tab-rollback transaction. Failed compile
+  is transactional and cannot mutate the last committed runtime.
+- Focused interactive surfaces may render one core-owned contextual key-hint
+  row derived from visible canonical roles and current edit/confirmation
+  state. Complex official controllers may merge or suppress semantic
+  operations by id. Passive/status/editor-shell compilation and stale
+  generations never expose it; narrow widths drop whole hint fragments.
 - Dock allocation is deterministic. Fixed footer/editor furniture and public
   pane placement remain separate from transcript's package-private bottom-pane
   registry. Child registration/unload must invalidate allocation without

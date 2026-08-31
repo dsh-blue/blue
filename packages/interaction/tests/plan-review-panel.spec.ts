@@ -52,6 +52,7 @@ function mount(question: AskUserQuestionItem, viewportRows = 24): {
     onComplete,
     onCancel,
   })
+  panel.focused = true
   return { panel, components, onComplete, onCancel }
 }
 
@@ -96,7 +97,7 @@ describe('PlanReviewPanel rendering', () => {
     expect(frame).toContain('Ship it [1]')
     expect(frame).toContain('Reject [2]')
     expect(frame).toContain('Revise [3]')
-    expect(frame).toContain('1-3 choose')
+    expect(frame).toContain('1-3/Enter')
   })
 
   it('windows a long plan behind a showing tail inside the box and scrolls it', () => {
@@ -105,7 +106,7 @@ describe('PlanReviewPanel rendering', () => {
     const { panel } = mount(ask({ detail: LONG_DETAIL }))
     const first = panel.render(60).join('\n')
     expect(first).toContain('showing 1-10/15')
-    expect(first).toContain('↑↓ scroll')
+    expect(first).toContain('PgUp/PgDn')
     expect(first).toContain('line 1')
     expect(first).not.toContain('line 14')
     // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
@@ -131,12 +132,12 @@ describe('PlanReviewPanel rendering', () => {
     const first = panel.render(20).join('\n')
     expect(first).toMatch(/showing 1-10\/\d+/u)
     expect(first).toContain('# Heading')
-    expect(first).toContain('1-3 choose')
+    expect(first).toContain('1-3/Enter')
 
     panel.handleInput(KEY.down)
     const scrolled = panel.render(20).join('\n')
     expect(scrolled).toMatch(/showing 2-11\/\d+/u)
-    expect(scrolled).toContain('1-3 choose')
+    expect(scrolled).toContain('1-3/Enter')
 
     for (let page = 0; page < 10; page += 1) panel.handleInput('\x1b[6~')
     expect(panel.render(20).join('\n')).toContain('THE_END')
@@ -224,7 +225,7 @@ describe('PlanReviewPanel rendering', () => {
     const frame = panel.render(60).join('\n')
     expect(frame).toContain('Revise:')
     expect(frame).toContain('redo')
-    expect(frame).toContain('Type feedback · Enter submit')
+    expect(frame).toContain('Enter submit · Type feedback · Esc cancel')
     // Leaving the row drops the form but keeps the draft.
     panel.handleInput(KEY.left)
     const moved = panel.render(60).join('\n')

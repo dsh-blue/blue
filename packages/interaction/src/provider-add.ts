@@ -141,7 +141,6 @@ function choose(ctx: Context, display: ProviderAddDisplay, title: string, items:
     components: display.components,
     rows: items,
     title,
-    titleHint: '· esc cancel · ↵ choose',
     onSelect: row => done(row.value),
     onCancel: () => done(undefined),
   }))

@@ -24,7 +24,7 @@ Blue 自有 banner、activity、长消息展开、图片、中断与展开键位
 - `BlueModelToolService` 把官方 tool presentation fact 转换为 canonical `BlueUiNode` call/result，并直接通过 core 编译。
 - `TranscriptModelService` 渲染官方 semantic conversation model。
 
-Footer 子插件以 canonical status node 提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。在 canonical vocabulary 能精确表达之前，activity、todo、agents、BTW 与 queue 的高级 chrome 保留在有 width 边界的 renderer adapter 后。任何 pane 都不会接收 Agent 或 Session。
+Footer 子插件以 canonical status node 提供 model、cwd、git、title、context 与 session mode 信息。Activity、todo 与 agents pane 通过 `blueSessionFacts` 消费 `blueConversationFacts` projection；BTW pane 通过 `blueSessionActions` 获取可释放的旁路会话并渲染其官方 conversation projection。Activity 轮换只介绍稳定的命令与功能，不复制随焦点变化的按键教学；这些上下文提示归当前活动 pane/overlay 所有。Todo 的 Ctrl-T 展开文案、BTW 的关闭/滚动文案与 Ctrl-O 折叠行仍留在局部，因为它们描述的就是该 renderer 隐藏的内容。在 canonical vocabulary 能精确表达之前，activity、todo、agents、BTW 与 queue 的高级 chrome 保留在有 width 边界的 renderer adapter 后。任何 pane 都不会接收 Agent 或 Session。
 
 `./status-provider-owner` 宣告 `status.provider`，并跟随持久化的 `blue.statusProvider` id。Candidate 在被选择前保持 inert。选中 callback 只会收到冻结的公共 session snapshot、已清洗的可见 additive entry 与 busy 标志；Blue 会先在 footer 实际宽度下完成编译和 dry-render，再激活它。非法、零行、超过三行或失败的输出不能替换同一会话中正常工作的 provider；首次激活失败或 session 切换使用 `blue.default`，滚动 60 秒内三次失败会打开无定时器 breaker。Blue 不会改写缺失或失败的 desired id。
 

@@ -326,7 +326,12 @@ Form field 是以下判别联合：
 
 文本输入过程中，Blue 保留当前 surface generation 内的编辑 draft，并持续发出
 `value-change`；插件仍应把接受的值写回自己的 view state。重新创建 surface 或
-外部 canonical value 改变时，以插件提供的值为准。
+外部 canonical value 改变时，以插件提供的值为准。文本字段第一次 Enter 进入
+编辑态，再次 Enter 确认并回到同一字段；textarea 用 Alt+Enter 插入换行。
+
+Select 第一次 Enter 进入以 `‹ value ›` 标识的调整态，Left/Right 只修改
+renderer-local 候选；再次 Enter 才发出一次 `value-change`。Escape 或 Tab
+取消并恢复进入调整态时的值；Up/Down 仅在调整态之外切换 form field。
 
 `submitActionId` 增加提交 control；当前 TUI 把该字符串作为按钮文案，激活后发出：
 
@@ -363,6 +368,23 @@ ui.actions({
 当前 focus generation 内再次确认，Escape 会先取消待确认状态。`intent` 只表达
 语义优先级，具体样式由主题决定。外层 `actions.id` 标识这组 action；事件的
 `controlId` 使用被激活 item 的 `id`。
+
+## 焦点与上下文提示
+
+TUI 会直接从 canonical control 角色推导操作，插件不应在
+surface footer 里重复写通用按键教学：
+
+- `Tab` / `Shift-Tab` 按树序切换语义组，并记住每组上次聚焦项。
+- `←` / `→` 在 tabs/actions 内移动；`↑` / `↓` 在 list/form 内移动。
+- tabs 与 single list 用 `Enter` 激活，multiple list 用 `Space`，action 用
+  `Enter` 或 `Space`。
+- text/select 进入编辑或调整态后，提示会切换为完成、应用、换行或取消；
+  待确认 action 则切换为 `Enter confirm · Esc cancel`。
+
+该行只在当前 plugin pane 获得焦点或 capturing overlay 打开时显示。
+可关闭 surface 才会提示 Escape；被动 pane 和 non-capturing overlay 不会显示伪操作。
+最多显示三个语义片段，窄屏先缩成完整按键 token，再整段隐藏，不会截断半条指令。
+局部计数、进度、风险和业务状态仍可放在 footer。
 
 ## 反馈与辅助节点
 

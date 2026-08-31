@@ -26,11 +26,14 @@ explicit settings state, activation is atomic, failures retain the current
 same-tree last-known-good or restore `blue.default`, and unload restores the
 default without rewriting the desired id.
 
-Submit is a pre-clear barrier: capture the draft/attachments, clear the editor,
-issue the structured app request, and restore only when rejection still belongs
-to that request/session/editor generation. Followup, steer, interrupt,
-retraction, session switch, and provider replacement must not let a late
-completion overwrite newer user input.
+Submit runs behind core's pre-clear barrier. Public transforms execute in
+priority order while the editor and one frozen attachment snapshot remain
+intact; only successful transformation commits the clear and structured app
+request. Transform failure leaves the editor untouched, while a later request
+rejection restores captured text/markers only when it still belongs to that
+request/session/editor generation. Followup, steer, interrupt, retraction,
+session switch, and provider replacement must not let a late completion
+overwrite newer user input.
 
 Completion merges built-in slash, file, skill, and extension sources. Public
 editor extensions are inert host registrations; this owner supplies bounded
@@ -43,6 +46,16 @@ structured app/frontend actions. Aliases are tree-local and cannot shadow
 reserved or already registered commands. Dialogs use package-private canonical
 controllers plus one compiler adapter; do not restore the removed public panel
 class hierarchy or a second UI vocabulary.
+
+`CanonicalPanelAdapter` leases stable field editors by semantic path/id across
+compiler rebuilds and delegates rows, secret masking, cursor/IME/paste,
+validation, and width containment to core. Up/Down navigates forms only outside
+text editing; typing enters editing, Enter confirms/advances, Tab crosses
+semantic groups, and Escape leaves editing before cancel. It also enables
+core's focus-derived contextual hint row. Controllers contribute only
+non-inferable operations such as digits, filtering, paging, or question
+switching; generic shortcut footers are forbidden, while business state and
+validation copy remain in panel footers.
 
 The public plugin bridge owns active command dispatch,
 `notifications.publish`, and editor-extension binding. The separate
@@ -85,7 +98,9 @@ or composition changes require `pnpm run verify:full` and bundle e2e.
 Keep tests for submit restoration/fencing, draft/history isolation, completion
 ordering/abort, owner gap/replay, provider fallback/breaker/unload, command and
 alias conflicts, modal cleanup, locale reprojection, and late settlements.
-Content or furniture changes also update `tests/width-scan.spec.ts`; author
-environment/authoring workflow changes run
+Canonical panel changes also prove navigation versus editing, semantic focus
+restoration, hint derivation/degradation, and real provider-wizard field
+confirmation. Content or furniture changes update `tests/width-scan.spec.ts`;
+author environment/authoring workflow changes run
 `pnpm run check:plugin-authoring-docs` and
 `pnpm run fixture:plugin-tutorial`.

@@ -1,11 +1,14 @@
 /** Canonical compiler layout, focus, event, width, and failure containment. */
 import { CURSOR_MARKER, HStack, ScrollView, stripTerminalSequences, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { LAYOUT_NODE, type LayoutNode } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { describe, expect, it, vi } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
 import {
+  BlueUiSurfaceRuntime,
   compileBlueEditorShellNode,
   compileBlueStatusNode,
+  compileBlueUiSurfaceNode,
   compileBlueUiNode,
   type BlueEditorShellCompilerOptions,
   type BlueStatusCompilerOptions,
@@ -114,6 +117,13 @@ function compiled(value: unknown, options: BlueUiCompilerOptions) {
   expect(result.ok).toBe(true)
   if (!result.ok) throw new Error(result.message)
   return result.value
+}
+
+function compiledSurface(value: unknown, options: BlueUiCompilerOptions, surfaceRuntime = new BlueUiSurfaceRuntime()) {
+  const result = compileBlueUiSurfaceNode(value, { ...options, surfaceRuntime, refreshMode: 'external' })
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.message)
+  return { ...result.value, surfaceRuntime }
 }
 
 function statusOptions(overrides: Partial<BlueStatusCompilerOptions> = {}): BlueStatusCompilerOptions {
@@ -411,7 +421,7 @@ describe('compileBlueUiNode', () => {
     expect(visibleWidth(result.component.render(120)[0]!)).toBe(120)
   })
 
-  it('uses one roving focus target, skips disabled controls, and dispatches structured events', () => {
+  it('uses one roving focus target, skips disabled controls, and keeps Tab inside one group', () => {
     const { options, events } = fixture()
     const result = compiled(ui.actions({ id: 'actions', items: [{ id: 'one', label: 'One' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'three', label: 'Three' }] }), options)
     const focus = result.focusTarget!
@@ -419,9 +429,11 @@ describe('compileBlueUiNode', () => {
     focus.focused = true
     expect(focus.render(40).join('')).toContain(CURSOR_MARKER)
     focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'activate', controlId: 'three' }])
     focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[D')
     focus.handleInput?.(' ')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'one' })
   })
@@ -482,19 +494,669 @@ describe('compileBlueUiNode', () => {
     viewport.columns = 80
     result.focusTarget!.focused = true
     expect(result.component.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    viewport.columns = 40
+    expect(result.component.render(40).join('')).not.toContain(CURSOR_MARKER)
+    viewport.columns = 80
+    expect(result.component.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
   })
 
   it('preserves the roving index across overlay-style focused false -> true', () => {
     const { options, events } = fixture()
     const focus = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), options).focusTarget!
     focus.focused = true
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.focused = false
     expect(focus.render(20).join('')).not.toContain(CURSOR_MARKER)
     focus.focused = true
     expect(focus.render(20).join('')).toContain(CURSOR_MARKER)
     focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'tab-change', controlId: 'tabs', tabId: 'b' }])
+  })
+
+  it('keeps semantic focus, editor cursor, drafts, and confirmation in one surface runtime', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const firstFixture = fixture()
+    const first = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.text('before'),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'AB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      ] }),
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+    ]), { ...firstFixture.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.focused = true
+    stale.handleInput?.('\r')
+    stale.handleInput?.('\x1b[D')
+    stale.handleInput?.('X')
+    expect(firstFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXB' })
+
+    const secondFixture = fixture()
+    const second = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Display name', value: 'AXB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      ] }),
+      ui.text('path changed'),
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+    ]), { ...secondFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(second.ok).toBe(true)
+    if (!second.ok) throw new Error(second.message)
+    const current = second.value.focusTarget!
+    current.focused = true
+    current.handleInput?.('Y')
+    expect(secondFixture.events).toEqual([{ kind: 'value-change', controlId: 'name', value: 'AXYB' }])
+    stale.handleInput?.('stale')
+    expect(firstFixture.events).toHaveLength(1)
+    expect(secondFixture.events).toHaveLength(1)
+    layout(stale as Component, 40, 4)
+    ;(stale as unknown as { focusEditor(): void }).focusEditor()
+    stale.invalidate()
+
+    current.handleInput?.('\x1b')
+    current.handleInput?.('\x1b[B')
+    current.handleInput?.('\r')
+    current.handleInput?.('\t')
+    current.handleInput?.('\r')
+    const thirdFixture = fixture()
+    const third = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Display name', value: 'AXYB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: true },
+      ] }),
+    ]), { ...thirdFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(third.ok).toBe(true)
+    if (!third.ok) throw new Error(third.message)
+    third.value.focusTarget!.focused = true
+    expect(third.value.component.render(80).join('\n')).toContain('Enabled: [on]')
+    const confirmationFixture = fixture()
+    const confirmation = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Display name', value: 'AXYB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: true },
+      ] }),
+    ]), { ...confirmationFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(confirmation.ok).toBe(true)
+    if (!confirmation.ok) throw new Error(confirmation.message)
+    confirmation.value.focusTarget!.focused = true
+    expect(confirmation.value.component.render(80).join('\n')).toContain('Really?')
+
+    const externalFixture = fixture()
+    const external = compileBlueUiSurfaceNode(ui.form({ id: 'profile', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Server' },
+      { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+    ] }), { ...externalFixture.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(external.ok).toBe(true)
+    if (!external.ok) throw new Error(external.message)
+    external.value.focusTarget!.focused = true
+    expect(external.value.component.render(80).join('\n')).toContain('Server')
+    external.value.focusTarget!.handleInput?.('\x1b[A')
+    external.value.focusTarget!.handleInput?.('\r')
+    external.value.focusTarget!.handleInput?.('\r')
+    expect(externalFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'Server' })
+
+    runtime.dispose()
+    external.value.focusTarget!.handleInput?.('ignored')
+    expect(externalFixture.events).toHaveLength(1)
+    expect(external.value.component.render(80)).toEqual([])
+    expect(runtime.state.controls()).toEqual([])
+    expect(runtime.state.allControls()).toEqual([])
+    runtime.state.emit({ kind: 'activate', controlId: 'ignored' })
+    expect(() => runtime.state.textEditor({ kind: 'input', id: 'name', label: 'Name', value: '' }, 'missing')).toThrow('inactive')
+    const afterDispose = compileBlueUiSurfaceNode(ui.text('ignored'), { ...externalFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(afterDispose.ok).toBe(false)
+    runtime.deactivate()
+    runtime.dispose()
+  })
+
+  it('retains a Director textarea while its tab content is temporarily absent', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editor.handleInput = vi.fn(editor.handleInput)
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const configureTree = (value: string, moved = false) => {
+      const form = ui.form({ id: 'director-form', fields: [{ kind: 'textarea' as const, id: 'instructions', label: 'Instructions', value }] })
+      return ui.stack.column([
+        ui.tabs({ id: 'director-tabs', activeId: 'configure', items: [
+          { id: 'overview', label: 'Overview' },
+          { id: 'configure', label: 'Configure' },
+        ] }),
+        ...(moved ? [ui.surface({ child: form })] : [form]),
+        ui.actions({ id: 'director-actions', items: [{ id: 'save', label: 'Save', intent: 'primary' }] }),
+      ])
+    }
+    const firstFixture = fixture({ components: localComponents })
+    const first = compileBlueUiSurfaceNode(configureTree('AB'), { ...firstFixture.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.focused = true
+    first.value.component.render(80)
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\r')
+    stale.handleInput?.('\x1b[D')
+    stale.handleInput?.('X')
+    expect(firstFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'instructions', value: 'AXB' })
+    expect(editors).toHaveLength(1)
+
+    const overviewFixture = fixture({ components: localComponents })
+    const overview = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.tabs({ id: 'director-tabs', activeId: 'overview', items: [
+        { id: 'overview', label: 'Overview' },
+        { id: 'configure', label: 'Configure' },
+      ] }),
+      ui.text('overview'),
+    ]), { ...overviewFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(overview.ok).toBe(true)
+    if (!overview.ok) throw new Error(overview.message)
+    overview.value.component.render(80)
+    expect(editors[0]!.focused).toBe(false)
+
+    const restoredFixture = fixture({ components: localComponents })
+    const restored = compileBlueUiSurfaceNode(configureTree('AXB', true), { ...restoredFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    const target = restored.value.focusTarget!
+    target.focused = true
+    target.render(80)
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\t')
+    target.handleInput?.('\x1b[B')
+    target.handleInput?.('Y')
+    expect(restoredFixture.events).toEqual([{ kind: 'value-change', controlId: 'instructions', value: 'AXYB' }])
+    expect(editors).toHaveLength(1)
+    expect(editors[0]!.handleInput).not.toHaveBeenCalledWith('\x1b[B')
+    const restoredRows = restored.value.component.render(80).join('\n')
+    expect(restoredRows.replaceAll(CURSOR_MARKER, '')).toContain('Instructions: AXYB')
+    expect(restoredRows.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    stale.handleInput?.('ignored')
+    expect(firstFixture.events).toHaveLength(1)
+    expect(restoredFixture.events).toHaveLength(1)
+  })
+
+  it('keeps TokenLedger nested-tab focus through tree and item reorder', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const first = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.tabs({ id: 'ledger-view', activeId: 'projects', items: [
+        { id: 'overview', label: 'Overview' },
+        { id: 'projects', label: 'Projects' },
+      ] }),
+      ui.surface({ child: ui.stack.column([
+        ui.text('usage ledger'),
+        ui.tabs({ id: 'metric-view', activeId: 'cost', items: [
+          { id: 'tokens', label: 'Tokens' },
+          { id: 'cost', label: 'Cost' },
+        ] }),
+      ]) }),
+    ]), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.focused = true
+    first.value.component.render(80)
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[C')
+
+    const reordered = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.surface({ child: ui.stack.column([
+        ui.tabs({ id: 'metric-view', activeId: 'cost', items: [
+          { id: 'cost', label: 'Cost' },
+          { id: 'tokens', label: 'Tokens' },
+        ] }),
+        ui.text('usage ledger'),
+      ]) }),
+      ui.tabs({ id: 'ledger-view', activeId: 'overview', items: [
+        { id: 'projects', label: 'Projects' },
+        { id: 'overview', label: 'Overview' },
+      ] }),
+    ]), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(reordered.ok).toBe(true)
+    if (!reordered.ok) throw new Error(reordered.message)
+    const target = reordered.value.focusTarget!
+    target.focused = true
+    const rows = reordered.value.component.render(80).join('')
+    expect(rows.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    target.handleInput?.('\r')
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'tab-change', controlId: 'metric-view', tabId: 'tokens' },
+      { kind: 'tab-change', controlId: 'metric-view', tabId: 'cost' },
+    ])
+    stale.handleInput?.('\r')
+    expect(f.events).toHaveLength(2)
+  })
+
+  it('keeps duplicate action node ids in separate horizontal navigation groups', () => {
+    const f = fixture()
+    const target = compiled(ui.stack.column([
+      ui.actions({ id: 'shared', items: [{ id: 'first-a', label: 'First A' }, { id: 'first-b', label: 'First B' }] }),
+      ui.actions({ id: 'shared', items: [{ id: 'second-a', label: 'Second A' }, { id: 'second-b', label: 'Second B' }] }),
+    ]), f.options).focusTarget!
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\r')
+    target.handleInput?.('\t')
+    target.handleInput?.('\x1b[D')
+    target.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'activate', controlId: 'first-a' },
+      { kind: 'activate', controlId: 'second-b' },
+    ])
+  })
+
+  it('blurs pooled editors when responsive visibility or disabled state removes their control', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const tree = (disabled = false) => ui.stack.column([
+      ui.child(ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'AB', disabled }] }), { when: { minWidth: 60 } }),
+    ])
+    const first = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.focusTarget!.focused = true
+    first.value.component.render(80)
+    expect(editors[0]!.focused).toBe(false)
+    first.value.focusTarget!.handleInput?.('\r')
+    first.value.component.render(80)
+    expect(editors[0]!.focused).toBe(true)
+
+    f.viewport.columns = 40
+    first.value.component.render(40)
+    expect(editors[0]!.focused).toBe(false)
+    f.viewport.columns = 80
+    first.value.component.render(80)
+    expect(editors[0]!.focused).toBe(true)
+
+    const disabled = compileBlueUiSurfaceNode(tree(true), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(disabled.ok).toBe(true)
+    if (!disabled.ok) throw new Error(disabled.message)
+    expect(disabled.value.focusTarget).toBeNull()
+    const disabledLayout = disabled.value.component as BlueComponent & { [LAYOUT_NODE](): LayoutNode }
+    disabledLayout[LAYOUT_NODE]()
+    expect(editors[0]!.focused).toBe(false)
+
+    const restored = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    restored.value.focusTarget!.focused = true
+    restored.value.component.render(80)
+    expect(editors).toHaveLength(1)
+    expect(editors[0]!.focused).toBe(false)
+  })
+
+  it('restores responsive focus by semantic id but forgets controls that are removed', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const tree = (disabled = false) => ui.stack.column([
+      ui.actions({ id: 'fallback', items: [{ id: 'fallback', label: 'Fallback' }] }),
+      ui.child(ui.tabs({ id: 'modes', activeId: 'b', items: [
+        { id: 'a', label: 'Alpha' },
+        { id: 'b', label: 'Beta', disabled },
+      ] }), { when: { minWidth: 60 } }),
+    ])
+    const first = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const firstFocus = first.value.focusTarget!
+    firstFocus.focused = true
+    firstFocus.handleInput?.('\t')
+    firstFocus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'b' })
+
+    f.viewport.columns = 40
+    first.value.component.render(40)
+    firstFocus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
+
+    f.viewport.columns = 80
+    first.value.component.render(80)
+    firstFocus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'b' })
+
+    f.viewport.columns = 40
+    first.value.component.render(40)
+    const removed = compileBlueUiSurfaceNode(tree(true), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    removed.value.focusTarget!.focused = true
+    removed.value.component.render(40)
+    removed.value.focusTarget!.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
+
+    const restored = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    f.viewport.columns = 80
+    restored.value.component.render(80)
+    restored.value.focusTarget!.focused = true
+    restored.value.focusTarget!.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
+  })
+
+  it('falls back to the preferred sibling when the selected semantic control is removed', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const tabs = (withBeta: boolean) => ui.tabs({ id: 'modes', activeId: 'a', items: [
+      { id: 'a', label: 'Alpha' },
+      ...(withBeta ? [{ id: 'b', label: 'Beta' }] : []),
+    ] })
+    const first = compileBlueUiSurfaceNode(tabs(true), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.focusTarget!.handleInput?.('\x1b[C')
+    const removed = compileBlueUiSurfaceNode(tabs(false), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    removed.value.focusTarget!.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'a' })
+
+    const firstSiblingRuntime = new BlueUiSurfaceRuntime()
+    const firstSiblingFixture = fixture()
+    const selected = compileBlueUiSurfaceNode(ui.actions({ id: 'commands', items: [
+      { id: 'a', label: 'Alpha' },
+      { id: 'b', label: 'Beta' },
+    ] }), { ...firstSiblingFixture.options, surfaceRuntime: firstSiblingRuntime, refreshMode: 'external' })
+    expect(selected.ok).toBe(true)
+    if (!selected.ok) throw new Error(selected.message)
+    selected.value.focusTarget!.handleInput?.('\x1b[C')
+    const firstSibling = compileBlueUiSurfaceNode(ui.actions({ id: 'commands', items: [
+      { id: 'a', label: 'Alpha' },
+    ] }), { ...firstSiblingFixture.options, surfaceRuntime: firstSiblingRuntime, refreshMode: 'internal' })
+    expect(firstSibling.ok).toBe(true)
+    if (!firstSibling.ok) throw new Error(firstSibling.message)
+    firstSibling.value.focusTarget!.handleInput?.('\r')
+    expect(firstSiblingFixture.events.at(-1)).toEqual({ kind: 'activate', controlId: 'a' })
+  })
+
+  it('rolls back external setup failure without clearing local state or moving the editor cursor', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const first = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'AB' },
+        { kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [{ id: 'dark', label: 'Dark' }, { id: 'light', label: 'Light' }] },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: true },
+      ] }),
+      ui.actions({ id: 'danger', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+    ]), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const focus = first.value.focusTarget!
+    focus.focused = true
+    first.value.component.render(80)
+    expect(editors).toHaveLength(1)
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[D')
+    focus.handleInput?.('X')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+
+    const failingComponents = {
+      ...localComponents,
+      createMarkdown: () => { throw new Error('setup failed') },
+    } as BlueComponents
+    const failed = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Server' }] }),
+      ui.text('failure after the form'),
+    ]), {
+      ...f.options,
+      components: failingComponents,
+      markdownLeafPath: '$.1',
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(failed.ok).toBe(false)
+
+    expect(first.value.component.render(80).join('\n').replaceAll(CURSOR_MARKER, '')).toContain('Name: AXB')
+    expect(first.value.component.render(80).join('\n')).toContain('Theme: Light')
+    expect(first.value.component.render(80).join('\n')).toContain('Enabled: [off]')
+    focus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'delete' })
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('Y')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXYB' })
+    expect(first.value.component.render(40).join('').replaceAll(CURSOR_MARKER, '')).toContain('AXYB')
+    expect(editors).toHaveLength(1)
+  })
+
+  it('retains an inactive field editor and draft until the semantic field returns', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'AB' }] })
+    const first = compileBlueUiSurfaceNode(form, { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const firstTarget = first.value.focusTarget!
+    firstTarget.focused = true
+    first.value.component.render(40)
+    expect(editors).toHaveLength(1)
+    firstTarget.handleInput?.('\r')
+    firstTarget.handleInput?.('\x1b[D')
+    firstTarget.handleInput?.('X')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXB' })
+    const staleChange = editors[0]!.onChange!
+    const staleSubmit = editors[0]!.onSubmit!
+
+    const removed = compileBlueUiSurfaceNode(ui.text('removed'), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    expect(editors[0]!.focused).toBe(false)
+    removed.value.component.render(40)
+    staleChange('ignored')
+    staleSubmit('ignored')
+    expect(f.events).toHaveLength(1)
+
+    const reused = compileBlueUiSurfaceNode(form, { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(reused.ok).toBe(true)
+    if (!reused.ok) throw new Error(reused.message)
+    reused.value.component.render(40)
+    expect(editors).toHaveLength(1)
+    reused.value.focusTarget!.focused = true
+    reused.value.focusTarget!.handleInput?.('\r')
+    reused.value.focusTarget!.handleInput?.('Y')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXYB' })
+    firstTarget.handleInput?.('stale')
+    expect(f.events).toHaveLength(2)
+    const disposedChange = editors[0]!.onChange!
+    const disposedSubmit = editors[0]!.onSubmit!
+    runtime.dispose()
+    disposedChange('ignored')
+    disposedSubmit('ignored')
+    expect(f.events).toHaveLength(2)
+  })
+
+  it('cleans replaced and disposed compatibility-resolved editors', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const firstEditor = createTestEditor()
+    const secondEditor = createTestEditor()
+    const firstKey = vi.fn(() => false)
+    const secondKey = vi.fn(() => false)
+    firstEditor.onKey = firstKey
+    secondEditor.onKey = secondKey
+    let resolved = firstEditor
+    const f = fixture({ resolveTextEditor: () => resolved })
+    const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Blue' }] })
+    const first = compileBlueUiSurfaceNode(form, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.focusTarget!.focused = true
+    first.value.focusTarget!.handleInput?.('\r')
+    first.value.component.render(40)
+    expect(firstEditor.focused).toBe(true)
+    const staleChange = firstEditor.onChange!
+    const staleSubmit = firstEditor.onSubmit!
+
+    resolved = secondEditor
+    const replaced = compileBlueUiSurfaceNode(form, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(replaced.ok).toBe(true)
+    if (!replaced.ok) throw new Error(replaced.message)
+    replaced.value.component.render(40)
+    expect(firstEditor.focused).toBe(false)
+    expect(firstEditor.onChange).toBeUndefined()
+    expect(firstEditor.onSubmit).toBeUndefined()
+    expect(firstEditor.onKey).toBe(firstKey)
+    expect(secondEditor.onChange).toBeTypeOf('function')
+    expect(secondEditor.onSubmit).toBeTypeOf('function')
+    staleChange('ignored')
+    staleSubmit('ignored')
+    expect(f.events).toEqual([])
+
+    runtime.deactivate()
+    expect(secondEditor.focused).toBe(false)
+    expect(secondEditor.onChange).toBeUndefined()
+    expect(secondEditor.onSubmit).toBeUndefined()
+    expect(secondEditor.onKey).toBe(secondKey)
+
+    const rebound = compileBlueUiSurfaceNode(form, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(rebound.ok).toBe(true)
+    if (!rebound.ok) throw new Error(rebound.message)
+    rebound.value.component.render(40)
+    const disposedChange = secondEditor.onChange!
+    const disposedSubmit = secondEditor.onSubmit!
+    const externalChange = vi.fn()
+    const externalSubmit = vi.fn()
+    secondEditor.onChange = externalChange
+    secondEditor.onSubmit = externalSubmit
+    runtime.dispose()
+    expect(secondEditor.focused).toBe(false)
+    expect(secondEditor.onChange).toBe(externalChange)
+    expect(secondEditor.onSubmit).toBe(externalSubmit)
+    expect(secondEditor.onKey).toBe(secondKey)
+    disposedChange('ignored')
+    disposedSubmit('ignored')
+    expect(f.events).toEqual([])
+  })
+
+  it('drops incompatible field state when a semantic field changes kind', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const input = () => ui.form({ id: 'profile', fields: [{ kind: 'input' as const, id: 'mode', label: 'Mode', value: 'A' }] })
+    const first = compileBlueUiSurfaceNode(input(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.component.render(40)
+    first.value.focusTarget!.handleInput?.('B')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'mode', value: 'AB' })
+
+    const select = compileBlueUiSurfaceNode(ui.form({ id: 'profile', fields: [{
+      kind: 'select', id: 'mode', label: 'Mode', value: 'dark', options: [{ id: 'dark', label: 'Dark' }],
+    }] }), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(select.ok).toBe(true)
+    if (!select.ok) throw new Error(select.message)
+    expect(select.value.component.render(40).join('\n')).toContain('Mode: Dark')
+
+    const restored = compileBlueUiSurfaceNode(input(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    expect(restored.value.component.render(40).join('\n')).toContain('Mode: A')
+    expect(restored.value.component.render(40).join('\n')).not.toContain('AB')
+    expect(editors).toHaveLength(2)
+  })
+
+  it('evicts the oldest inactive field after the registration cache reaches 64 entries', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const field = (index: number) => ui.form({ id: 'profile', fields: [{ kind: 'input' as const, id: `field-${String(index)}`, label: `Field ${String(index)}`, value: '' }] })
+    const compileField = (index: number, refreshMode: 'internal' | 'external') => {
+      const result = compileBlueUiSurfaceNode(field(index), { ...f.options, surfaceRuntime: runtime, refreshMode })
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error(result.message)
+      result.value.component.render(40)
+    }
+
+    compileField(0, 'external')
+    for (let index = 1; index <= 64; index += 1) compileField(index, 'internal')
+    expect(editors).toHaveLength(65)
+    const oldestInactiveEditor = editors[1]!
+    compileField(0, 'internal')
+    expect(editors).toHaveLength(65)
+    compileField(65, 'internal')
+    expect(editors).toHaveLength(66)
+    expect(oldestInactiveEditor.onChange).toBeUndefined()
+    compileField(0, 'internal')
+    expect(editors).toHaveLength(66)
+    compileField(1, 'internal')
+    expect(editors).toHaveLength(67)
   })
 
   it('inserts its marker only after HStack composition', () => {
@@ -557,9 +1219,22 @@ describe('compileBlueUiNode', () => {
   it('keeps controlled list/form values while emitting proposed changes', () => {
     const { options, events } = fixture()
     const list = compiled(ui.list({ id: 'list', mode: 'multiple', selectedIds: ['a'], items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), options)
-    list.focusTarget!.handleInput?.('\r')
+    list.focusTarget!.handleInput?.(' ')
     expect(events).toEqual([{ kind: 'selection-change', controlId: 'list', value: [] }])
     expect(list.node).toMatchObject({ selectedIds: ['a'] })
+  })
+
+  it('ignores unrelated keys on toggle and submit controls', () => {
+    const f = fixture()
+    const focus = compiled(ui.form({
+      id: 'form',
+      fields: [{ kind: 'toggle', id: 'enabled', label: 'Enabled', value: false }],
+      submitActionId: 'Save',
+    }), f.options).focusTarget!
+    focus.handleInput?.('x')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('x')
+    expect(f.events).toEqual([])
   })
 
   it('keeps form edit buffers local while emitting text, toggle, select, and submit proposals', () => {
@@ -584,6 +1259,8 @@ describe('compileBlueUiNode', () => {
     focus.focused = true
     expect(focus.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
     expect(focus.render(80).join('')).toContain('→ Name:')
+    focus.handleInput?.('\x7f')
+    expect(events).toEqual([])
     focus.handleInput?.('B')
     focus.handleInput?.(' ')
     focus.handleInput?.('界🙂')
@@ -595,19 +1272,23 @@ describe('compileBlueUiNode', () => {
     if (result.node.kind !== 'form') throw new Error('expected form')
     expect(result.node.fields[0]).toMatchObject({ value: 'A' })
 
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('note')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('z')
     expect(focus.render(80).join('\n')).toContain('Secret: ••')
-    focus.handleInput?.('\t')
-    focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
-    focus.handleInput?.('\x1b[B')
-    expect(focus.render(80).join('\n')).toContain('Choice: Alpha')
+    focus.handleInput?.('\x1b')
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    expect(focus.render(80).join('\n')).toContain('Choice: ‹ Alpha ›')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
 
     expect(events).toEqual([
@@ -627,21 +1308,221 @@ describe('compileBlueUiNode', () => {
     expect(refreshed.component.render(40).join('')).not.toContain('AB')
 
     const selectDraft = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: null, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
-    selectDraft.focusTarget!.handleInput?.('\x1b[A')
-    expect(selectDraft.component.render(40).join('')).toContain('Beta')
+    selectDraft.focusTarget!.focused = true
+    selectDraft.focusTarget!.handleInput?.('\x1b[D')
+    expect(selectDraft.component.render(40).join('')).toContain('Choose…')
+    selectDraft.focusTarget!.handleInput?.('\r')
+    selectDraft.focusTarget!.handleInput?.('\x1b[D')
+    expect(selectDraft.component.render(40).join('')).toContain('‹ Beta ›')
+    selectDraft.focusTarget!.handleInput?.('\x1b')
+    expect(selectDraft.component.render(40).join('')).toContain('Choose…')
     const selectRefresh = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: 'b', options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
     expect(selectRefresh.component.render(40).join('')).toContain('Beta')
 
     const noOptionsEvents: unknown[] = []
     const noOptions = compiled(ui.form({ id: 'empty-select', fields: [{ kind: 'select', id: 'empty', label: 'Empty', value: null, options: [{ id: 'disabled', label: 'Disabled', disabled: true }] }] }), fixture({ emit: event => noOptionsEvents.push(event) }).options)
-    noOptions.focusTarget!.handleInput?.('\x1b[B')
+    noOptions.focusTarget!.handleInput?.('\x1b[C')
+    noOptions.focusTarget!.handleInput?.('\r')
+    noOptions.focusTarget!.handleInput?.('\x1b[C')
     noOptions.focusTarget!.handleInput?.('\r')
     expect(noOptionsEvents).toEqual([{ kind: 'value-change', controlId: 'empty', value: null }])
 
+    const pasteEvents: unknown[] = []
+    const pasteText = compiled(ui.form({ id: 'paste-form', fields: [{ kind: 'input', id: 'paste', label: 'Paste', value: '' }] }), fixture({ emit: event => pasteEvents.push(event) }).options)
+    pasteText.focusTarget!.handleInput?.('\x1b[200~pasted\x1b[201~')
+    expect(pasteEvents).toEqual([{ kind: 'value-change', controlId: 'paste', value: 'pasted' }])
+
     const enterEvents: unknown[] = []
-    const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({ emit: event => enterEvents.push(event) }).options)
+    const enterEditor = createTestEditor()
+    const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({
+      emit: event => enterEvents.push(event),
+      resolveTextEditor: () => enterEditor,
+    }).options)
+    enterText.focusTarget!.focused = true
     enterText.focusTarget!.handleInput?.('\r')
+    enterText.component.render(40)
+    expect(enterEditor.focused).toBe(true)
+    expect(enterEvents).toEqual([])
+    enterText.focusTarget!.handleInput?.('\r')
+    const submittedRows = enterText.component.render(40).join('\n')
+    expect(enterEditor.focused).toBe(false)
+    expect(submittedRows).toContain('→ Enter: value')
     expect(enterEvents).toEqual([{ kind: 'value-change', controlId: 'enter', value: 'value' }])
+
+    const textareaEvents: unknown[] = []
+    const textareaEditor = createTestEditor()
+    const textarea = compiled(ui.form({ id: 'notes-form', fields: [{ kind: 'textarea', id: 'notes', label: 'Notes', value: 'first' }] }), fixture({
+      emit: event => textareaEvents.push(event),
+      resolveTextEditor: () => textareaEditor,
+    }).options)
+    textarea.focusTarget!.focused = true
+    textarea.focusTarget!.handleInput?.('\r')
+    textarea.component.render(40)
+    expect(textareaEditor.focused).toBe(true)
+    textarea.focusTarget!.handleInput?.('\x1b[D')
+    textarea.focusTarget!.handleInput?.('\x1b\r')
+    textarea.focusTarget!.handleInput?.('\x1b[13;3u')
+    expect(textareaEditor.getExpandedText()).toBe('firs\n\nt')
+    textarea.focusTarget!.handleInput?.('\r')
+    textarea.component.render(40)
+    expect(textareaEditor.focused).toBe(false)
+    expect(textareaEditor.getExpandedText()).toBe('firs\n\nt')
+    expect(textareaEvents).toEqual([
+      { kind: 'value-change', controlId: 'notes', value: 'firs\nt' },
+      { kind: 'value-change', controlId: 'notes', value: 'firs\n\nt' },
+      { kind: 'value-change', controlId: 'notes', value: 'firs\n\nt' },
+    ])
+  })
+
+  it('treats select adjustment as an explicit confirmable transaction', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const form = (value: string) => ui.form({
+      id: 'profile',
+      fields: [{ kind: 'select', id: 'mode', label: 'Mode', value, options: [
+        { id: 'guided', label: 'Guided' },
+        { id: 'direct', label: 'Direct' },
+        { id: 'review', label: 'Review' },
+      ] }],
+      submitActionId: 'Save',
+    })
+    const first = compileBlueUiSurfaceNode(form('guided'), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const focus = first.value.focusTarget!
+    focus.focused = true
+
+    focus.handleInput?.(' ')
+    focus.handleInput?.('\x1b[C')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: Guided')
+    expect(f.events).toEqual([])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: ‹ Direct ›')
+    focus.handleInput?.('\x1b[B')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: ‹ Direct ›')
+    focus.handleInput?.('\t')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: Guided')
+    expect(f.events).toEqual([])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[D')
+    focus.handleInput?.('\x1b[27u')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: Guided')
+    expect(f.events).toEqual([])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    const refreshed = compileBlueUiSurfaceNode(form('review'), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(refreshed.ok).toBe(true)
+    if (!refreshed.ok) throw new Error(refreshed.message)
+    const refreshedFocus = refreshed.value.focusTarget!
+    refreshedFocus.focused = true
+    expect(refreshed.value.component.render(60).join('\n')).toContain('→ Mode: Review')
+
+    refreshedFocus.handleInput?.('\r')
+    refreshedFocus.handleInput?.('\x1b[C')
+    refreshedFocus.handleInput?.('\x1b[Z')
+    refreshedFocus.handleInput?.('\x1b[B')
+    refreshedFocus.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'submit', controlId: 'profile', values: { mode: 'review' } },
+    ])
+
+    refreshedFocus.handleInput?.('\x1b[A')
+    refreshedFocus.handleInput?.('\r')
+    refreshedFocus.handleInput?.('\x1b[C')
+    refreshedFocus.handleInput?.('\r')
+    refreshedFocus.handleInput?.('\x1b[B')
+    refreshedFocus.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'submit', controlId: 'profile', values: { mode: 'review' } },
+      { kind: 'value-change', controlId: 'mode', value: 'guided' },
+      { kind: 'submit', controlId: 'profile', values: { mode: 'guided' } },
+    ])
+  })
+
+  it('consumes Alt+Enter in single-line and secret fields', () => {
+    const editors = new Map<string, BlueEditor>()
+    const f = fixture({
+      resolveTextEditor: controlId => {
+        let editor = editors.get(controlId)
+        if (editor === undefined) {
+          editor = createTestEditor()
+          editors.set(controlId, editor)
+        }
+        return editor
+      },
+    })
+    const result = compiled(ui.form({ id: 'credentials', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+      { kind: 'secret', id: 'token', label: 'Token', value: 'secret' },
+    ] }), f.options)
+    const focus = result.focusTarget!
+    focus.focused = true
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b\r')
+    focus.handleInput?.('\x1b[13;3u')
+    expect(editors.get('name')?.getExpandedText()).toBe('Blue')
+    focus.handleInput?.('\x1b[13u')
+    expect(editors.get('name')?.focused).toBe(false)
+
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b\r')
+    focus.handleInput?.('\x1b[13;3u')
+    expect(editors.get('token')?.getExpandedText()).toBe('secret')
+    focus.handleInput?.('\n')
+    expect(editors.get('token')?.focused).toBe(false)
+    expect(f.events).toEqual([
+      { kind: 'value-change', controlId: 'name', value: 'Blue' },
+      { kind: 'value-change', controlId: 'token', value: 'secret' },
+    ])
+  })
+
+  it('does not leave the active field when another editor submits late', () => {
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const { options, events } = fixture({ components: localComponents })
+    const result = compiled(ui.form({ id: 'late-submit', fields: [
+      { kind: 'input', id: 'first', label: 'First', value: 'one' },
+      { kind: 'input', id: 'second', label: 'Second', value: 'two' },
+    ] }), options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    result.component.render(60)
+    expect(editors).toHaveLength(2)
+    const lateSubmit = editors[0]!.onSubmit!
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    result.component.render(60)
+    expect(editors[1]!.focused).toBe(true)
+
+    lateSubmit('late-one')
+    const rows = result.component.render(60).join('\n')
+    expect(rows).toContain('→ Second: two')
+    expect(editors[1]!.focused).toBe(true)
+    expect(events).toEqual([{ kind: 'value-change', controlId: 'first', value: 'late-one' }])
   })
 
   it('contains editor-backed field render failures', () => {
@@ -690,9 +1571,9 @@ describe('compileBlueUiNode', () => {
     expect(escapes).toEqual(['escape'])
     expect(focus.render(80).join('')).not.toContain('Really delete?')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     expect(focus.render(80).join('')).not.toContain('Really delete?')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[D')
     focus.handleInput?.(' ')
     focus.focused = false
     focus.focused = true
@@ -700,13 +1581,15 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.(' ')
     expect(events).toEqual([])
     focus.handleInput?.(' ')
-    expect(events).toEqual([{ kind: 'activate', controlId: 'delete' }])
-    focus.handleInput?.('\t')
+    expect(events).toEqual([])
     focus.handleInput?.('\r')
+    expect(events).toEqual([{ kind: 'activate', controlId: 'delete' }])
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.(' ')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'keep' })
   })
 
-  it('routes direction keys within the active pattern while Tab crosses controls', () => {
+  it('routes direction keys within the active pattern while Tab crosses groups', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
       ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'b', label: 'B' }] }),
@@ -729,6 +1612,235 @@ describe('compileBlueUiNode', () => {
     ])
   })
 
+  it('uses Tab between groups, arrows within groups, and remembers each group item', () => {
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const { options, events } = fixture({ components: localComponents })
+    const focus = compiled(ui.stack.column([
+      ui.tabs({ id: 'tabs', activeId: 'editor', items: [{ id: 'editor', label: 'Editor' }, { id: 'snapshot', label: 'Snapshot' }] }),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'Director' },
+        { kind: 'textarea', id: 'notes', label: 'Notes', value: 'Move the cursor' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      ] }),
+      ui.actions({ id: 'commands', items: [{ id: 'close', label: 'Close' }, { id: 'reset', label: 'Reset', intent: 'primary' }] }),
+    ]), options).focusTarget!
+    focus.focused = true
+    focus.render(80)
+    expect(editors.every(editor => editor.focused === false)).toBe(true)
+
+    focus.handleInput?.('\t')
+    expect(focus.render(80).join('\n')).toContain('→ Name:')
+    focus.handleInput?.('\x1b[B')
+    expect(focus.render(80).join('\n')).toContain('→ Notes:')
+    focus.handleInput?.('\r')
+    focus.render(80)
+    expect(editors[1]!.focused).toBe(true)
+    focus.handleInput?.('\x1b')
+    focus.render(80)
+    expect(editors[1]!.focused).toBe(false)
+
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    expect(events).toEqual([
+      { kind: 'value-change', controlId: 'enabled', value: true },
+      { kind: 'activate', controlId: 'reset' },
+      { kind: 'value-change', controlId: 'enabled', value: false },
+    ])
+
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('!')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[Z')
+    const returned = focus.render(80).join('\n')
+    expect(returned).toContain('→ Notes:')
+    expect(editors[1]!.focused).toBe(false)
+    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'notes', value: 'Move the cursor!' })
+  })
+
+  it('keeps group item memory across a persistent-runtime reorder', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const tabs = ui.tabs({ id: 'views', activeId: 'summary', items: [
+      { id: 'summary', label: 'Summary' },
+      { id: 'details', label: 'Details' },
+    ] })
+    const form = ui.form({ id: 'profile', fields: [
+      { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      { kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+        { id: 'dark', label: 'Dark' },
+        { id: 'light', label: 'Light' },
+      ] },
+    ] })
+    const actions = ui.actions({ id: 'commands', items: [
+      { id: 'save', label: 'Save', intent: 'primary' },
+      { id: 'cancel', label: 'Cancel' },
+    ] })
+    const first = compileBlueUiSurfaceNode(ui.stack.column([tabs, form, actions]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.handleInput?.('\x1b[C')
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[B')
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[C')
+
+    const reordered = compileBlueUiSurfaceNode(ui.stack.column([actions, tabs, form]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(reordered.ok).toBe(true)
+    if (!reordered.ok) throw new Error(reordered.message)
+    const focus = reordered.value.focusTarget!
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'value-change', controlId: 'theme', value: 'dark' },
+      { kind: 'tab-change', controlId: 'views', tabId: 'details' },
+      { kind: 'activate', controlId: 'cancel' },
+    ])
+    stale.handleInput?.('\r')
+    expect(f.events).toHaveLength(3)
+  })
+
+  it('forgets removed focus and editing even when the removal generation never renders', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const form = ui.form({ id: 'profile', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+      { kind: 'textarea', id: 'notes', label: 'Notes', value: 'N!' },
+    ] })
+    const actions = ui.actions({ id: 'commands', items: [{ id: 'close', label: 'Close' }] })
+    const first = compileBlueUiSurfaceNode(ui.stack.column([form, actions]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const firstFocus = first.value.focusTarget!
+    firstFocus.focused = true
+    first.value.component.render(80)
+    firstFocus.handleInput?.('\x1b[B')
+    firstFocus.handleInput?.('!')
+    expect(editors[1]!.focused).toBe(true)
+
+    const removed = compileBlueUiSurfaceNode(actions, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    expect(editors[1]!.focused).toBe(false)
+
+    const restored = compileBlueUiSurfaceNode(ui.stack.column([form, actions]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    const focus = restored.value.focusTarget!
+    focus.focused = true
+    focus.handleInput?.('\t')
+    const rows = restored.value.component.render(80).join('\n')
+    expect(rows).toContain('→ Name:')
+    expect(rows).not.toContain('→ Notes:')
+    expect(editors[1]!.focused).toBe(false)
+  })
+
+  it('separates form navigation from text editing and select value changes', () => {
+    const editor = createTestEditor()
+    editor.handleInput = vi.fn(editor.handleInput)
+    const escapes: string[] = []
+    const f = fixture({
+      resolveTextEditor: () => editor,
+      onUnhandledEscape: () => escapes.push('escape'),
+    })
+    const result = compiled(ui.form({ id: 'profile', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+      { kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+        { id: 'dark', label: 'Dark' },
+        { id: 'light', label: 'Light' },
+      ] },
+      { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+    ] }), f.options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    focus.render(60)
+    expect(editor.focused).toBe(false)
+
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[C')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: Dark')
+    focus.handleInput?.('\r')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: ‹ Dark ›')
+    focus.handleInput?.('\x1b[C')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: ‹ Light ›')
+    focus.handleInput?.('\x1b[A')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: ‹ Light ›')
+    focus.handleInput?.('\x1b')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: Dark')
+    expect(escapes).toEqual([])
+    focus.handleInput?.('\x1b[A')
+    expect(result.component.render(60).join('\n')).toContain('→ Name: Blue')
+    focus.handleInput?.('\x1b[C')
+    expect(editor.handleInput).not.toHaveBeenCalledWith('\x1b[C')
+
+    focus.handleInput?.('\r')
+    focus.render(60)
+    expect(editor.focused).toBe(true)
+    focus.handleInput?.('\x1b')
+    focus.render(60)
+    expect(editor.focused).toBe(false)
+    expect(escapes).toEqual([])
+    focus.handleInput?.('\x1b')
+    expect(escapes).toEqual(['escape'])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.render(60)
+    expect(editor.focused).toBe(false)
+    expect(result.component.render(60).join('\n')).toContain('→ Name: Blue')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    expect(f.events).toEqual([{ kind: 'value-change', controlId: 'theme', value: 'light' }])
+  })
+
   it('dispatches list-add, form toggle/submit/cancel, loader and empty actions', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
@@ -738,10 +1850,20 @@ describe('compileBlueUiNode', () => {
       ui.empty({ title: 'Empty', actions: ui.actions({ id: 'empty-actions', items: [{ id: 'empty-go', label: 'Go' }] }) }),
     ])
     const focus = compiled(tree, options).focusTarget!
-    for (let index = 0; index < 7; index += 1) {
-      focus.handleInput?.('\r')
-      focus.handleInput?.('\t')
-    }
+    focus.handleInput?.(' ')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
     expect(events).toEqual([
       { kind: 'selection-change', controlId: 'list', value: ['item'] },
       { kind: 'value-change', controlId: 'toggle', value: true },
@@ -796,7 +1918,7 @@ describe('compileBlueUiNode', () => {
     const trackedColors = new Proxy(colors, { get: (target, key, receiver) => key === 'selectedBg' ? selectedBg : Reflect.get(target, key, receiver) })
     const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), fixture({ colors: trackedColors }).options)
     tabs.focusTarget!.focused = true
-    tabs.focusTarget!.handleInput?.('\t')
+    tabs.focusTarget!.handleInput?.('\x1b[C')
     const tabRow = tabs.component.render(40).join('')
     expect(tabRow).toContain('‹ Active ›')
     expect(tabRow).toContain(`${CURSOR_MARKER} Focused`)
@@ -979,6 +2101,269 @@ describe('compileBlueUiNode', () => {
   })
 })
 
+describe('compileBlueUiSurfaceNode contextual hints', () => {
+  function focusedHint(value: unknown, inputs: readonly string[] = [], overrides: Partial<BlueUiCompilerOptions> = {}, width = 120): string {
+    const result = compiledSurface(value, fixture(overrides).options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    for (const input of inputs) focus.handleInput?.(input)
+    return focus.render(width).at(-1) ?? ''
+  }
+
+  it('keeps hints on focused persistent plugin surfaces only', () => {
+    const action = ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })
+    const f = fixture()
+    const persistent = compiledSurface(action, f.options)
+    expect(persistent.component.render(80)).toHaveLength(1)
+    persistent.focusTarget!.focused = true
+    expect(persistent.component.render(80).at(-1)).toBe('  Enter run')
+
+    const lane = compiledSurface(ui.surface({ chrome: 'lane', child: action }), fixture().options)
+    lane.focusTarget!.focused = true
+    expect(lane.component.render(80).at(-1)).toBe('  Enter run')
+
+    const ordinary = compiled(action, f.options)
+    ordinary.focusTarget!.focused = true
+    expect(ordinary.component.render(80)).toHaveLength(1)
+    expect(ordinary.component.render(80).join('')).not.toContain('Enter run')
+
+    const passive = compiledSurface(ui.text('passive'), f.options)
+    expect(passive.focusTarget).toBeNull()
+    expect(passive.component.render(80)).toEqual(['passive'])
+
+    const editor = createTestEditor()
+    editor.setText('draft')
+    const shell = compiledEditorShell({ kind: 'editor-control' }, editor).result
+    shell.focusTarget.focused = true
+    expect(shell.component.render(80).join('\n')).not.toContain('Enter finish')
+
+    expect(compiledStatus(ui.text('status')).component.render(80)).toEqual(['status'])
+
+    const replacement = compileBlueUiSurfaceNode(ui.text('replacement'), {
+      ...f.options,
+      surfaceRuntime: persistent.surfaceRuntime,
+      refreshMode: 'external',
+    })
+    expect(replacement.ok).toBe(true)
+    expect(persistent.component.render(80)).toEqual([])
+  })
+
+  it('derives every navigation and activation hint from the active control state', () => {
+    expect(focusedHint(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), [], { onUnhandledEscape: () => {} }))
+      .toBe('  ←→ tabs · Enter switch · Esc close')
+    expect(focusedHint(ui.list({ id: 'list', selectedIds: [], items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] })))
+      .toBe('  ↑↓ options · Enter choose')
+    expect(focusedHint(ui.loader({ message: 'Working', cancelActionId: 'cancel' })))
+      .toBe('  Enter cancel')
+    expect(focusedHint(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] })))
+      .toBe('  Enter edit')
+    expect(focusedHint(ui.form({ id: 'form', fields: [{ kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [{ id: 'dark', label: 'Dark' }] }] })))
+      .toBe('  Enter adjust')
+    expect(focusedHint(ui.form({ id: 'form', fields: [{ kind: 'toggle', id: 'enabled', label: 'Enabled', value: false }] })))
+      .toBe('  Space/Enter toggle')
+    expect(focusedHint(ui.form({ id: 'form', fields: [], submitActionId: 'Save' })))
+      .toBe('  Enter submit')
+    expect(focusedHint(ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })))
+      .toBe('  Enter run')
+
+    const groups = ui.stack.column([
+      ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }, { id: 'stop', label: 'Stop' }] }),
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }] }),
+    ])
+    expect(focusedHint(groups)).toBe('  ←→ actions · Enter run · Tab/Shift-Tab groups')
+  })
+
+  it('keeps tab and multiple-list activation aligned with their hints', () => {
+    const f = fixture()
+    const result = compiledSurface(ui.stack.column([
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }),
+      ui.list({ id: 'list', mode: 'multiple', selectedIds: [], items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }),
+    ]), f.options)
+    const focus = result.focusTarget!
+    focus.focused = true
+
+    expect(focus.render(120).at(-1)).toBe('  ←→ tabs · Enter switch · Tab/Shift-Tab groups')
+    focus.handleInput?.(' ')
+    expect(f.events).toEqual([])
+    focus.handleInput?.('\r')
+    expect(f.events).toEqual([{ kind: 'tab-change', controlId: 'tabs', tabId: 'a' }])
+
+    focus.handleInput?.('\t')
+    expect(focus.render(120).at(-1)).toBe('  ↑↓ options · Space toggle · Tab/Shift-Tab groups')
+    focus.handleInput?.('\r')
+    expect(f.events).toHaveLength(1)
+    focus.handleInput?.(' ')
+    expect(f.events.at(-1)).toEqual({ kind: 'selection-change', controlId: 'list', value: ['a'] })
+  })
+
+  it('switches hints for text editing, select adjustment, and confirmation', () => {
+    const input = ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] })
+    expect(focusedHint(input, ['\r'])).toBe('  Enter finish · Esc leave')
+    const editingLayout = compiledSurface(input, fixture().options)
+    editingLayout.focusTarget!.focused = true
+    editingLayout.focusTarget!.handleInput?.('\r')
+    expect(layout(editingLayout.component as Component, 40, 3).lines.join('')).toContain(CURSOR_MARKER)
+
+    const textareaGroups = ui.stack.column([
+      ui.form({ id: 'form', fields: [{ kind: 'textarea', id: 'notes', label: 'Notes', value: '' }] }),
+      ui.actions({ id: 'commands', items: [{ id: 'save', label: 'Save' }] }),
+    ])
+    expect(focusedHint(textareaGroups, ['\r']))
+      .toBe('  Enter finish · Alt+Enter newline · Esc leave')
+
+    const select = ui.form({ id: 'form', fields: [{ kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+      { id: 'dark', label: 'Dark' },
+      { id: 'disabled', label: 'Disabled', disabled: true },
+      { id: 'light', label: 'Light' },
+    ] }] })
+    expect(focusedHint(select, ['\r'])).toBe('  ←→ options · Enter apply · Esc cancel')
+
+    const fixedSelect = ui.form({ id: 'form', fields: [{ kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+      { id: 'dark', label: 'Dark' },
+      { id: 'disabled', label: 'Disabled', disabled: true },
+    ] }] })
+    expect(focusedHint(fixedSelect, ['\r'])).toBe('  Enter apply · Esc cancel')
+
+    const selectGroups = ui.stack.column([
+      select,
+      ui.actions({ id: 'commands', items: [{ id: 'save', label: 'Save' }] }),
+    ])
+    expect(focusedHint(selectGroups, ['\r']))
+      .toBe('  ←→ options · Enter apply · Esc cancel')
+
+    const confirm = ui.actions({ id: 'commands', items: [{ id: 'delete', label: 'Delete', confirm: 'Delete?' }] })
+    expect(focusedHint(confirm, ['\r'])).toBe('  Enter confirm · Esc cancel')
+  })
+
+  it('filters unavailable controls and degrades through complete width-safe tokens', () => {
+    const f = fixture({ onUnhandledEscape: () => {} })
+    const tree = ui.stack.column([
+      ui.actions({ id: 'commands', items: [
+        { id: 'run', label: 'Run' },
+        { id: 'disabled', label: 'Disabled', disabled: true },
+        { id: 'busy', label: 'Busy', busy: true },
+      ] }),
+      ui.child(ui.list({ id: 'hidden', selectedIds: [], items: [{ id: 'item', label: 'Item' }] }), { when: { minWidth: 100 } }),
+    ])
+    const result = compiledSurface(tree, f.options)
+    result.focusTarget!.focused = true
+    expect(result.component.render(80).at(-1)).toBe('  Enter run · Esc close')
+    f.viewport.columns = 120
+    expect(result.component.render(120).at(-1)).toBe('  Enter run · Tab/Shift-Tab groups · Esc close')
+
+    const wideTree = ui.stack.column([
+      ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }, { id: 'stop', label: 'Stop' }] }),
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }] }),
+    ])
+    const widths = compiledSurface(wideTree, fixture({ onUnhandledEscape: () => {} }).options)
+    widths.focusTarget!.focused = true
+    expect(widths.component.render(80).at(-1)).toBe('  ←→ actions · Enter run · Tab/Shift-Tab groups')
+    expect(widths.component.render(40).at(-1)).toBe('  ←→ · Enter · Tab')
+    expect(widths.component.render(18).at(-1)).toBe('  ←→ · Enter · Tab')
+    expect(widths.component.render(8).at(-1)).toBe('  Enter')
+    expect(widths.component.render(6).join('\n')).not.toContain('Ent')
+
+    const ansiColors = new Proxy({ logoGradient: [identity] }, {
+      get: (target, key) => key === 'logoGradient'
+        ? target.logoGradient
+        : key === 'textMuted' ? (value: string) => `\u001b[2m${value}\u001b[22m` : identity,
+    }) as BlueSemanticColors
+    const ansi = compiledSurface(wideTree, fixture({ colors: ansiColors, onUnhandledEscape: () => {} }).options)
+    ansi.focusTarget!.focused = true
+    const ansiHint = ansi.component.render(40).at(-1)!
+    expect(ansiHint).toContain('\u001b[2m')
+    expect(visibleWidth(ansiHint)).toBeLessThanOrEqual(40)
+  })
+
+  it('merges semantic extras by id and contains hint provider and translator failures', () => {
+    const action = ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })
+    expect(focusedHint(action, [], {
+      contextHints: {
+        translate: key => {
+          if (key === 'fallback') throw new Error('translator unavailable')
+          return `translated:${key}`
+        },
+        extra: () => [
+          { id: '', keys: 'ignored' },
+          { id: 'ignored', keys: '' },
+          { id: 'activate', keys: 'Ctrl+R', label: 'refresh', compact: 'R', priority: 110 },
+          { id: 'activate', keys: 'Ctrl+L', label: 'launch', priority: 105 },
+          { id: 'fallback', keys: 'F', label: 'fallback' },
+        ],
+      },
+    })).toBe('  Ctrl+L translated:launch · F fallback')
+
+    expect(focusedHint(action, [], {
+      contextHints: { extra: () => { throw new Error('hint provider unavailable') } },
+    })).toBe('  Enter run')
+
+    expect(focusedHint(action, [], {
+      contextHints: {
+        suppressAuto: true,
+        extra: () => [
+          { id: 'confirm', keys: 'C', label: 'confirm', priority: 90 },
+          { id: 'first', keys: 'F', priority: 80 },
+          { id: 'second', keys: 'S', priority: 80 },
+        ],
+      },
+    })).toBe('  F · S · C confirm')
+  })
+
+  it('supports automatic-hint suppression and focusable controller-only surfaces', () => {
+    const action = ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })
+    expect(focusedHint(action, [], {
+      contextHints: {
+        suppressAuto: true,
+        extra: () => [{ id: 'custom', keys: 'R', label: 'run' }],
+      },
+    })).toBe('  R run')
+    const suppressed = compiledSurface(action, fixture({ contextHints: { suppressAuto: true } }).options)
+    suppressed.focusTarget!.focused = true
+    expect(suppressed.component.render(40)).toHaveLength(1)
+    expect(suppressed.component.render(40).join('')).not.toContain('Enter run')
+
+    const official = compiled(ui.text('Details'), fixture({
+      contextHints: { enabled: true, focusWithoutControls: true },
+      onUnhandledEscape: () => {},
+    }).options)
+    expect(official.focusTarget).not.toBeNull()
+    official.focusTarget!.focused = true
+    expect(official.component.render(40)).toEqual(['Details', '  Esc close'])
+
+    const passive = compiledSurface(ui.text('Details'), fixture({
+      contextHints: { focusWithoutControls: true },
+      onUnhandledEscape: () => {},
+    }).options)
+    expect(passive.focusTarget).not.toBeNull()
+    passive.focusTarget!.focused = true
+    expect(passive.component.render(40)).toEqual(['Details', '  Esc close'])
+  })
+
+  it('keeps the hint inside overlay chrome in direct and height-bounded layout renders', () => {
+    const overlay = compiledSurface(ui.surface({
+      chrome: 'overlay',
+      title: 'Details',
+      padding: 1,
+      child: ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] }),
+    }), fixture({ getViewport: () => ({ columns: 20, rows: 4 }), onUnhandledEscape: () => {} }).options)
+    overlay.focusTarget!.focused = true
+
+    const direct = overlay.component.render(20).map(stripTerminalSequences)
+    expect(direct).toHaveLength(4)
+    expect(direct.at(-2)).toMatch(/^│\s+Enter · Esc\s+│$/u)
+    expect(direct.at(-1)).toBe('╰──────────────────╯')
+
+    const frame = layout(overlay.component as Component, 20, 4).lines.map(stripTerminalSequences)
+    expect(frame).toHaveLength(4)
+    expect(frame.at(-2)).toMatch(/^│\s+Enter · Esc\s+│$/u)
+    expect(frame.at(-1)).toBe('╰──────────────────╯')
+    for (const width of SCAN_WIDTHS) {
+      expectLinesFit('context hints direct', overlay.component.render(width), width)
+      expectLinesFit('context hints layout', layout(overlay.component as Component, width, 4).lines, width)
+    }
+  })
+})
+
 describe('compileBlueEditorShellNode', () => {
   it('reuses the injected editor through focus, input, layout, and direct rendering', () => {
     const editor = createTestEditor()
@@ -1107,6 +2492,97 @@ describe('compileBlueEditorShellNode', () => {
     const failedDry = brokenShell.renderChecked(20, { dryRun: true })
     expect(failedDry.runtimeFailure).toBe('checked editor exploded')
     expect(broken.focused).toBe(true)
+  })
+
+  it('restores pooled form editor focus after responsive dry runs', () => {
+    const shell = {
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'editor-control' } },
+        {
+          node: ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Blue' }] }),
+          when: { minWidth: 60 },
+        },
+      ],
+    }
+    const pooled: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        pooled.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const current = compiledEditorShell(shell, createTestEditor(), { components: localComponents })
+    current.result.focusTarget.focused = true
+    current.result.component.render(80)
+    current.result.focusTarget.handleInput?.('\t')
+    current.result.focusTarget.handleInput?.('\r')
+    current.result.component.render(80)
+    expect(pooled).toHaveLength(1)
+    expect(pooled[0]!.focused).toBe(true)
+
+    current.viewport.columns = 40
+    current.result.component.renderChecked(40, { dryRun: true })
+    expect(pooled[0]!.focused).toBe(true)
+    current.viewport.columns = 80
+    current.result.component.renderChecked(80, { dryRun: true })
+    expect(pooled[0]!.focused).toBe(true)
+    current.result.component.render(80)
+    expect(pooled[0]!.focused).toBe(true)
+
+    const emptyRuntime = new BlueUiSurfaceRuntime()
+    const restoreEmptyFocus = emptyRuntime.checkpointEditorFocus()
+    restoreEmptyFocus()
+    restoreEmptyFocus()
+
+    const createdDuringDryRun: BlueEditor[] = []
+    const lateComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        createdDuringDryRun.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const late = compiledEditorShell(shell, createTestEditor(), { components: lateComponents })
+    late.viewport.columns = 40
+    late.result.focusTarget.focused = true
+    late.result.component.render(40)
+    expect(createdDuringDryRun).toEqual([])
+    late.viewport.columns = 80
+    late.result.component.renderChecked(80, { dryRun: true })
+    expect(createdDuringDryRun).toHaveLength(1)
+    expect(createdDuringDryRun[0]!.focused).toBe(false)
+
+    const resolved = createTestEditor()
+    resolved.focused = true
+    const resolvedLate = compiledEditorShell(shell, createTestEditor(), {
+      resolveTextEditor: () => resolved,
+    })
+    resolvedLate.viewport.columns = 40
+    resolvedLate.result.component.render(40)
+    resolvedLate.viewport.columns = 80
+    resolvedLate.result.component.renderChecked(80, { dryRun: true })
+    expect(resolved.focused).toBe(true)
+
+    const shared = createTestEditor()
+    shared.focused = true
+    const sharedResolver = compiledEditorShell({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'editor-control' } },
+        { node: ui.form({ id: 'shared', fields: [
+          { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+          { kind: 'input', id: 'alias', label: 'Alias', value: 'Dsh' },
+        ] }) },
+      ],
+    }, createTestEditor(), { resolveTextEditor: () => shared })
+    sharedResolver.result.component.renderChecked(80, { dryRun: true })
+    expect(shared.focused).toBe(true)
   })
 
   it('compiles a root slot and contains validation, setup, and editor render failures', () => {

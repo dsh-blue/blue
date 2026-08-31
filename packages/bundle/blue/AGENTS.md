@@ -100,4 +100,6 @@ eval cases.
 Install into a dedicated worktree profile with `script/install-dev.sh`, run a
 pseudo-TTY smoke, and obtain live human acceptance before merge. Whole-tree
 tests cover real Loader composition with only the model and process terminal
-substituted; they do not replace the real profile gate.
+substituted; they do not replace the real profile gate. Canonical dialog e2e
+must exercise the real provider-add wizard: Enter confirms each text field
+before advancing, while Up/Down remains editor-owned during editing.

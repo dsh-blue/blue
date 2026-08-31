@@ -24,6 +24,7 @@ export interface PatternFocus {
   readonly focused: boolean
   readonly marker: string
   readonly pendingKey?: string
+  readonly adjustingKey?: string
 }
 
 const PARTIAL_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'] as const
@@ -286,10 +287,14 @@ export function renderList(node: ListNode, width: number, height: number, focus:
 export function renderFormField(field: BlueFormField, width: number, focus: PatternFocus, colors: BlueSemanticColors): string[] {
   const available = safeWidth(width)
   const focused = focus.focused && focus.key === field.id && field.disabled !== true
+  const adjusting = focused && field.kind === 'select' && focus.adjustingKey === field.id
   let value: string
   let placeholder = false
   if (field.kind === 'toggle') value = field.value ? '[on]' : '[off]'
-  else if (field.kind === 'select') value = field.value === null ? 'Choose…' : field.options.find(option => option.id === field.value)?.label ?? field.value
+  else if (field.kind === 'select') {
+    const selected = field.value === null ? 'Choose…' : field.options.find(option => option.id === field.value)?.label ?? field.value
+    value = adjusting ? `‹ ${selected} ›` : selected
+  }
   else if (field.kind === 'secret') value = field.value.length === 0 ? field.placeholder ?? '' : '•'.repeat(field.value.length)
   else value = field.value.length === 0 ? field.placeholder ?? '' : field.value
   if (field.kind !== 'toggle' && field.kind !== 'select') placeholder = field.value.length === 0 && field.placeholder !== undefined
@@ -310,7 +315,8 @@ function actionToken(item: ActionsNode['items'][number], focus: PatternFocus, co
   const label = `${busy ? '… ' : ''}${item.label}${pending ? ` ? ${item.confirm}` : ''}`
   const framed = item.intent === 'primary' ? `[ ${label} ]` : item.intent === 'danger' ? `! ${label}` : label
   const content = item.disabled === true || busy ? colors.muted(framed) : item.intent === 'danger' ? colors.error(framed) : focused || item.intent === 'primary' ? colors.primary(framed) : colors.text(framed)
-  return { value: `${focused ? focus.marker : ' '}${content}`, focused, active: item.intent === 'primary' }
+  const selection = focused ? colors.selectedBg(content) : content
+  return { value: `${focused ? focus.marker : ' '}${selection}`, focused, active: item.intent === 'primary' }
 }
 
 export function renderActions(node: ActionsNode, width: number, focus: PatternFocus, colors: BlueSemanticColors, vertical: boolean): string[] {

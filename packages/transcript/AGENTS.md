@@ -52,7 +52,10 @@ scarce-row allocation and proximity to the editor. Public panes/overlays do not
 enter it; core's public surface bridge owns them. Activity, todo, agents, BTW,
 and interaction's queue retain narrow renderer adapters only for behavior not
 yet expressible by canonical nodes; each adapter keeps a documented deletion
-condition in source and is clamped through core width truth.
+condition in source and is clamped through core width truth. Activity's passive
+rotation teaches only stable commands/features; focus- or state-sensitive key
+guidance belongs to the active interaction surface. Todo's Ctrl-T hint remains
+pane-local because it describes that pane's hidden content.
 
 BTW owns one side-session handle for one pane lifetime, reads its official
 conversation projection through the opaque identity, and disposes on close or

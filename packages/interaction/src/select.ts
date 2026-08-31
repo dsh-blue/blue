@@ -38,6 +38,7 @@ export class CanonicalMultiSelectController implements BlueFocusable {
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
       onUnhandledEscape: options.onCancel,
+      contextHints: () => [{ id: 'confirm', keys: 'Enter', label: 'confirm', priority: 95 }],
     })
   }
 
@@ -76,7 +77,7 @@ export class CanonicalMultiSelectController implements BlueFocusable {
           ...(item.description === undefined ? {} : { detail: oneLine(item.description) }),
         })),
       },
-      footer: { kind: 'text', content: [counter, this.footer()].filter(Boolean).join(' · '), tone: 'muted' },
+      ...(counter === undefined ? {} : { footer: { kind: 'text', content: counter, tone: 'muted' } as const }),
     }
   }
 
@@ -97,10 +98,5 @@ export class CanonicalMultiSelectController implements BlueFocusable {
     if (chosen.length > 0) return [...chosen]
     const focused = this.options.items[this.cursor]
     return focused === undefined ? [] : [focused]
-  }
-
-  private footer(): string {
-    const key = (action: string): string => this.options.keymap.getKeys(action)[0] ?? action
-    return `${key(ACTION_MOVE_UP)}/${key(ACTION_MOVE_DOWN)} move · ${key(ACTION_TOGGLE)} toggle · ${key(ACTION_SUBMIT)} confirm · ${key(ACTION_CANCEL)} cancel`
   }
 }
