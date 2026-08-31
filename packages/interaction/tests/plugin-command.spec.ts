@@ -73,7 +73,25 @@ function compatibleCatalog(commit = 'd'.repeat(40)): PluginCatalogResult {
       capabilities: ['status'],
       state: 'compatible',
       reason: 'canonical manifest compatible',
-      installSpec: `github:acme/catalog-ready@${commit}`,
+      installSpec: `github:acme/catalog-ready#${commit}`,
+    }],
+  }
+}
+
+function migrationCatalog(commit = 'c'.repeat(40)): PluginCatalogResult {
+  return {
+    source: 'bundled',
+    entries: [{
+      packageName: '@acme/legacy-plugin',
+      version: '0.9.0',
+      description: 'A legacy plugin awaiting canonical migration.',
+      repository: 'acme/legacy-plugin',
+      repositoryUrl: 'https://github.com/acme/legacy-plugin',
+      branch: 'main',
+      commit,
+      capabilities: ['commands'],
+      state: 'needs-migration',
+      reason: 'legacy manifest; canonical P1 manifest and runtime open are required',
     }],
   }
 }
@@ -126,12 +144,14 @@ describe('plugin source admission', () => {
     }
   })
 
-  it('rewrites only full-commit GitHub sources through the optional proxy', () => {
+  it('normalizes full-commit GitHub sources for pnpm and the optional proxy', () => {
     const sha = 'b'.repeat(40)
     const source = `github:owner/repo@${sha}`
-    expect(pluginCommandInternals.withGitHubProxy(source)).toBe(source)
+    const normalized = `github:owner/repo#${sha}`
+    expect(pluginCommandInternals.withGitHubProxy(source)).toBe(normalized)
+    expect(pluginCommandInternals.withGitHubProxy(`https://github.com/owner/repo#${sha}`)).toBe(`git+https://github.com/owner/repo.git#${sha}`)
     process.env.BLUE_GITHUB_PROXY = '  '
-    expect(pluginCommandInternals.withGitHubProxy(source)).toBe(source)
+    expect(pluginCommandInternals.withGitHubProxy(source)).toBe(normalized)
     process.env.BLUE_GITHUB_PROXY = 'https://proxy.example/'
     expect(pluginCommandInternals.withGitHubProxy(source)).toBe(`git+https://proxy.example/https://github.com/owner/repo.git#${sha}`)
     expect(pluginCommandInternals.withGitHubProxy(`https://github.com/owner/repo.git#${sha}`)).toBe(`git+https://proxy.example/https://github.com/owner/repo.git#${sha}`)
@@ -350,15 +370,15 @@ describe('registerPluginCommand', () => {
     panel.handleInput(KEY.escape)
   }, 20_000)
 
-  it('shows the vetted doudizhu catalog entry with migration-gated installation', async () => {
-    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(bundledPluginCatalog())
+  it('labels a migration-only catalog entry without exposing installation', async () => {
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(migrationCatalog())
     const world = await mount({ display: true })
     await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
     const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
     expect(panel.render(80).join('\n')).toContain('No Blue plugins installed')
     panel.handleInput(KEY.tab)
     const catalog = panel.render(120).join('\n')
-    expect(catalog).toContain('@dsh-blue/blue-doudizhu')
+    expect(catalog).toContain('@acme/legacy-plugin')
     expect(catalog).toContain('Needs migration')
     expect(catalog).toContain('[Details]')
     expect(catalog).toContain('[Migration required]')
@@ -369,7 +389,7 @@ describe('registerPluginCommand', () => {
     const detail = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
     const renderedDetail = detail.render(120).join('\n')
     expect(renderedDetail).toContain('legacy manifest')
-    expect(renderedDetail).toContain('d2edd2b6cce3440d8aab87dd23e2a05e00d54f14')
+    expect(renderedDetail).toContain('c'.repeat(40))
     expect(renderedDetail).not.toContain('Enter install')
     detail.handleInput(KEY.escape)
     panel.handleInput(KEY.escape)
@@ -389,7 +409,7 @@ describe('registerPluginCommand', () => {
     expect(detail.render(120).join('\n')).toContain('Enter install')
     detail.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('installed; restart Blue to apply'))
-    expect(panel.render(120).join('\n')).toContain(`github:acme/catalog-ready@${'d'.repeat(40)}`)
+    expect(panel.render(120).join('\n')).toContain(`github:acme/catalog-ready#${'d'.repeat(40)}`)
     panel.handleInput(KEY.escape)
   })
 

@@ -279,13 +279,18 @@ function isGitHubSpec(spec: string): boolean {
   return spec.startsWith('github:') || /^(?:git\+)?https:\/\/github\.com\//u.test(spec)
 }
 
-/** Rewrite a pinned GitHub source for pnpm's git fetch. */
+/** Normalize a pinned GitHub source for pnpm's git fetch and optional proxy. */
 function withGitHubProxy(spec: string): string {
   const proxyValue = process.env[GITHUB_PROXY_ENV]?.trim()
   const parts = githubParts(spec)
-  if (proxyValue === undefined || proxyValue.length === 0 || parts === undefined) return spec
-  const proxy = proxyValue.replace(/^https?:\/\//u, '').replace(/\/+$/u, '')
+  if (parts === undefined) return spec
   const repository = parts.repository.endsWith('.git') ? parts.repository : `${parts.repository}.git`
+  if (proxyValue === undefined || proxyValue.length === 0) {
+    return spec.startsWith('github:')
+      ? `github:${parts.repository.replace(/\.git$/u, '')}#${parts.commit}`
+      : `git+https://github.com/${repository}#${parts.commit}`
+  }
+  const proxy = proxyValue.replace(/^https?:\/\//u, '').replace(/\/+$/u, '')
   return `git+https://${proxy}/https://github.com/${repository}#${parts.commit}`
 }
 

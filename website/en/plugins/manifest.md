@@ -71,7 +71,7 @@ background. Only a canonical compatible manifest receives an Install action,
 pinned to the resolved full commit; legacy entries remain inspectable with
 Install disabled. Local `list/search/info/verify` and direct install still
 accept only an existing local path/tarball, an exact npm `package@version`, or
-a full-commit GitHub source. Install/remove delegates to the dsh profile owner
+a `github:owner/repo#<40-character-commit>` source. Install/remove delegates to the dsh profile owner
 and activates only after restart; it never replaces the live tree.
 
 Creative mode retains inspect/define/run/update/stop/rollback for ephemeral

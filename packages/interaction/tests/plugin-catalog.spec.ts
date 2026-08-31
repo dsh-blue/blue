@@ -50,19 +50,19 @@ afterEach(() => {
 })
 
 describe('plugin catalog admission', () => {
-  it('ships the indexed doudizhu snapshot without presenting a legacy manifest as installable', () => {
+  it('ships the migrated doudizhu snapshot as a commit-pinned compatible entry', () => {
     const result = bundledPluginCatalog()
     expect(result.source).toBe('bundled')
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0]).toMatchObject({
       packageName: '@dsh-blue/blue-doudizhu',
-      version: '0.2.0',
+      version: '0.3.0',
       repository: 'dsh-blue/blue-doudizhu',
-      commit: 'd2edd2b6cce3440d8aab87dd23e2a05e00d54f14',
-      state: 'needs-migration',
+      commit: 'fc99a3b0d634b6288ef89bb528d635ced3537932',
+      state: 'compatible',
       capabilities: ['commands', 'overlays', 'notifications.publish'],
+      installSpec: 'github:dsh-blue/blue-doudizhu#fc99a3b0d634b6288ef89bb528d635ced3537932',
     })
-    expect(result.entries[0]?.installSpec).toBeUndefined()
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.entries)).toBe(true)
   })
@@ -73,7 +73,7 @@ describe('plugin catalog admission', () => {
       state: 'compatible',
       reason: 'canonical manifest compatible',
       capabilities: ['status', 'overlays'],
-      installSpec: `github:${source.repository}@${'a'.repeat(40)}`,
+      installSpec: `github:${source.repository}#${'a'.repeat(40)}`,
     })
     expect(Object.isFrozen(entry.capabilities)).toBe(true)
   })

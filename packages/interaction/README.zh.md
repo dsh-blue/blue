@@ -24,11 +24,12 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 依赖，标明 compatible/incompatible/invalid，并提供验证/移除动作；**插件目录**先立即
 显示随版本审核的内置快照，再后台刷新显式维护的 GitHub 索引，离线时保留快照。目录
 元数据不会执行；只有 canonical 且兼容的 manifest 才获得安装动作，来源锁到解析出的
-40 位 commit。`dsh-blue/blue-doudizhu` 等旧契约条目仍可查看，但显示“需要迁移”，
-禁用动作也明确标成 Migration required。`/plugin verify <package-or-directory>` 会真实
-运行公开静态校验器；直接安装
-仍只接受已存在的本地目录/tarball、精确 npm `package@version` 或完整 commit 的 GitHub
-源。所有 mutation 都委托给 `dsh plugin`，重启后生效，绝不替换 live tree。这份 TUI
+40 位 commit，并使用 pnpm 可执行的 `github:owner/repo#commit` 形式。随版本审核的
+`@dsh-blue/blue-doudizhu@0.3.0` 快照已经 canonical 且可安装；其他 legacy 条目仍可
+查看，但显示“需要迁移”，禁用动作也明确标成 Migration required。`/plugin verify
+<package-or-directory>` 会真实运行公开静态校验器；直接安装仍只接受已存在的本地
+目录/tarball、精确 npm `package@version` 或完整 commit 的 GitHub 源，旧式
+`github:owner/repo@commit` 输入会在委托前归一化。所有 mutation 都委托给 `dsh plugin`，重启后生效，绝不替换 live tree。这份 TUI
 目录不表示另行暂停的 Website 插件市场已经开放。
 
 Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色和窄宽收容。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复 host 持有的 definition。私有 owner lease 会按 generation 约束 command dispatch 及 fulfilled/rejected settlement、editor callback 与 notification observation；保留的 stale handler 不会调用插件代码。Notification observer failure 与其它 observer、publisher result 相互隔离。

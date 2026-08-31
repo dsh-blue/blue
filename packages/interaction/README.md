@@ -26,11 +26,13 @@ state and Verify/Remove actions. **Catalog** opens immediately from a vetted
 bundled snapshot, then refreshes its explicit GitHub index in the background;
 an offline refresh keeps the snapshot. Catalog metadata is inert and only a
 canonical compatible manifest receives an Install action pinned to the resolved
-40-character commit. Legacy entries such as `dsh-blue/blue-doudizhu` remain
-inspectable as Needs migration with a disabled Migration required action. `/plugin verify
-<package-or-directory>` runs the published static validator. Direct installs
-still accept only an existing local path/tarball, an exact npm
-`package@version`, or a full-commit GitHub source. All mutations delegate to
+40-character commit with pnpm's `github:owner/repo#commit` form. The vetted
+`@dsh-blue/blue-doudizhu@0.3.0` snapshot is canonical and installable; any
+legacy entry remains inspectable as Needs migration with a disabled Migration
+required action. `/plugin verify <package-or-directory>` runs the published
+static validator. Direct installs still accept only an existing local
+path/tarball, an exact npm `package@version`, or a full-commit GitHub source;
+the older `github:owner/repo@commit` spelling is normalized before delegation. All mutations delegate to
 `dsh plugin`, require restart, and never replace the live tree. This TUI catalog
 does not reopen the separately paused Website Marketplace.
 

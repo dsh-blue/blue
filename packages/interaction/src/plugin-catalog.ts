@@ -91,22 +91,37 @@ const INDEXED_REPOSITORIES: readonly IndexedRepository[] = Object.freeze([
     repository: 'dsh-blue/blue-doudizhu',
     branch: 'main',
     snapshot: Object.freeze({
-      commit: 'd2edd2b6cce3440d8aab87dd23e2a05e00d54f14',
+      commit: 'fc99a3b0d634b6288ef89bb528d635ced3537932',
       packageManifest: Object.freeze({
         name: '@dsh-blue/blue-doudizhu',
-        version: '0.2.0',
+        version: '0.3.0',
         description: 'Blue Doudizhu: a terminal card table with local-model bots, scores, and a card counter.',
         blue: Object.freeze({ manifest: './blue.plugin.json' }),
       }),
       blueManifest: Object.freeze({
+        $schema: 'https://dsh-blue.dev/schema/blue.plugin.v1.schema.json',
         schemaVersion: 1,
         id: '@dsh-blue/blue-doudizhu',
-        entry: './index.js',
+        entry: '.',
         api: '^1.0.0-beta.1',
-        blue: '>=0.1.1-rc.2 <0.2.0',
-        harness: '>=0.1.1-rc.2 <0.2.0',
-        node: '^22.19.0 || >=24.0.0',
-        capabilities: Object.freeze(['commands', 'overlays', 'notifications.publish']),
+        compatibility: Object.freeze({
+          blue: '>=0.1.1-rc.2 <0.2.0',
+          harness: '>=0.1.1-rc.1 <=0.1.1-rc.2',
+          node: '^22.19.0 || >=24.0.0',
+        }),
+        capabilities: Object.freeze({
+          required: Object.freeze([
+            Object.freeze({
+              name: 'commands',
+              version: '^1.0.0',
+              resources: Object.freeze({ names: Object.freeze(['poker']) }),
+            }),
+            Object.freeze({ name: 'overlays', version: '^1.0.0' }),
+          ]),
+          optional: Object.freeze([
+            Object.freeze({ name: 'notifications.publish', version: '^1.0.0' }),
+          ]),
+        }),
       }),
     }),
   }),
@@ -191,7 +206,7 @@ function entryFrom(
     ...base,
     capabilities: capabilityNames(parsed.value),
     ...compatibility,
-    ...(compatibility.state === 'compatible' ? { installSpec: `github:${source.repository}@${commit}` } : {}),
+    ...(compatibility.state === 'compatible' ? { installSpec: `github:${source.repository}#${commit}` } : {}),
   })
 }
 

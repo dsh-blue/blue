@@ -224,9 +224,11 @@ reject continuations carry a live fence. A failed refresh retains the bundled
 snapshot. No repository code is imported or executed while indexing. Only a
 canonical P1 manifest compatible with the current API/Blue/Harness/Node lines
 receives an Install variant, and its source is pinned to the resolved full
-40-character commit. Legacy `dsh-blue/blue-doudizhu` is therefore visible as
-Needs migration with Details available and a disabled `[Migration required]`
-action instead of a misleading Install label. This TUI catalog
+40-character commit using pnpm's `github:owner/repo#commit` delimiter. The
+release-vetted `dsh-blue/blue-doudizhu` snapshot is canonical at `0.3.0` and
+installable; a legacy entry remains visible as Needs migration with Details
+available and a disabled `[Migration required]` action instead of a misleading
+Install label. This TUI catalog
 is not the paused Website Marketplace and does not start P6 outreach or
 migration.
 
@@ -238,7 +240,10 @@ materializes their declared dependency closure instead of retaining a
 dependency-blind source symlink. Source changes therefore require another
 install before restart. All mutations report that restart is required and
 never replace the live Cordis tree. `BLUE_GITHUB_PROXY` may rewrite only
-already-pinned GitHub sources. Plugin tab selection survives async loading;
+already-pinned GitHub sources. GitHub shorthand always reaches pnpm as
+`github:owner/repo#commit`; the accepted legacy `@commit` spelling is normalized
+at this boundary because pnpm otherwise resolves it as a malformed repository.
+Plugin tab selection survives async loading;
 rows use action-first variants so actions remain visible before long metadata,
 and the selected action is repeated in the footer when list details disappear
 at 40 columns or below.

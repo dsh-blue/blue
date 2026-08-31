@@ -28,7 +28,7 @@ blue plugin add @my-scope/blue-clock@0.1.0
 ```
 
 运行中的 Blue 提供本地 `/plugin install`，只接受已存在的本地路径/tarball、精确 npm
-`package@version` 或钉到完整 commit 的 GitHub source。也可对已证明 rc.3 兼容的明确
+`package@version` 或 `github:owner/repo#<40位commit>` GitHub source。也可对已证明 rc.3 兼容的明确
 package spec 使用上面的 `blue plugin add`；两条路径都由 profile owner 修改依赖，安装
 后重启 Blue 才会激活新行。
 

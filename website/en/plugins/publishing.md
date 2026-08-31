@@ -28,8 +28,8 @@ A package declaring `package.json.dsh.bundle.patch` is composed from its bundled
 ```
 
 The running TUI exposes local `/plugin install`, accepting only an existing
-local path/tarball, an exact npm `package@version`, or a GitHub source pinned to
-a full commit. You may also use `blue plugin add` above with an explicitly
+local path/tarball, an exact npm `package@version`, or
+`github:owner/repo#<40-character-commit>`. You may also use `blue plugin add` above with an explicitly
 rc.3-compatible package spec. Both paths delegate dependency mutation to the
 profile owner; restart Blue after installation to activate the new row.
 
