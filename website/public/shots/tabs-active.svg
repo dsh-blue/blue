@@ -5,14 +5,14 @@
 <circle cx="36" cy="25" r="6" fill="#febc2e"/>
 <circle cx="54" cy="25" r="6" fill="#28c840"/>
 <g font-family="'JetBrains Mono',monospace" font-size="14">
-<rect x="12" y="38" width="8.4" height="19" fill="#e0e0e0"/>
-<text x="20.4" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">‹</text>
-<text x="37.2" y="52" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">Summary</text>
-<text x="104.4" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">›</text>
-<text x="129.6" y="52" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">Advanced</text>
-<text x="205.2" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">4</text>
+<rect x="87.6" y="38" width="8.4" height="19" fill="#e0e0e0"/>
+<text x="20.4" y="52" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">Summary</text>
+<text x="96" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">‹</text>
+<text x="112.8" y="52" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">Advanced</text>
+<text x="188.4" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">›</text>
+<text x="205.2" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">4</text>
 <text x="230.4" y="52" textLength="50.4" lengthAdjust="spacingAndGlyphs" fill="#888888">Legacy</text>
-<text x="12" y="71" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">Summary</text>
-<text x="79.2" y="71" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">content</text>
+<text x="12" y="71" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">Advanced</text>
+<text x="87.6" y="71" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">content</text>
 </g>
 </svg>

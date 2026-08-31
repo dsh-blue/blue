@@ -54,6 +54,7 @@
     "oxlint": "1.76.0",
     "publint": "0.3.24",
     "semver": "7.8.5",
+    "subset-font": "2.7.0",
     "tar": "7.5.22",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",

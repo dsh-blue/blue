@@ -7,14 +7,20 @@
  * per row where a cell's background differs from the canvas, and coalesced
  * `<text>` runs per (fg, bold, italic, underline, dim) style. Every run pins
  * `textLength` so viewer font metrics cannot shift alignment. The JetBrains
- * Mono WOFF2 pair is embedded as base64 data URIs, so output is a single
- * self-contained file. No random ids, no timestamps, no wall clock — the
- * output is byte-deterministic for a given buffer.
+ * Mono WOFF2 pair is subset with harfbuzz (`subset-font`, pure wasm) to the
+ * exact codepoints the frame paints, then embedded as base64 data URIs, so
+ * output is a single self-contained file. No random ids, no timestamps, no
+ * wall clock — the output is byte-deterministic for a given buffer.
  *
  * @module script/shots/svg
  */
 
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+// subset-font@2 ships CJS-only; harfbuzzjs is a wasm module with no build step.
+const subsetFont = require('subset-font')
 
 // Pinned layout: JetBrains Mono at 14px has a 0.6em advance (8.4px).
 const FONT_SIZE = 14
@@ -83,20 +89,27 @@ const FONT_FACES = [
   { file: 'JetBrainsMono-Regular.woff2', weight: 'normal' },
   { file: 'JetBrainsMono-Bold.woff2', weight: 'bold' },
 ]
-  .map(({ file, weight }) => {
-    const data = readFileSync(new URL(`assets/${file}`, import.meta.url)).toString('base64')
-    return `@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:${weight};` +
-      `src:url(data:font/woff2;base64,${data}) format('woff2')}`
-  })
-  .join('')
+
+/**
+ * Subset one embedded font to the frame's codepoints and build its @font-face
+ * rule. The subset input is the sorted codepoint union, so identical frames
+ * produce identical bytes.
+ */
+async function subsetFontFace(file, weight, codepoints) {
+  const buffer = readFileSync(new URL(`assets/${file}`, import.meta.url))
+  const subset = await subsetFont(buffer, codepoints, { targetFormat: 'woff2' })
+  const data = Buffer.from(subset).toString('base64')
+  return `@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:${weight};` +
+    `src:url(data:font/woff2;base64,${data}) format('woff2')}`
+}
 
 /**
  * Paint a Terminal buffer as a self-contained SVG string.
  * @param {object} term - an `@xterm/headless` Terminal with the rows written.
  * @param {object} geometry - `{ cols, rows }` of the rendered frame.
- * @returns {string} the SVG document.
+ * @returns {Promise<string>} the SVG document.
  */
-export function paintTerminalSvg(term, { cols, rows }) {
+export async function paintTerminalSvg(term, { cols, rows }) {
   const width = PAD * 2 + cols * CELL_W
   const height = PAD * 2 + HEADER_H + rows * CELL_H
   const contentTop = PAD + HEADER_H
@@ -104,6 +117,8 @@ export function paintTerminalSvg(term, { cols, rows }) {
   // precede every text run or a selected-row bg would cover its own label.
   const backgrounds = []
   const texts = []
+  // Every codepoint painted into a <text> run, for the font subset.
+  const usedCodepoints = new Set()
 
   for (let row = 0; row < rows; row++) {
     const line = term.buffer.active.getLine(row)
@@ -137,6 +152,7 @@ export function paintTerminalSvg(term, { cols, rows }) {
       if (textRun.underline) attrs.push('text-decoration="underline"')
       if (textRun.dim) attrs.push('fill-opacity="0.6"')
       texts.push(`<text ${attrs.join(' ')}>${escapeXml(textRun.text)}</text>`)
+      for (const char of textRun.text) usedCodepoints.add(char)
       textRun = null
     }
 
@@ -189,10 +205,16 @@ export function paintTerminalSvg(term, { cols, rows }) {
   const dots = DOT_COLORS.map((color, index) =>
     `<circle cx="${fmt(PAD + 6 + index * 18)}" cy="${fmt(PAD + HEADER_H / 2)}" r="6" fill="${color}"/>`,
   )
+  // Sorted union keeps the subset input (and therefore the embedded bytes)
+  // stable; the space guarantees a non-empty input for frames without text.
+  const codepoints = [' ', ...usedCodepoints].sort().join('')
+  const fontFaces = (await Promise.all(
+    FONT_FACES.map(({ file, weight }) => subsetFontFace(file, weight, codepoints)),
+  )).join('')
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(width)}" height="${fmt(height)}" ` +
       `viewBox="0 0 ${fmt(width)} ${fmt(height)}" xml:space="preserve">`,
-    `<defs><style>${FONT_FACES}</style></defs>`,
+    `<defs><style>${fontFaces}</style></defs>`,
     `<rect width="${fmt(width)}" height="${fmt(height)}" rx="${RADIUS}" fill="${CANVAS_BG}"/>`,
     ...dots,
     `<g font-family="'JetBrains Mono',monospace" font-size="${FONT_SIZE}">`,

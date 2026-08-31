@@ -30,6 +30,10 @@ const { DARK_COLORS } = await import(new URL('../../packages/core/lib/theme-dark
 // exact instance core's `src/width.ts` re-exports (D48 single width truth).
 const { CURSOR_MARKER, truncateToWidth, visibleWidth, wrapTextWithAnsi } =
   await import(new URL('../../packages/core/node_modules/@earendil-works/pi-tui/dist/index.js', import.meta.url).href)
+// Fixed-height scenarios (scroll viewports) go through pi-tui's layout engine,
+// the same harness core's ui-compiler spec uses — never a re-implementation.
+const { renderLayoutFrame } =
+  await import(new URL('../../packages/core/node_modules/@earendil-works/pi-tui/dist/layout.js', import.meta.url).href)
 
 /** Minimal deterministic BlueEditor fake, mirrored from core's ui-compiler spec. */
 function createTestEditor() {
@@ -107,7 +111,10 @@ const components = {
 
 /**
  * Compile and render one scenario to a headless Terminal.
- * @param {object} scenario - manifest entry: `{ id, width, build, drive? }`.
+ * @param {object} scenario - manifest entry: `{ id, width, height?, build, drive? }`.
+ *   `height` constrains the frame through pi-tui's layout engine (scroll
+ *   viewports); `drive(focus, frame)` may then push interactive state and the
+ *   frame is re-rendered so the driven state is what gets painted.
  * @param {object} ui - the built `@dsh-blue/blue-ui` builder namespace.
  * @param {Function} defineBlueComponent - the built component factory.
  * @returns {Promise<{ term: object, cols: number, rows: number }>}
@@ -119,7 +126,7 @@ export async function renderScenario(scenario, ui, defineBlueComponent) {
   const result = compileBlueUiNode(node, {
     components,
     colors: DARK_COLORS,
-    getViewport: () => ({ columns: width, rows: 24 }),
+    getViewport: () => ({ columns: width, rows: scenario.height ?? 24 }),
     screenMode: 'alternate',
     emit: event => events.push(event),
   })
@@ -127,12 +134,19 @@ export async function renderScenario(scenario, ui, defineBlueComponent) {
   const compiled = result.value
 
   const focus = compiled.focusTarget
-  if (focus) {
-    focus.focused = true
-    scenario.drive?.(focus)
+  let rows
+  if (scenario.height === undefined) {
+    if (focus) {
+      focus.focused = true
+      scenario.drive?.(focus, null)
+    }
+    rows = compiled.component.render(width)
+  } else {
+    if (focus) focus.focused = true
+    const frame = renderLayoutFrame(compiled.component, width, scenario.height, () => {})
+    scenario.drive?.(focus, frame)
+    rows = renderLayoutFrame(compiled.component, width, scenario.height, () => {}).lines
   }
-
-  const rows = compiled.component.render(width)
   for (const [index, row] of rows.entries()) {
     const rowWidth = visibleWidth(row)
     if (rowWidth > width) {

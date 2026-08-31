@@ -2,8 +2,9 @@
 /**
  * Sync the component-shot SVG gallery into website/public/shots/.
  *
- * manifest.mjs 的 19 个场景是唯一数据源（单一来源）；生成的 SVG 一律由本
- * 脚本写入，勿手改。改动场景或渲染器后运行 `pnpm shots:sync` 重新生成。
+ * manifest.mjs 的组件场景（每个 ui-reference.md 小节一或多张状态图）是唯一
+ * 数据源（单一来源）；生成的 SVG 一律由本脚本写入，勿手改。改动场景或渲染器后
+ * 运行 `pnpm shots:sync` 重新生成。
  *
  * Usage:
  *   node script/shots/sync.mjs          # regenerate every shot
@@ -28,7 +29,7 @@ mkdirSync(outDir, { recursive: true })
 let failures = 0
 for (const scenario of SCENARIOS) {
   const { term, cols, rows } = await renderScenario(scenario, ui, defineBlueComponent)
-  const svg = paintTerminalSvg(term, { cols, rows })
+  const svg = await paintTerminalSvg(term, { cols, rows })
   const file = new URL(`${scenario.id}.svg`, outDir)
   const label = `website/public/shots/${scenario.id}.svg`
 
