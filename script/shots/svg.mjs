@@ -100,7 +100,10 @@ export function paintTerminalSvg(term, { cols, rows }) {
   const width = PAD * 2 + cols * CELL_W
   const height = PAD * 2 + HEADER_H + rows * CELL_H
   const contentTop = PAD + HEADER_H
-  const cells = []
+  // Two paint streams: SVG is painter's order, so every background rect must
+  // precede every text run or a selected-row bg would cover its own label.
+  const backgrounds = []
+  const texts = []
 
   for (let row = 0; row < rows; row++) {
     const line = term.buffer.active.getLine(row)
@@ -111,7 +114,7 @@ export function paintTerminalSvg(term, { cols, rows }) {
     let bgRun = null
     const flushBg = endCol => {
       if (!bgRun) return
-      cells.push(
+      backgrounds.push(
         `<rect x="${fmt(PAD + bgRun.start * CELL_W)}" y="${fmt(contentTop + row * CELL_H)}" ` +
         `width="${fmt((endCol - bgRun.start) * CELL_W)}" height="${fmt(CELL_H)}" fill="${bgRun.bg}"/>`,
       )
@@ -133,7 +136,7 @@ export function paintTerminalSvg(term, { cols, rows }) {
       if (textRun.italic) attrs.push('font-style="italic"')
       if (textRun.underline) attrs.push('text-decoration="underline"')
       if (textRun.dim) attrs.push('fill-opacity="0.6"')
-      cells.push(`<text ${attrs.join(' ')}>${escapeXml(textRun.text)}</text>`)
+      texts.push(`<text ${attrs.join(' ')}>${escapeXml(textRun.text)}</text>`)
       textRun = null
     }
 
@@ -193,7 +196,8 @@ export function paintTerminalSvg(term, { cols, rows }) {
     `<rect width="${fmt(width)}" height="${fmt(height)}" rx="${RADIUS}" fill="${CANVAS_BG}"/>`,
     ...dots,
     `<g font-family="'JetBrains Mono',monospace" font-size="${FONT_SIZE}">`,
-    ...cells,
+    ...backgrounds,
+    ...texts,
     '</g>',
     '</svg>',
     '',

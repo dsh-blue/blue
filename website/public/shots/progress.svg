@@ -5,8 +5,7 @@
 <circle cx="36" cy="25" r="6" fill="#febc2e"/>
 <circle cx="54" cy="25" r="6" fill="#28c840"/>
 <g font-family="'JetBrains Mono',monospace" font-size="14">
-<text x="12" y="52" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">Indexing</text>
-<text x="87.6" y="52" textLength="420" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">███████████████████████████████████░░░░░░░░░░░░░░░</text>
+<text x="12" y="52" textLength="495.6" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">█████████████████████████████████████████▎░░░░░░░░░░░░░░░░░</text>
 <text x="516" y="52" textLength="33.6" lengthAdjust="spacingAndGlyphs" fill="#6b6b6b">7/10</text>
 </g>
 </svg>

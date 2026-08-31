@@ -7,11 +7,5 @@
 <g font-family="'JetBrains Mono',monospace" font-size="14">
 <text x="12" y="52" textLength="42" lengthAdjust="spacingAndGlyphs" fill="#888888">Model</text>
 <text x="62.4" y="52" textLength="109.2" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff" font-weight="bold">deepseek-chat</text>
-<text x="180" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#888888">·</text>
-<text x="196.8" y="52" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#888888">context</text>
-<text x="264" y="52" textLength="25.2" lengthAdjust="spacingAndGlyphs" fill="#e8a838" font-weight="bold">82%</text>
-<text x="297.6" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#888888">—</text>
-<text x="314.4" y="52" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#888888">consider</text>
-<text x="390" y="52" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#888888">/compact</text>
 </g>
 </svg>

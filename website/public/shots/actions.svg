@@ -5,15 +5,10 @@
 <circle cx="36" cy="25" r="6" fill="#febc2e"/>
 <circle cx="54" cy="25" r="6" fill="#28c840"/>
 <g font-family="'JetBrains Mono',monospace" font-size="14">
+<rect x="12" y="38" width="8.4" height="19" fill="#e0e0e0"/>
 <text x="20.4" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">[</text>
 <text x="37.2" y="52" textLength="33.6" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">Save</text>
 <text x="79.2" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">]</text>
-<rect x="96" y="38" width="8.4" height="19" fill="#e0e0e0"/>
-<text x="104.4" y="52" textLength="50.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">Export</text>
-<text x="163.2" y="52" textLength="84" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">transcript</text>
-<text x="264" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#888888">…</text>
-<text x="280.8" y="52" textLength="58.8" lengthAdjust="spacingAndGlyphs" fill="#888888">Syncing</text>
-<text x="356.4" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#e85454">!</text>
-<text x="373.2" y="52" textLength="50.4" lengthAdjust="spacingAndGlyphs" fill="#e85454">Delete</text>
+<text x="104.4" y="52" textLength="50.4" lengthAdjust="spacingAndGlyphs" fill="#e0e0e0">Cancel</text>
 </g>
 </svg>
