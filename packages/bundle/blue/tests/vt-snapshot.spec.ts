@@ -458,6 +458,7 @@ describe('blue VT layout snapshots (R2)', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('What should we call this project?') })
     const inputFrame = await captureGolden(tree, vt, 'questionnaire-input-80')
     expect(inputFrame).toContain('Answer')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput('blue')
     tree.terminal.sendInput('\t')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Which runtime?') })

@@ -12,6 +12,7 @@ import {
   type BlueComponents,
   type BlueEditor,
   type BlueFocusable,
+  type BlueFocusIdentity,
   type BlueTheme,
   type BlueUiCompileResult,
 } from '@dsh-blue/blue-core'
@@ -47,6 +48,7 @@ export interface CanonicalPanelAdapterOptions {
   readonly leafRowOffset?: () => number
   readonly onLeafRowOffset?: (offset: number, totalRows: number, limit: number) => void
   readonly onTextSubmit?: (controlId: string, value: string) => void
+  readonly onFocusChange?: (identity: BlueFocusIdentity) => void
   /** Dynamic translator for core-owned contextual operation labels. */
   readonly t?: BlueTranslate
   /** Controller-only operations that canonical control roles cannot infer. */
@@ -55,9 +57,8 @@ export interface CanonicalPanelAdapterOptions {
   readonly suppressAutomaticContextHints?: boolean
   /** Controller-only overlays remain focusable even without canonical controls. */
   readonly focusWithoutControls?: boolean
-  readonly focusIndex?: () => number
-  /** Axis used to restore controller-owned selection after a rebuild. */
-  readonly focusAxis?: 'groups' | 'vertical'
+  /** Semantic fallback used when the previously focused control disappeared. */
+  readonly fallbackFocusIdentity?: () => BlueFocusIdentity | undefined
   /** Whether the restored text control is already in an explicit edit mode. */
   readonly startEditing?: () => boolean
 }
@@ -70,6 +71,9 @@ export class CanonicalPanelAdapter implements BlueFocusable {
   private result: BlueUiCompileResult | undefined
   private columns = 80
   private readonly editors = new Map<string, BlueEditor>()
+  private focusIdentity: BlueFocusIdentity | undefined
+  private leafRows = 0
+  private leafLimit = 0
 
   constructor(private readonly options: CanonicalPanelAdapterOptions) {}
 
@@ -83,6 +87,7 @@ export class CanonicalPanelAdapter implements BlueFocusable {
 
   /** Mark the current node stale; the next operation recompiles it. */
   invalidate(): void {
+    if (this.result?.ok === true) this.focusIdentity = this.result.value.focusTarget?.captureFocusIdentity?.() ?? this.focusIdentity
     const component = this.result === undefined
       ? undefined
       : this.result.ok ? this.result.value.component : this.result.errorComponent
@@ -94,6 +99,20 @@ export class CanonicalPanelAdapter implements BlueFocusable {
     }
     this.revision += 1
     this.result = undefined
+  }
+
+  /** Rebuild with one explicit semantic control as the next focus target. */
+  focus(identity: BlueFocusIdentity): void {
+    this.invalidate()
+    this.focusIdentity = identity
+  }
+
+  /** Read the compiler-owned semantic identity without changing focus. */
+  currentFocusIdentity(): BlueFocusIdentity | undefined {
+    if (this.result?.ok === true) {
+      return this.result.value.focusTarget?.captureFocusIdentity?.() ?? this.focusIdentity
+    }
+    return this.focusIdentity
   }
 
   /** Forward input only through the compiler-owned focus target. */
@@ -132,7 +151,14 @@ export class CanonicalPanelAdapter implements BlueFocusable {
       ...(this.options.leafRowWindowPath === undefined ? {} : { leafRowWindowPath: this.options.leafRowWindowPath }),
       ...(this.options.markdownLeafPath === undefined ? {} : { markdownLeafPath: this.options.markdownLeafPath }),
       ...(this.options.leafRowOffset === undefined ? {} : { leafRowOffset: this.options.leafRowOffset }),
-      ...(this.options.onLeafRowOffset === undefined ? {} : { onLeafRowOffset: this.options.onLeafRowOffset }),
+      ...(this.options.onLeafRowOffset === undefined ? {} : {
+        onLeafRowOffset: (offset: number, totalRows: number, limit: number) => {
+          this.leafRows = totalRows
+          this.leafLimit = limit
+          this.options.onLeafRowOffset?.(offset, totalRows, limit)
+        },
+        onLeafRowScroll: (offset: number) => this.options.onLeafRowOffset?.(offset, this.leafRows, this.leafLimit),
+      }),
       resolveTextEditor: (controlId, path) => {
         const key = `${path}:${controlId}`
         let editor = this.editors.get(key)
@@ -143,6 +169,7 @@ export class CanonicalPanelAdapter implements BlueFocusable {
         return editor
       },
       ...(this.options.onTextSubmit === undefined ? {} : { onTextSubmit: this.options.onTextSubmit }),
+      ...(this.options.onFocusChange === undefined ? {} : { onFocusChange: this.options.onFocusChange }),
       contextHints: {
         enabled: true,
         ...(this.options.suppressAutomaticContextHints === true ? { suppressAuto: true } : {}),
@@ -158,9 +185,9 @@ export class CanonicalPanelAdapter implements BlueFocusable {
     const target = result.ok ? result.value.focusTarget : null
     if (target !== null) {
       target.focused = this.ownFocused
-      const focusIndex = Math.max(0, Math.floor(this.options.focusIndex?.() ?? 0))
-      const focusInput = this.options.focusAxis === 'vertical' ? '\x1b[B' : '\t'
-      for (let index = 0; index < focusIndex; index += 1) target.handleInput?.(focusInput)
+      let restored = this.focusIdentity !== undefined && target.restoreFocusIdentity?.(this.focusIdentity) === true
+      const fallback = this.options.fallbackFocusIdentity?.()
+      if (!restored && fallback !== undefined) restored = target.restoreFocusIdentity?.(fallback) === true
       if (this.options.startEditing?.() === true) target.handleInput?.('\r')
     }
     return result

@@ -24,7 +24,7 @@
 │ → Provider Name · lowercase kebab-case, e.g. my-gateway:                     │
 │   Base URL · include /v1, e.g. https://gw.example.com/v1:                    │
 │   API key:                                                                   │
-│  ↑↓ fields · Enter edit · Esc cancel                                         │
+│  ↑↓←→ fields · Enter edit · Esc cancel                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»
                                                                          ctx 10

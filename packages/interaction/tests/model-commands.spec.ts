@@ -269,7 +269,7 @@ describe('model-family commands', () => {
       .toEqual({ kind: 'error', text: 'the llm service is unavailable' })
   })
 
-  it('/model opens the picker with metadata, current badge, and segment control', async () => {
+  it('/model opens the picker with provider tabs and inline effort choices', async () => {
     const { ctx, screen, agent } = await mount()
     const execution = await ctx.commands.execute(agent, '/model', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
@@ -279,6 +279,8 @@ describe('model-family commands', () => {
     expect(currentRow).toContain('· ctx 64k')
     expect(rows.some(row => row.includes('Mock Pro'))).toBe(true)
     expect(currentRow).toContain('[High]')
+    expect(rows.filter(row => row.includes('‹ High ›'))).toHaveLength(0)
+    expect(rows.some(row => row.includes('[ Set as default ]'))).toBe(false)
   })
 
   it('/model shows the cache warning row when the session already has a request header', async () => {
@@ -344,6 +346,7 @@ describe('model-family commands', () => {
     await ctx.commands.execute(agent, '/model', [], signal())
     // The current row's draft already sits at the model default (`high`);
     // committing it directly is the kimi untouched-draft behavior.
+    overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
     expect(writes).toEqual([{ provider: 'mock', model: 'mock', reasoningEffort: 'high' as never }])
@@ -351,15 +354,38 @@ describe('model-family commands', () => {
     expect(notices[0]).toBe('Thinking set to high')
   })
 
-  it('/model picker commits session-only with Alt+S and skips the default write', async () => {
+  it('/model picker commits through the explicit session-only action and skips the default write', async () => {
     const { ctx, screen, agent, writes, saveSelection } = await mount()
     await ctx.commands.execute(agent, '/model', [], signal())
-    overlay(screen).handleInput(KEY.down)
-    overlay(screen).handleInput(KEY.altS)
+    overlay(screen).handleInput('P')
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
     expect(writes).toEqual([{ provider: 'mock', model: 'mock-pro', reasoningEffort: 'high' as never }])
     expect(saveSelection).not.toHaveBeenCalled()
     expect(notices[0]).toBe('Switched to mock-pro (mock) · thinking high · session only')
+  })
+
+  it('/model adjusts the effort on the focused row instead of the saved model', async () => {
+    const { ctx, screen, agent, writes } = await mount({
+      catalog: { models: { mock: [
+        { id: 'mock', name: 'Mock' },
+        { id: 'mock-pro', name: 'Mock Pro' },
+        { id: 'mock-vision', name: 'Mock Vision' },
+      ] } },
+    })
+    await ctx.commands.execute(agent, '/model', [], signal())
+    overlay(screen).render?.(80)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).render?.(80)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).render?.(80)
+    overlay(screen).handleInput(KEY.left)
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.enter)
+    await vi.waitFor(() => { expect(writes).toHaveLength(1) })
+    expect(writes).toEqual([{ provider: 'mock', model: 'mock-vision', reasoningEffort: 'low' as never }])
   })
 
   it('rejects malformed picker actions without mutating the selection', async () => {
@@ -427,14 +453,18 @@ describe('model-family commands', () => {
     const rows = overlay(screen).render?.(60) ?? []
     const segmentRow = rows.find(row => row.includes('Default') || row.includes('[ '))
     expect(segmentRow).toBeDefined()
-    expect(segmentRow).toContain('[Default]')
-    expect(segmentRow).toContain('[Low]')
-    expect(segmentRow).toContain('[High]')
+    expect(segmentRow).toContain('‹ Default ›')
+    expect(segmentRow).toContain('Low')
+    expect(segmentRow).toContain('High')
     overlay(screen).handleInput(KEY.left)
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })
-    // No live effort → the `Default` segment starts active; Left wraps to
-    // the last segment (`high`).
+    // No live effort starts at `Default`; Left stays at the boundary, then
+    // two Right presses select `high` without wrapping.
     expect(writes[0]).toMatchObject({ reasoningEffort: 'high' as never })
   })
 
@@ -590,6 +620,7 @@ describe('model-family commands', () => {
   it('/model commits an effort-less pick without the effort key', async () => {
     const { ctx, screen, agent, writes } = await mount({ catalog: { reasoning: null } })
     await ctx.commands.execute(agent, '/model', [], signal())
+    overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })
     expect('reasoningEffort' in (writes[0] ?? {})).toBe(false)
@@ -603,8 +634,13 @@ describe('model-family commands', () => {
     // The panels stay mounted on the fake screen; their commits still write
     // the selection but no longer reach for the shared editor.
     const modelEntry = screen.overlays.find(entry => !entry.hidden)
-    ;(modelEntry!.component as unknown as { handleInput(d: string): void }).handleInput(KEY.enter)
-    overlay(screen).handleInput(KEY.enter)
+    const modelPanel = modelEntry!.component as unknown as { handleInput(d: string): void }
+    modelPanel.handleInput(KEY.tab)
+    modelPanel.handleInput(KEY.enter)
+    const effortPanel = overlay(screen)
+    effortPanel.handleInput(KEY.enter)
+    effortPanel.handleInput(KEY.tab)
+    effortPanel.handleInput(KEY.enter)
     // Both panels commit their selections; neither reaches the editor.
     await vi.waitFor(() => { expect(writes).toHaveLength(2) })
     expect(notices).toEqual([])
@@ -626,6 +662,8 @@ describe('model-family commands', () => {
   it('/effort panel commits the default segment directly', async () => {
     const { ctx, screen, agent, writes } = await mount()
     await ctx.commands.execute(agent, '/effort', [], signal())
+    overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(writes).toHaveLength(1) })
     expect('reasoningEffort' in (writes[0] ?? {})).toBe(false)
@@ -966,11 +1004,14 @@ describe('model-family commands', () => {
     expect(notices).toEqual([])
   })
 
-  it('/effort session-only leaves the default untouched', async () => {
+  it('/effort explicit session-only action leaves the default untouched', async () => {
     const { ctx, screen, agent, saveSelection } = await mount()
     await ctx.commands.execute(agent, '/effort', [], signal())
     overlay(screen).handleInput(KEY.right)
-    overlay(screen).handleInput(KEY.altS)
+    overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toHaveLength(1) })
     expect(saveSelection).not.toHaveBeenCalled()
     expect(notices[0]).toContain('session only')

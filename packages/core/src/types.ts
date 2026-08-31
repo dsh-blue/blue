@@ -48,6 +48,17 @@ export interface BlueDockOptions {
 export interface BlueFocusable extends BlueComponent {
   /** Whether the component currently holds focus. Managed by the screen. */
   focused: boolean
+  /** Capture the renderer-private semantic control currently holding focus. */
+  captureFocusIdentity?(): BlueFocusIdentity | undefined
+  /** Restore a previously captured semantic control when it is still visible. */
+  restoreFocusIdentity?(identity: BlueFocusIdentity): boolean
+}
+
+/** Renderer-neutral identity used only to preserve focus across recompilation. */
+export interface BlueFocusIdentity {
+  readonly controlId: string
+  readonly itemId?: string
+  readonly tabControlId?: string
 }
 
 /** Absolute column/row count or a percentage of the terminal dimension. */

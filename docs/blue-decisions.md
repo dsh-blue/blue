@@ -2,6 +2,8 @@
 
 > Cutover note (2026-08-26): ADR 正文保留作历史记录。旧 `blueSession`、`blueStatus`、`blueIntents` 和 event-fold 决策已由 frontend-runtime cutover 取代；当前契约见 `blue-architecture.md`、`blue-seams.md` 与 package `AGENTS.md`。
 
+> Interaction supersession (2026-09-01): D38 保留 `Alt+S` 和 model 底部 thinking tab 的原始历史裁决；`0.1.2-alpha.1` 已移除该绑定并改用显式 `Use for this session` action，model 只保留 provider tab，列表行内用 Left/Right 调 thinking。历史正文不改写，当前行为以 release note 与键位参考为准。
+
 > 每条记录：背景 → 决策 → 理由 → 后果。按主题分组，编号稳定不回收。
 > 架构总览见 [blue-architecture.md](./blue-architecture.md)；阶段规划见 [blue-roadmap.md](./blue-roadmap.md)。
 

@@ -36,10 +36,10 @@
 
 ## 会话与模型
 
-- **`/resume <session-id>`** —— `/sessions` 的别名：带 id 直接恢复，不带参数与 `/sessions` 一样打开 lineage 树选择器（按 `parentSession` 组织、兄弟节点按创建时间降序、当前会话标 `← current`；当前会话的祖先路径自动展开且不带出旁支，其他分支用 **Space 切换展开/折叠**）。列表按当前工作目录圈定，每行显示会话标题，**直接输入即过滤**且能搜到折叠节点——`Esc` 先清过滤词、再按一次取消。
+- **`/resume <session-id>`** —— `/sessions` 的别名：带 id 直接恢复，不带参数与 `/sessions` 一样打开 lineage 树选择器（按 `parentSession` 组织、兄弟节点按创建时间降序、当前会话标 `← current`；当前会话的祖先路径自动展开且不带出旁支，其他分支用 **Space 切换展开/折叠**）。列表按当前工作目录圈定，每行显示会话标题，**直接输入即过滤**且能搜到折叠节点；`Esc` 退出筛选但保留 query，聚焦 `Clear filter` action 才清空，再按焦点层级取消。
 - **`/fork`** —— agent 非 idle（正在运行）时返回 `cannot fork while the agent is running`。
 - **`/rewind`** —— 单层列出当前会话的直接用户回合；选择一个回合会从该完整回合之前创建普通子 session。父会话不截断、不删除，仍可从 `/sessions` 恢复；agent 运行时拒绝。
-- **`/model` / `/effort`** —— 无参数分别打开模型选择面板（含 footer 的思考力度 segment 控件）与横向力度选择器；面板内 `←` `→` 步进 segment，**`Alt+S` 以"仅本会话"确认**——下一步路由立即切换、不写回持久默认。带参数直接切换并持久化为新默认。免开面板的快路：**`Alt+M`** 在当前 provider 的模型列表里逐个切换（仅本会话，草稿保留；见[键位参考](/reference/keys)）。
+- **`/model` / `/effort`** —— 无参数分别打开模型选择面板与横向力度选择器；面板用不循环的 `←` `→` 移动 provider/effort tabs、`Enter` 下钻、内容态 `Tab` 切到 action。选择 **`Set as default`** 会切换并持久化；选择 **`Use for this session`** 只改变当前会话。带参数直接切换并持久化为新默认。免开面板的快路：**`Alt+M`** 在当前 provider 的模型列表里逐个切换（仅本会话，草稿保留；见[键位参考](/reference/keys)）。
 - **`/provider`** —— 三条子命令：`list` 列出可用 provider 与当前路由；`switch <name>` 切换；`add` 进入新增 provider 流程。
 - **`/preset`** —— 在薄宿主预设名册（上游 `standard` / `minimal` / `ptc` / `cordis`，以及 Blue `blue-cordis`）上切换 agent 组合：工具面、人格与 plan 模式都来自当前预设。没有 `code` alias。仅在**空会话**允许切换——已开始的会话返回 `cannot switch presets: this session has already started (blank sessions only)`。
 

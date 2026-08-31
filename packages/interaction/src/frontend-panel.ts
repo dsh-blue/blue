@@ -10,17 +10,19 @@ import type { BlueInlineSpan, BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { Action, BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter, type CanonicalContextHint } from './canonical-panel.ts'
-import { ACTION_CANCEL, ACTION_SEGMENT_LEFT, ACTION_SEGMENT_RIGHT, ACTION_SESSION_ONLY, ACTION_SUBMIT } from './keys.ts'
+import { ACTION_CANCEL } from './keys.ts'
 
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
+const KEY_LEFT = '\x1b[D'
+const KEY_RIGHT = '\x1b[C'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
 const PAGE_SCROLL = 10
 const DEFAULT_MAX_VISIBLE = 20
 
 /** One action-bearing variant of a canonical panel row. */
-export interface FrontendPanelVariant { readonly id: string, readonly label: string, readonly disabled?: boolean, readonly action?: Action, readonly secondaryAction?: Action }
+export interface FrontendPanelVariant { readonly id: string, readonly label: string, readonly disabled?: boolean, readonly action?: Action, readonly actionLabel?: string, readonly secondaryAction?: Action, readonly secondaryActionLabel?: string }
 /** One empty state selected by the active document group. */
 export interface FrontendPanelEmptyState { readonly title: string, readonly description?: string }
 /** One action-bearing canonical panel row. */
@@ -31,7 +33,9 @@ export interface FrontendPanelItem {
   readonly badge?: string
   readonly disabled?: boolean
   readonly action?: Action
+  readonly actionLabel?: string
   readonly secondaryAction?: Action
+  readonly secondaryActionLabel?: string
   readonly group?: string
   readonly variants?: readonly FrontendPanelVariant[]
   readonly variantsFirst?: boolean
@@ -53,6 +57,8 @@ export interface FrontendPanelDocument {
   readonly groupCounts?: Readonly<Record<string, number>>
   readonly empty?: FrontendPanelEmptyState
   readonly emptyByGroup?: Readonly<Record<string, FrontendPanelEmptyState>>
+  readonly variantNavigation?: 'tabs' | 'inline'
+  readonly emphasizePrimaryAction?: boolean
   readonly submit?: Action
   readonly cancel?: Action
   readonly dismissible?: boolean
@@ -79,8 +85,10 @@ export class CanonicalDocumentController implements BlueFocusable {
   private scrollTop = 0
   private selectedId: string | undefined
   private query = ''
+  private filterEditing = false
   private group = 0
   private groupId: string | undefined
+  private focusedControlId: string | undefined
   private readonly selectedVariants = new Map<string, string>()
 
   constructor(private readonly options: FrontendPanelOptions) {
@@ -89,10 +97,13 @@ export class CanonicalDocumentController implements BlueFocusable {
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onFocusChange: identity => this.onFocusChange(identity.controlId, identity.itemId),
       onUnhandledEscape: () => this.cancel(),
       maxLeafRows: Math.max(5, options.maxVisible ?? DEFAULT_MAX_VISIBLE),
+      leafRowWindowPath: '$.child.0',
+      leafRowOffset: () => this.scrollTop,
+      onLeafRowOffset: offset => { this.scrollTop = offset },
       ...(options.t === undefined ? {} : { t: options.t }),
-      suppressAutomaticContextHints: true,
       focusWithoutControls: true,
       contextHints: () => this.contextHints(),
     })
@@ -103,30 +114,33 @@ export class CanonicalDocumentController implements BlueFocusable {
 
   handleInput(data: string): void {
     const model = this.options.model()
-    if (this.options.keymap.matches(data, ACTION_CANCEL) || (!model.filterable && (data === 'q' || data === 'Q'))) { this.cancel(); return }
+    if (this.options.keymap.matches(data, ACTION_CANCEL) && this.filterEditing) {
+      this.filterEditing = false
+      this.adapter.invalidate()
+      return
+    }
+    if (!model.filterable && (data === 'q' || data === 'Q')) { this.cancel(); return }
     const unhandled = this.options.onUnhandledInput?.(data, this.resolveSelectedId(model))
     if (unhandled !== undefined) { void this.options.onAction(unhandled); return }
-    if (this.options.keymap.matches(data, ACTION_SUBMIT)) { this.activate(model, false); return }
-    if (this.options.keymap.matches(data, ACTION_SESSION_ONLY)) { this.activate(model, true); return }
-    if (this.options.keymap.matches(data, ACTION_SEGMENT_LEFT) || this.options.keymap.matches(data, ACTION_SEGMENT_RIGHT)) {
-      const delta = this.options.keymap.matches(data, ACTION_SEGMENT_LEFT) ? -1 : 1
-      const item = this.selectedItem(model)
-      if (model.grouped === true && this.groups(model).length > 1 && (item?.variants?.length ?? 0) === 0) this.moveGroup(model, delta)
-      else this.moveVariant(model, delta)
+    if (model.variantNavigation === 'inline' && (data === KEY_LEFT || data === KEY_RIGHT) && this.listIsActive(model)) {
+      this.moveVariant(model, data === KEY_LEFT ? -1 : 1)
+      return
+    }
+    if (model.items === undefined && (data === KEY_UP || data === KEY_DOWN || data === KEY_PAGE_UP || data === KEY_PAGE_DOWN || data === 'g' || data === 'G')) {
+      const delta = data === KEY_UP ? -1 : data === KEY_DOWN ? 1 : data === KEY_PAGE_UP ? -PAGE_SCROLL : data === KEY_PAGE_DOWN ? PAGE_SCROLL : 0
+      this.scrollTop = data === 'g' ? 0 : data === 'G' ? Number.MAX_SAFE_INTEGER : Math.max(0, this.scrollTop + delta)
       this.adapter.invalidate()
       return
     }
-    if (data === KEY_UP || data === KEY_DOWN) {
-      const moved = this.moveSelection(model, data === KEY_UP ? -1 : 1)
-      if (!moved) this.scrollTop = Math.max(0, this.scrollTop + (data === KEY_UP ? -1 : 1))
-      this.adapter.invalidate()
-      return
-    }
-    if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN) { this.scrollTop = Math.max(0, this.scrollTop + (data === KEY_PAGE_UP ? -PAGE_SCROLL : PAGE_SCROLL)); this.adapter.invalidate(); return }
-    if (data === 'g' || data === 'G') { this.scrollTop = data === 'g' ? 0 : Number.MAX_SAFE_INTEGER; this.adapter.invalidate(); return }
-    if (model.grouped === true && (data === '\t' || data === '\x1b[Z')) { this.moveGroup(model, data === '\x1b[Z' ? -1 : 1); this.adapter.invalidate(); return }
     if (model.filterable === true && data === '\x7f') { this.query = this.query.slice(0, -1); this.reseedSelection(model); this.adapter.invalidate(); return }
-    if (model.filterable === true && data.length === 1 && data >= ' ') { this.query += data; this.reseedSelection(model); this.adapter.invalidate() }
+    if (model.filterable === true && data.length === 1 && data >= ' ') {
+      this.filterEditing = true
+      this.query += data
+      this.reseedSelection(model)
+      this.adapter.invalidate()
+      return
+    }
+    this.adapter.handleInput(data)
   }
 
   invalidate(): void { this.adapter.invalidate() }
@@ -140,6 +154,10 @@ export class CanonicalDocumentController implements BlueFocusable {
     if (model.mode === 'loading') {
       children.push({ kind: 'loader', message: nodeText(model.view) ?? 'loading...' })
       if (model.view !== undefined && nodeText(model.view) === undefined) children.push(model.view)
+      if (model.submit !== undefined) children.push({
+        kind: 'actions', id: 'frontend-panel-actions',
+        items: [{ id: 'frontend-panel-primary', label: 'Cancel', intent: 'primary' }],
+      })
     }
     else if (model.items !== undefined) {
       const groups = this.groups(model)
@@ -153,17 +171,18 @@ export class CanonicalDocumentController implements BlueFocusable {
         })),
       })
       const items = this.filteredItems(model)
-      const maxVisible = Math.max(5, this.options.maxVisible ?? DEFAULT_MAX_VISIBLE)
       const selected = this.resolveSelectedId(model)
-      const selectedIndex = Math.max(0, items.findIndex(item => item.id === selected))
-      const maxTop = Math.max(0, items.length - maxVisible)
-      this.scrollTop = Math.min(this.scrollTop, maxTop)
-      if (selectedIndex < this.scrollTop) this.scrollTop = selectedIndex
-      if (selectedIndex >= this.scrollTop + maxVisible) this.scrollTop = selectedIndex - maxVisible + 1
+      const selectedItem = this.selectedItem(model)
+      const variants = selectedItem?.variants?.filter(variant => variant.disabled !== true) ?? []
+      const selectedVariant = this.selectedVariant(selectedItem)
+      if (model.variantNavigation !== 'inline' && variants.length > 1 && selectedVariant !== undefined) children.push({
+        kind: 'tabs', id: 'frontend-panel-variants', activeId: selectedVariant.id,
+        items: variants.map(variant => ({ id: variant.id, label: variant.label })),
+      })
       children.push({
         kind: 'list', id: 'frontend-panel-list', selectedIds: selected === undefined ? [] : [selected],
         ...(this.query === '' ? {} : { filter: this.query }),
-        items: items.slice(this.scrollTop, this.scrollTop + maxVisible).map(item => ({
+        items: items.map(item => ({
           id: item.id, label: item.label,
           ...(item.variants === undefined ? (item.detail === undefined ? {} : { detail: item.detail }) : { detailSpans: this.itemDetailSpans(item, item.variants) }),
           ...(item.badge === undefined ? {} : { badge: item.badge }),
@@ -172,7 +191,26 @@ export class CanonicalDocumentController implements BlueFocusable {
         })),
         ...(items.length === 0 ? { empty: this.emptyNode(model, activeGroup) } : {}),
       })
-    } else if (model.view !== undefined) children.push(model.view)
+      const primary = this.selectedAction(model, false) ?? model.submit
+      const secondary = this.selectedAction(model, true)
+      if (primary !== undefined || secondary !== undefined || this.query !== '') children.push({
+        kind: 'actions', id: 'frontend-panel-actions', items: [
+          ...(primary === undefined ? [] : [{
+            id: 'frontend-panel-primary',
+            label: selectedVariant?.actionLabel ?? selectedItem?.actionLabel ?? 'Choose',
+            ...(model.emphasizePrimaryAction === false ? {} : { intent: 'primary' as const }),
+          }]),
+          ...(secondary === undefined ? [] : [{ id: 'frontend-panel-secondary', label: selectedVariant?.secondaryActionLabel ?? selectedItem?.secondaryActionLabel ?? 'Use for this session' }]),
+          ...(this.query === '' ? [] : [{ id: 'frontend-panel-clear-filter', label: 'Clear filter' }]),
+        ],
+      })
+    } else if (model.view !== undefined) {
+      children.push(model.view)
+      if (model.submit !== undefined) children.push({
+        kind: 'actions', id: 'frontend-panel-actions',
+        items: [{ id: 'frontend-panel-primary', label: 'Continue', intent: 'primary' }],
+      })
+    }
     else children.push({ kind: 'empty', title: model.mode === 'error' ? 'unavailable' : 'no content' })
     const selectedVariant = model.mode === 'select' && this.options.showSelectedVariantInFooter === true
       ? this.selectedVariant(this.selectedItem(model))
@@ -190,27 +228,25 @@ export class CanonicalDocumentController implements BlueFocusable {
   private contextHints(): readonly CanonicalContextHint[] {
     const model = this.options.model()
     if (model.dismissible === false) return this.options.contextHints?.() ?? []
-    const selected = this.selectedItem(model)
     const hasRows = (model.items?.length ?? 0) > 0
-    const hasAction = model.mode === 'select'
-      ? this.selectedAction(model, false) !== undefined || model.submit !== undefined
-      : model.submit !== undefined
-    const groups = model.grouped === true ? this.groups(model) : []
+    const activeItem = this.focusedListItem(model) ?? this.selectedItem(model)
+    const inlineVariants = model.variantNavigation === 'inline'
+      && this.listIsActive(model)
+      && (activeItem?.variants?.filter(variant => variant.disabled !== true).length ?? 0) > 1
     return [
-      ...(hasRows ? [{ id: 'navigate', keys: '↑↓', label: 'rows', priority: 90 }] : []),
-      ...((selected?.variants?.length ?? 0) > 1 ? [{ id: 'variant', keys: '←→', label: 'actions', priority: 92 }] : []),
-      ...(groups.length > 1 ? [{ id: 'group', keys: 'Tab/Shift-Tab', label: 'pages', compact: 'Tab', priority: 88 }] : []),
-      ...(hasAction ? [{ id: 'activate', keys: 'Enter', label: model.mode === 'loading' ? 'cancel' : 'choose', priority: 100 }] : []),
       ...(model.filterable === true && this.query === '' ? [{ id: 'filter', keys: 'Type', label: 'to search', priority: 85 }] : []),
+      ...(inlineVariants ? [
+        { id: 'navigate', keys: '↑↓', label: 'models', priority: 93 },
+        { id: 'variant', keys: '←→', label: 'thinking', priority: 92 },
+      ] : []),
       ...(!hasRows && model.view !== undefined ? [{ id: 'scroll', keys: '↑↓/PgUp/PgDn', label: 'scroll', compact: 'PgUp/PgDn', priority: 90 }] : []),
-      { id: 'dismiss', keys: model.filterable === true ? 'Esc' : 'Esc/q', label: model.mode === 'loading' ? 'cancel' : 'close', priority: 80 },
+      ...(this.filterEditing ? [{ id: 'dismiss', keys: 'Esc', label: 'finish search', priority: 96 }] : []),
       ...(this.options.contextHints?.() ?? []),
     ]
   }
 
   private cancel(): void {
     const model = this.options.model()
-    if (this.query !== '') { this.query = ''; this.reseedSelection(model); this.adapter.invalidate(); return }
     if (model.dismissible === false) return
     if (model.cancel !== undefined) void this.options.onAction(model.cancel)
     this.options.onClose()
@@ -251,17 +287,15 @@ export class CanonicalDocumentController implements BlueFocusable {
 
   private reseedSelection(model: FrontendPanelDocument): void { this.selectedId = undefined; this.resolveSelectedId(model); this.scrollTop = 0 }
 
-  private moveSelection(model: FrontendPanelDocument, delta: -1 | 1): boolean {
-    const items = this.selectable(model)
-    if (items.length === 0) return false
-    const current = Math.max(0, items.findIndex(item => item.id === this.resolveSelectedId(model)))
-    this.selectedId = items[(current + delta + items.length) % items.length]!.id
-    return true
-  }
-
   private selectedItem(model: FrontendPanelDocument): FrontendPanelItem | undefined {
     const selected = this.resolveSelectedId(model)
     return this.selectable(model).find(item => item.id === selected)
+  }
+
+  private focusedListItem(model: FrontendPanelDocument): FrontendPanelItem | undefined {
+    const identity = this.adapter.currentFocusIdentity()
+    if (identity?.controlId !== 'frontend-panel-list' || identity.itemId === undefined) return undefined
+    return this.selectable(model).find(item => item.id === identity.itemId)
   }
 
   private selectedVariant(item: FrontendPanelItem | undefined): FrontendPanelVariant | undefined {
@@ -273,22 +307,24 @@ export class CanonicalDocumentController implements BlueFocusable {
     return variant
   }
 
-  private moveVariant(model: FrontendPanelDocument, delta: -1 | 1): void {
-    const item = this.selectedItem(model)
-    const variants = item?.variants?.filter(variant => variant.disabled !== true)
-    if (item === undefined || variants === undefined || variants.length === 0) return
-    const current = this.selectedVariant(item)
-    const index = Math.max(0, variants.findIndex(variant => variant.id === current?.id))
-    this.selectedVariants.set(item.id, variants[(index + delta + variants.length) % variants.length]!.id)
+  private listIsActive(model: FrontendPanelDocument): boolean {
+    const identity = this.adapter.currentFocusIdentity()
+    if (identity !== undefined) return identity.controlId === 'frontend-panel-list'
+    if (this.focusedControlId !== undefined) return this.focusedControlId === 'frontend-panel-list'
+    return !(model.grouped === true && this.groups(model).length > 1)
   }
 
-  private moveGroup(model: FrontendPanelDocument, delta: -1 | 1): void {
-    const groups = this.groups(model)
-    if (groups.length <= 1) return
-    const current = groups.indexOf(this.activeGroup(groups))
-    this.group = (current + delta + groups.length) % groups.length
-    this.groupId = groups[this.group]
-    this.reseedSelection(model)
+  private moveVariant(model: FrontendPanelDocument, delta: -1 | 1): void {
+    const item = this.focusedListItem(model) ?? this.selectedItem(model)
+    const variants = item?.variants?.filter(variant => variant.disabled !== true) ?? []
+    if (item === undefined || variants.length < 2) return
+    this.selectedId = item.id
+    const selected = this.selectedVariant(item)
+    const index = variants.findIndex(variant => variant.id === selected?.id)
+    const next = variants[index + delta]
+    if (next === undefined) return
+    this.selectedVariants.set(item.id, next.id)
+    this.adapter.invalidate()
   }
 
   private activeGroup(groups: readonly string[]): string {
@@ -338,10 +374,15 @@ export class CanonicalDocumentController implements BlueFocusable {
   }
 
   private activate(model: FrontendPanelDocument, secondary: boolean): void {
-    if (model.mode === 'loading') return
+    if (model.mode === 'loading') {
+      /* v8 ignore next -- loading documents expose only their primary cancel action. */
+      if (!secondary && model.submit !== undefined) void this.options.onAction(model.submit)
+      return
+    }
+    /* v8 ignore next -- a secondary button is compiled only when its action exists. */
     const action = this.selectedAction(model, secondary) ?? (secondary ? undefined : model.submit)
+    /* v8 ignore next -- action buttons are compiled only when this resolves; empty documents close with Escape. */
     if (action === undefined) { if (!secondary) this.options.onClose(); return }
-    this.onEvent({ kind: 'activate', controlId: secondary ? 'frontend-panel-secondary' : 'frontend-panel-primary' })
     void this.options.onAction(action)
   }
 
@@ -354,7 +395,27 @@ export class CanonicalDocumentController implements BlueFocusable {
     } else if (event.kind === 'tab-change' && event.controlId === 'frontend-panel-groups') {
       const index = this.groups(model).indexOf(event.tabId)
       if (index >= 0) { this.group = index; this.groupId = event.tabId; this.reseedSelection(model); this.adapter.invalidate() }
+    } else if (event.kind === 'tab-change' && event.controlId === 'frontend-panel-variants') {
+      const item = this.selectedItem(model)
+      if (item?.variants?.some(variant => variant.id === event.tabId && variant.disabled !== true) === true) {
+        this.selectedVariants.set(item.id, event.tabId)
+        this.adapter.invalidate()
+      }
+    } else if (event.kind === 'activate' && event.controlId === 'frontend-panel-clear-filter') {
+      this.query = ''
+      this.filterEditing = false
+      this.reseedSelection(model)
+      this.adapter.invalidate()
+    } else if (event.kind === 'activate' && (event.controlId === 'frontend-panel-primary' || event.controlId === 'frontend-panel-secondary')) {
+      this.activate(model, event.controlId === 'frontend-panel-secondary')
     }
+  }
+
+  private onFocusChange(controlId: string, itemId: string | undefined): void {
+    this.focusedControlId = controlId
+    if (controlId !== 'frontend-panel-list' || itemId === undefined || itemId === this.selectedId) return
+    this.selectedId = itemId
+    this.adapter.invalidate()
   }
 }
 

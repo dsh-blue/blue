@@ -18,15 +18,15 @@ function mount(entries: readonly BlueSelectItem[] = items(3)) {
 }
 
 describe('CanonicalMultiSelectController', () => {
-  it('wraps, toggles, confirms, and falls back to the focused row', () => {
+  it('uses bounded navigation, toggles, confirms, and falls back to the focused row', () => {
     const value = mount()
     value.select.handleInput(KEY.up)
     value.select.handleInput(KEY.space)
     value.select.handleInput(KEY.down)
     value.select.handleInput(KEY.space)
-    expect(value.select.currentNode()).toMatchObject({ child: { mode: 'multiple', selectedIds: ['v2', 'v0'] } })
+    expect(value.select.currentNode()).toMatchObject({ child: { mode: 'multiple', selectedIds: ['v0', 'v1'] } })
     value.select.handleInput(KEY.enter)
-    expect(value.onConfirm).toHaveBeenCalledWith([expect.objectContaining({ value: 'v0' }), expect.objectContaining({ value: 'v2' })])
+    expect(value.onConfirm).toHaveBeenCalledWith([expect.objectContaining({ value: 'v0' }), expect.objectContaining({ value: 'v1' })])
 
     const fallback = mount()
     fallback.select.handleInput(KEY.down)
@@ -57,9 +57,10 @@ describe('CanonicalMultiSelectController', () => {
     const node = value.select.currentNode()
     expect(node).toMatchObject({ kind: 'surface', chrome: 'overlay', child: { kind: 'list', mode: 'multiple' } })
     if (node.kind !== 'surface' || node.child.kind !== 'list') throw new Error('expected canonical select')
-    expect(node.child.items).toHaveLength(8)
+    expect(node.child.items).toHaveLength(12)
     expect(node.child.items[0]).toMatchObject({ detail: 'first choice' })
     expect(node.footer).toMatchObject({ content: expect.stringContaining('(1/12)') })
+    expect(value.select.render(40).some(row => row.includes('Item 8'))).toBe(false)
     expect(value.select.render(14).every(row => new FakeBlueComponents().visibleWidth(row) <= 14)).toBe(true)
     value.select.invalidate()
   })

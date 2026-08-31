@@ -8,39 +8,10 @@ import {
   MAX_LIST_VISIBLE,
   CanonicalSelectController,
   counterRow,
-  cycle,
   oneLine,
-  windowedRange,
 } from '../src/select-list.ts'
 import type { SelectRow } from '../src/select-list.ts'
 import { FakeBlueComponents, FakeKeymap, FakeTheme, KEY } from './fakes.ts'
-
-describe('cycle', () => {
-  it('wraps at both ends and steps within', () => {
-    expect(cycle(0, 3, -1)).toBe(2)
-    expect(cycle(2, 3, 1)).toBe(0)
-    expect(cycle(1, 3, 1)).toBe(2)
-    expect(cycle(2, 3, -1)).toBe(1)
-  })
-
-  it('pins empty and single-entry lists', () => {
-    expect(cycle(0, 0, 1)).toBe(0)
-    expect(cycle(0, 1, -1)).toBe(0)
-    expect(cycle(0, 1, 1)).toBe(0)
-  })
-})
-
-describe('windowedRange', () => {
-  it('centers the cursor while the list overflows', () => {
-    expect(windowedRange(0, 12, 8)).toEqual({ start: 0, end: 8 })
-    expect(windowedRange(5, 12, 8)).toEqual({ start: 1, end: 9 })
-    expect(windowedRange(11, 12, 8)).toEqual({ start: 4, end: 12 })
-  })
-
-  it('shows everything once the list fits', () => {
-    expect(windowedRange(2, 3, 8)).toEqual({ start: 0, end: 3 })
-  })
-})
 
 describe('counterRow', () => {
   it('appears only beyond the window', () => {
@@ -66,6 +37,7 @@ function rows(count: number): SelectRow[] {
 function mount(options: {
   rows?: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   title?: string
+  footer?: string
   initialValue?: string
   filter?: boolean
   onSelect?: (row: SelectRow) => void
@@ -87,6 +59,7 @@ function mount(options: {
     components: new FakeBlueComponents(),
     rows: options.rows ?? rows(3),
     title: options.title,
+    footer: options.footer,
     initialValue: options.initialValue,
     filter: options.filter === true ? true : undefined,
     onSelect: options.onSelect ?? onSelect,
@@ -100,7 +73,10 @@ function mount(options: {
 
 describe('CanonicalSelectController navigation', () => {
   it('maps compiler events, bridges focus, and rejects malformed selections', () => {
-    const { panel, onSelect } = mount()
+    const { panel, onSelect, onBlockedSelect } = mount({ rows: [
+      { value: 'v0', label: 'Enabled' },
+      { value: 'blocked', label: 'Blocked', disabled: true },
+    ] })
     panel.focused = true
     expect(panel.focused).toBe(true)
     ;(panel as unknown as { adapter: { handleInput(data: string): void } }).adapter.handleInput(KEY.enter)
@@ -108,7 +84,9 @@ describe('CanonicalSelectController navigation', () => {
     const events = panel as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown }): void }
     events.onEvent({ kind: 'activate', controlId: 'other' })
     events.onEvent({ kind: 'selection-change', controlId: 'select-list', value: 'missing' })
+    events.onEvent({ kind: 'selection-change', controlId: 'select-list', value: 'blocked' })
     expect(onSelect).toHaveBeenCalledOnce()
+    expect(onBlockedSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'blocked' }))
   })
 
   it('hydrates rows without losing a valid cursor or crashing on an empty view', () => {
@@ -120,19 +98,22 @@ describe('CanonicalSelectController navigation', () => {
     expect(panel.render(60).some(line => line.includes('Fresh'))).toBe(true)
   })
 
-  it('wraps the cursor at both ends', () => {
+  it('stops the cursor at both ends', () => {
     const { panel, onSelect } = mount()
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.enter)
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'v2' }))
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'v0' }))
     panel.handleInput(KEY.down)
     panel.handleInput(KEY.enter)
-    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v0' }))
-    // Non-wrap moves in both directions.
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v1' }))
     panel.handleInput(KEY.down)
+    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v2' }))
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.enter)
-    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v0' }))
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v1' }))
   })
 
   it('seeds the cursor on the initial value and falls back to the head', () => {
@@ -144,7 +125,7 @@ describe('CanonicalSelectController navigation', () => {
     expect(unknown.onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'v0' }))
   })
 
-  it('blocks Enter on a disabled row', () => {
+  it('skips a disabled row during navigation', () => {
     const disabled: SelectRow[] = [
       { value: 'ok', label: 'Pickable' },
       { value: 'custom', label: 'Custom', disabled: true },
@@ -152,8 +133,8 @@ describe('CanonicalSelectController navigation', () => {
     const { panel, onSelect, onBlockedSelect } = mount({ rows: disabled })
     panel.handleInput(KEY.down)
     panel.handleInput(KEY.enter)
-    expect(onSelect).not.toHaveBeenCalled()
-    expect(onBlockedSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'custom' }))
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'ok' }))
+    expect(onBlockedSelect).not.toHaveBeenCalled()
   })
 
   it('ignores Enter on a disabled row when no blocked handler is set', () => {
@@ -247,7 +228,7 @@ describe('CanonicalSelectController rendering', () => {
       kind: 'surface', title: 'Select', chrome: 'overlay',
       child: { kind: 'list', selectedIds: ['a'], items: [{ id: 'a', detail: 'first choice', badge: '← current' }, { id: 'b' }] },
     })
-    expect(panel.render(60).join('\n')).toContain('↑↓ options · Enter choose · Esc close')
+    expect(panel.render(60).join('\n')).toContain('↑↓←→ options · Enter choose · Esc close')
   })
 
   it('defaults the title and omits the hint row', () => {
@@ -342,15 +323,28 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
     expect(panel.render(80).join('\n')).toContain('Type to search')
   })
 
-  it('clears the query on Escape before cancelling (the kimi rule)', () => {
-    const { panel, onCancel } = mount({ filter: true })
+  it('leaves filtering on Escape, preserves the query, and clears it explicitly', () => {
+    const { panel, onCancel } = mount({ filter: true, footer: 'Choose a row' })
     panel.handleInput('i')
     panel.handleInput(KEY.escape)
     expect(onCancel).not.toHaveBeenCalled()
-    // The query is gone: the full list renders with the empty-query hint.
+    expect(panel.currentNode()).toMatchObject({ child: { filter: 'i' } })
+    expect(panel.render(80).join('\n')).toContain('Clear filter')
+    expect(panel.render(80).join('\n')).toContain('Choose a row')
+    panel.handleInput(KEY.enter)
     expect(panel.render(80).join('\n')).toContain('Type to search')
     panel.handleInput(KEY.escape)
     expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('clears a dynamic filter even when the refreshed source is empty', () => {
+    let empty = false
+    const { panel } = mount({ filter: true, rows: () => empty ? [] : [{ value: 'a', label: 'Alpha' }] })
+    panel.handleInput('a')
+    panel.handleInput(KEY.escape)
+    empty = true
+    panel.handleInput(KEY.enter)
+    expect(panel.currentNode()).not.toMatchObject({ child: { filter: expect.any(String) } })
   })
 
   it('renders a muted no-matches row and swallows Enter on the empty view', () => {
@@ -387,19 +381,19 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v0' }))
   })
 
-  it('walks Up/Down over the filtered view only', () => {
+  it('keeps Up/Down bounded within the filtered view', () => {
     const { panel, onSelect } = mount({
       filter: true,
       rows: [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }, { value: 'xy', label: 'Xylophone' }],
     })
-    panel.handleInput('a')
-    // Two matches: Up from the head wraps to the second, never the hidden row.
+    panel.handleInput('A')
+    // Up from the filtered head stays at the head and never reaches the hidden row.
     panel.handleInput(KEY.up)
     panel.handleInput(KEY.enter)
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'b' }))
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'a' }))
   })
 
-  it('keeps blocked-select semantics on a disabled row under the filter', () => {
+  it('skips a disabled row under the filter', () => {
     const { panel, onSelect, onBlockedSelect } = mount({
       filter: true,
       rows: [
@@ -407,11 +401,12 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
         { value: 'no', label: 'Alpha custom', disabled: true },
       ],
     })
-    panel.handleInput('a')
+    panel.handleInput('A')
     panel.handleInput(KEY.down)
+    panel.handleInput(KEY.up)
     panel.handleInput(KEY.enter)
-    expect(onSelect).not.toHaveBeenCalled()
-    expect(onBlockedSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'no' }))
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ value: 'ok' }))
+    expect(onBlockedSelect).not.toHaveBeenCalled()
   })
 
   it('matches filterText in place of the label when provided', () => {

@@ -72,7 +72,9 @@ function variants(item: ModelPickerItem, currentEffort: string | undefined): { r
       id: effort,
       label: effortLabel(effort),
       action: pickerAction(item, effort, true),
+      actionLabel: 'Set as default',
       secondaryAction: pickerAction(item, effort, false),
+      secondaryActionLabel: 'Use for this session',
     })),
     selected: preferred,
   }
@@ -90,12 +92,17 @@ export function modelPickerPanelModel(
       item.current === true ? '← current' : undefined,
     ].filter((value): value is string => value !== undefined)
     return {
-      id: `${item.provider}\u0000${item.id}`,
+      id: JSON.stringify([item.provider, item.id]),
       label: `${item.providerLabel}/${item.name}`,
       group: item.providerLabel,
       ...(details.length === 0 ? {} : { detail: details.join(' · ') }),
       ...(effort.rows.length === 0
-        ? { action: pickerAction(item, undefined, true), secondaryAction: pickerAction(item, undefined, false) }
+        ? {
+            action: pickerAction(item, undefined, true),
+            actionLabel: 'Set as default',
+            secondaryAction: pickerAction(item, undefined, false),
+            secondaryActionLabel: 'Use for this session',
+          }
         : { variants: effort.rows, selectedVariantId: effort.selected! }),
     }
   })
@@ -107,6 +114,8 @@ export function modelPickerPanelModel(
     items: rows,
     filterable: true,
     grouped: true,
+    variantNavigation: 'inline',
+    emphasizePrimaryAction: false,
     ...(current === undefined ? {} : { selectedId: current.id }),
   }
 }
@@ -125,7 +134,9 @@ export function effortPickerPanelModel(
       variants: efforts.map(effort => ({
         ...effort,
         action: effortAction(effort.id === 'default' ? undefined : effort.id, true),
+        actionLabel: 'Set as default',
         secondaryAction: effortAction(effort.id === 'default' ? undefined : effort.id, false),
+        secondaryActionLabel: 'Use for this session',
       })),
       ...(activeId === undefined ? {} : { selectedVariantId: activeId }),
     }],

@@ -54,6 +54,7 @@ describe('blue-questions provider', () => {
   it('answers a single-select question through the overlay', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [choice()] })
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
     // A second confirmation after settling is a no-op.
@@ -66,6 +67,7 @@ describe('blue-questions provider', () => {
     const { ctx, screen, locale } = await mount('en')
     const pending = ctx.userQuestions.ask({ questions: [choice()] })
     const questionnaire = screen.overlays[0]!.component
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.down)
     expect(questionnaire.render(60).join('\n')).toContain('Question 1 of 1')
 
@@ -86,6 +88,7 @@ describe('blue-questions provider', () => {
         options: [{ label: 'A', description: 'the first' }, { label: 'B' }, { label: 'C' }],
       })],
     })
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.space)
     overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.down)
@@ -97,12 +100,13 @@ describe('blue-questions provider', () => {
   it('answers an optionless question with custom text', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
+    overlay(screen).handleInput(KEY.enter)
     for (const char of 'because') overlay(screen).handleInput(char)
     // The questionnaire renders the inline editor above the frame's key row
     // and invalidates through it.
     const panel = screen.overlays[0]?.component
-    expect(panel?.render(60)[5]).toContain('Answer')
-    expect(panel?.render(60)[5]).toContain('because')
+    expect(panel?.render(60).join('\n')).toContain('Answer')
+    expect(panel?.render(60).join('\n')).toContain('because')
     panel?.invalidate()
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q2', selected: [], custom: 'because' }] })
@@ -111,6 +115,8 @@ describe('blue-questions provider', () => {
   it('omits custom text for an empty free-text answer', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [{ id: 'q2', question: 'Why?' }] })
+    overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q2', selected: [] }] })
   })
@@ -121,12 +127,14 @@ describe('blue-questions provider', () => {
       questions: [choice(), { id: 'q2', question: 'Name?' }],
     })
     expect(screen.overlays).toHaveLength(1)
-    // Tabs move between questions without answering them.
+    // Tab has no action while question tabs own focus.
     overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.enter)
     // Still one overlay: answering q1 advanced to q2's editor.
     expect(screen.overlays).toHaveLength(1)
+    overlay(screen).handleInput(KEY.enter)
     for (const char of 'neo') overlay(screen).handleInput(char)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({
@@ -189,6 +197,7 @@ describe('blue-questions provider', () => {
     ctx.on('user-questions/request', later)
     const pending = ctx.userQuestions.ask({ questions: [choice()] })
     overlay(screen).handleInput(KEY.enter)
+    overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Alpha'] }] })
     expect(later).not.toHaveBeenCalled()
   })
@@ -202,6 +211,7 @@ describe('blue-questions provider', () => {
       })
     })
     const pending = ctx.userQuestions.ask({ questions: [choice()] })
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Alpha'] }] })
     expect(delegated).toHaveBeenCalledOnce()
@@ -219,6 +229,7 @@ describe('blue-questions provider', () => {
     ctx.agents.enter(agent, undefined)
 
     const pending = ctx.userQuestions.ask({ agent, questions: [choice()] })
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Alpha'] }] })
   })
@@ -260,6 +271,7 @@ describe('blue-questions plan-review intent', () => {
     expect(frame).toContain('Ship it [1]')
     expect(frame).toContain('Reject [2]')
     expect(frame).toContain('Revise [3]')
+    overlay(screen).handleInput(KEY.tab)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })
     expect(screen.overlays[0]?.hidden).toBe(true)
@@ -268,7 +280,8 @@ describe('blue-questions plan-review intent', () => {
   it('rejects with the other option label from the second button', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
-    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.down)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({
       answers: [{ id: 'plan-review', selected: ['Keep planning'] }],
@@ -278,8 +291,10 @@ describe('blue-questions plan-review intent', () => {
   it('submits typed revision feedback from the third row', async () => {
     const { ctx, screen } = await mount()
     const pending = ctx.userQuestions.ask({ questions: [planAsk()] })
-    overlay(screen).handleInput(KEY.right)
-    overlay(screen).handleInput(KEY.right)
+    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
     for (const char of 'redo step 2') overlay(screen).handleInput(char)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({
@@ -322,6 +337,7 @@ describe('blue-questions plan-review intent', () => {
     const frame = screen.overlays[0]?.component.render(60).join('\n') ?? ''
     expect(frame).toContain('Question 1 of 1')
     expect(frame).toContain('Other')
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toEqual({ answers: [{ id: 'plan-review', selected: ['Ship it'] }] })
   })

@@ -43,7 +43,9 @@ export function tracePanelModel(sessionId: string, items: readonly TraceItem[]):
         label: `${traceTime(item.time)} ${item.surface === 'current' ? '●' : '·'} #${String(item.seq)}${item.lastSeq === item.seq ? '' : `-${String(item.lastSeq)}`} ${item.title}`,
         detail: item.summary.replaceAll(/\s+/g, ' ').trim(),
         action: { kind: 'trace.detail', seq: item.seq },
+        actionLabel: 'Open detail',
         secondaryAction: { kind: 'trace.copy', seq: item.seq },
+        secondaryActionLabel: 'Copy trace item',
     })),
     cancel: { kind: 'trace.close' },
   }
@@ -133,7 +135,9 @@ export function registerTraceCommand(ctx: Context): () => void {
       const item = seq === undefined ? undefined : loaded.items.find(entry => entry.seq === seq)
       if (item === undefined) return
       if (action.kind === 'trace.copy') {
-        void copyItem(loaded.sessionId, item, loaded.events)
+        void copyItem(loaded.sessionId, item, loaded.events).then(result => {
+          if (result.kind === 'error') getSharedEditor(ctx)?.notice?.(result.text)
+        })
         return
       }
       if (action.kind === 'trace.detail') {
@@ -160,12 +164,6 @@ export function registerTraceCommand(ctx: Context): () => void {
       model: () => model,
       onAction: execute,
       onClose: () => restore(),
-      onUnhandledInput: (data, selectedId) => {
-        if (data === 'a' || data === 'A') return { kind: 'trace.copy-all' }
-        if (data !== 'c' && data !== 'C') return undefined
-        const seq = selectedId === undefined ? Number.NaN : Number(selectedId)
-        return Number.isFinite(seq) ? { kind: 'trace.copy', seq } : undefined
-      },
       maxVisible: 12,
     })
     restore = mountEditorReplacement(ctx, panel)

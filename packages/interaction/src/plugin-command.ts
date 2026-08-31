@@ -202,7 +202,6 @@ function pluginPanelModel(rows: readonly InstalledPluginRow[], state: PluginPane
         badge: installedStateLabel(row.state, t),
         group: 'installed',
         variantsFirst: true,
-        secondaryAction: { kind: 'plugin.uninstall', row },
         variants: [
           { id: 'verify', label: t('Verify'), action: { kind: 'plugin.verify', row } },
           { id: 'remove', label: t('Remove'), action: { kind: 'plugin.uninstall', row } },
@@ -405,6 +404,7 @@ export function registerPluginCommand(ctx: Context): () => void {
           let panel: CanonicalDocumentController
           const closeDetail = (): void => { restoreDetail?.(); restoreDetail = undefined }
           const close = (): void => {
+            /* v8 ignore next -- close removes itself from the active callback set. */
             if (!live) return
             live = false
             refreshAbort.abort()
@@ -451,6 +451,7 @@ export function registerPluginCommand(ctx: Context): () => void {
             )
           }
           const details = (entry: PluginCatalogEntry): void => {
+            /* v8 ignore next -- disposed compiler generations cannot dispatch detail actions. */
             if (!live) return
             const installed = rows.some(row => row.packageName === entry.packageName)
             let detail: CanonicalDocumentController
@@ -480,8 +481,7 @@ export function registerPluginCommand(ctx: Context): () => void {
             model: () => pluginPanelModel(rows, state, t),
             t,
             contextHints: () => [
-              { id: 'navigate', keys: '↑↓/←→/Tab', label: 'navigate', priority: 95 },
-              { id: 'variant', keys: 'Alt+S', label: 'remove', priority: 92 },
+              { id: 'navigate', keys: 'Arrows/Enter', label: 'navigate', priority: 95 },
             ],
             showSelectedVariantInFooter: true,
             onAction: actionValue => {

@@ -870,7 +870,7 @@ describe('blue-commands plugin', () => {
     expect(output).toContain('已安装')
     expect(output).toContain('插件目录')
     expect(output).toContain('已安装 0 · 已索引 1')
-    panel.handleInput(KEY.tab)
+    panel.handleInput(KEY.right)
     expect(panel.render(100).join('\n')).toContain('@dsh-blue/blue-doudizhu')
     expect(panel.render(100).join('\n')).toContain('兼容')
     expect(panel.render(100).join('\n')).toContain('[安装]')

@@ -135,18 +135,26 @@ describe('openPermissionPanel', () => {
     await vi.waitFor(() => { expect(mounted.notices).toContain('!unknown preset "nope"!') })
   })
 
-  it('blocks the derived custom row and explains why', async () => {
+  it('shows but skips the disabled derived custom row', async () => {
     const mounted = await mount({ presets: fakePresets({ current: 'custom' }) })
     openPermissionPanel(mounted.ctx)
     const frame = top(mounted).component.render(80).join('\n')
     expect(frame).toContain('Custom')
-    // The custom row rides after the table; reach it with wraparound.
+    // The disabled custom row is visible but not part of roving focus.
     top(mounted).component.handleInput(KEY.up)
     top(mounted).component.handleInput(KEY.enter)
-    expect(mounted.runs).toEqual([])
-    expect(mounted.notices).toContain('?custom is the derived state — pick a preset?')
-    // Dismissal of the notice aside, the panel stays for a real choice.
-    expect(top(mounted).hidden).toBe(false)
+    await vi.waitFor(() => { expect(mounted.runs).toEqual([' read-only']) })
+    expect(mounted.notices).not.toContain('?custom is the derived state — pick a preset?')
+    expect(top(mounted).hidden).toBe(true)
+  })
+
+  it('contains a forged selection event for the disabled derived row', async () => {
+    const mounted = await mount({ presets: fakePresets({ current: 'custom' }) })
+    openPermissionPanel(mounted.ctx)
+    ;(top(mounted).component as unknown as { onEvent(event: { kind: string, controlId: string, value: string }): void })
+      .onEvent({ kind: 'selection-change', controlId: 'select-list', value: 'custom' })
+    expect(mounted.notices.some(notice => notice.includes('custom is the derived state'))).toBe(true)
+    top(mounted).component.handleInput(KEY.escape)
   })
 
   it('gates danger-full-access behind a typed-y form that returns to the list on Esc', async () => {

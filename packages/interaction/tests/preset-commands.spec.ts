@@ -284,7 +284,7 @@ describe('registerPresetCommands', () => {
     ])
   })
 
-  it('paints a warning for a blocked select on a broken row without switching', async () => {
+  it('shows but skips a broken preset row', async () => {
     const { ctx, screen, agent, calls, notices } = await mount({
       roster: {
         presets: [
@@ -296,9 +296,20 @@ describe('registerPresetCommands', () => {
     expect(await run(ctx, agent, '/preset')).toEqual({ kind: 'success' })
     top(screen).component.handleInput(KEY.down)
     top(screen).component.handleInput(KEY.enter)
-    await vi.waitFor(() => { expect(notices.join('\n')).toContain('composition failed the entry-list audit') })
-    expect(calls.recompose).toEqual([])
-    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+    await vi.waitFor(() => { expect(notices).toContain('preset standard') })
+    expect(calls.recompose).toEqual([[agent.ctx, 'standard']])
+    expect(agent.session.events.filter(event => event.type === 'agent-preset/selected')).toHaveLength(1)
+  })
+
+  it('contains a forged selection event for a disabled broken preset', async () => {
+    const { ctx, screen, agent, notices } = await mount({
+      roster: { presets: [{ id: 'broken', trust: 'user', broken: 'composition failed the audit' }] },
+    })
+    expect(await run(ctx, agent, '/preset')).toEqual({ kind: 'success' })
+    ;(top(screen).component as unknown as { onEvent(event: { kind: string, controlId: string, value: string }): void })
+      .onEvent({ kind: 'selection-change', controlId: 'select-list', value: 'broken' })
+    expect(notices.some(notice => notice.includes('composition failed the audit'))).toBe(true)
+    top(screen).component.handleInput(KEY.escape)
   })
 
   it('switches directly by name, pairing the event, and stays legal while blank', async () => {

@@ -65,11 +65,14 @@ disposes callbacks and makes every old compiled generation inert.
   node kinds, depth/count/text/action quotas, plain-record constraints, and
   allowed status/editor subsets before constructing renderer objects. Failure
   produces bounded canonical fallback content.
-- Stateful surface compilation keeps navigation separate from editing. Text
-  controls enter edit explicitly, Enter confirms, Escape exits editing before
-  overlay dismissal, and Tab advances semantic groups. Select adjustment has
-  an explicit Enter-confirm/Escape-or-Tab-rollback transaction. Failed compile
-  is transactional and cannot mutate the last committed runtime.
+- Stateful surface compilation keeps navigation separate from editing. Focus
+  descends through outer tabs, nested tabs, content groups, then editing. A tab
+  strip uses non-wrapping Left/Right, Enter descends, and Tab is inert; content
+  uses Tab/Shift-Tab for semantic groups and non-wrapping directional movement.
+  Escape climbs one layer at a time before dismissal. Enter or a valid Tab
+  confirms text/select editing, invalid fields stay active, and Escape rolls a
+  select draft back. Failed compile is transactional and cannot mutate the
+  last committed runtime.
 - Focused interactive surfaces may render one core-owned contextual key-hint
   row derived from visible canonical roles and current edit/confirmation
   state. Complex official controllers may merge or suppress semantic

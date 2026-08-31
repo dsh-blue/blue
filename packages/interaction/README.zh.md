@@ -18,7 +18,7 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 
 ## 命令与 Panel
 
-内置命令族覆盖项目初始化（`/init`）、会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、trace、settings 与 profile update。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
+内置命令族覆盖项目初始化（`/init`）、会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、trace、settings 与 profile update。Model panel 只把 provider 作为 tab 层；进入后用 Up/Down 选模型、Left/Right 调当前行的 reasoning effort。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
 
 裸 `/plugin` 固定提供两个标签页。**已安装**列出当前 profile 中发布 Blue manifest 的
 依赖，标明 compatible/incompatible/invalid，并提供验证/移除动作；**插件目录**先立即
@@ -32,11 +32,11 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 `github:owner/repo@commit` 输入会在委托前归一化。所有 mutation 都委托给 `dsh plugin`，重启后生效，绝不替换 live tree。这份 TUI
 目录不表示另行暂停的 Website 插件市场已经开放。
 
-Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色、窄宽收容与聚焦感知的操作提示行。Tab/Shift-Tab 在语义组之间切换，方向键留在当前组内；提示会随编辑、调整、二次确认、翻页或 controller 专有快捷键切换。Panel footer 不再重复通用按键教学，只保留计数、状态、风险与校验语境。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复 host 持有的 definition。私有 owner lease 会按 generation 约束 command dispatch 及 fulfilled/rejected settlement、editor callback 与 notification observation；保留的 stale handler 不会调用插件代码。Notification observer failure 与其它 observer、publisher result 相互隔离。
+Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色、窄宽收容与聚焦感知的操作提示行。焦点按外层 tabs、内层 tabs、内容组、编辑态逐层下钻；Tab 条用不循环的 Left/Right 加 Enter，Tab/Shift-Tab 只循环内容组，内容方向移动也不循环，Escape 每次返回一层。提示会随编辑、调整、二次确认、翻页或 controller 专有快捷键切换。Panel footer 不再重复通用按键教学，只保留计数、状态、风险与校验语境。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复 host 持有的 definition。私有 owner lease 会按 generation 约束 command dispatch 及 fulfilled/rejected settlement、editor callback 与 notification observation；保留的 stale handler 不会调用插件代码。Notification observer failure 与其它 observer、publisher result 相互隔离。
 
 Blue 自有 interaction chrome 支持英文与简体中文。`/settings` 首行显示“语言”，通过 Harness 的 `locale.preference` 在“跟随系统”“中文”“English”之间循环；切换时会原地刷新已打开的 settings、help、approval、questionnaire、command model 与 slash completion，不替换 controller/editor、不丢选择，也不丢弃已打开 form 的草稿。用户/model/tool 内容、路径、id、命令名、provider/model 名与上游错误详情不翻译。
 
-Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Up/Down 只在导航态切换字段，编辑态仍由 editor 处理；直接输入会开始编辑，未编辑字段第一次 Enter 进入编辑，编辑态 Enter 才前进或提交最后一个字段。Tab 先退出编辑，并保留给语义控件组切换；Escape 第一次返回导航态，第二次取消。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。
+Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Up/Down 只在导航态切换字段，编辑态仍由 editor 处理；直接输入会开始编辑，未编辑字段第一次 Enter 进入编辑，编辑态 Enter 或合法值上的 Tab 才确认并前进或提交最后一个字段，非法字段保持活动。Escape 先返回导航态，再逐层退出 surface。Question panel 显示有界的答题进度，用不循环的 Left/Right 切问题 Tab、Enter 下钻，Tab 在问题 Tab 上无动作；free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。筛选面板按 Escape 只结束筛选并保留 query，清空由独立的 Clear filter action 完成。
 
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。
 

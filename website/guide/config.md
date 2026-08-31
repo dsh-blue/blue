@@ -51,9 +51,9 @@ key 仍在**每次请求时**解析，因此运行期间补充或轮换凭据无
 
 ### 模型与思考力度
 
-- **`/model`** —— 无参数打开模型选择面板（`←` `→` 步进思考力度 segment）；带 id 直接切换。切换会持久化为新默认。
+- **`/model`** —— 无参数打开模型选择面板；带 id 直接切换。面板内选择 `Set as default` 会持久化为新默认。
 - **`Alt+M`** —— 不开面板直接循环切换模型。
-- **`Alt+S`**（面板内）—— **仅本会话**确认：下一步路由立即切换，但不写回持久默认。
+- **`Use for this session`**（面板 action）—— 下一步路由立即切换，但不写回持久默认。
 - **`/effort`**（别名 `/thinking`）—— 切换当前模型的思考力度；`default` 恢复 provider 默认。
 
 `/model` 的持久化写入 settings.yaml 的 `agent-default-model:` 段（形状见[下文](#settings-yaml-三个核心段)）。

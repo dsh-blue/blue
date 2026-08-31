@@ -2587,7 +2587,7 @@ describe('blue whole-tree e2e', () => {
     // and rows carrying the `❯ ` pointer plus the `← current` badge.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
     const picker = tree.terminal.output
-    expect(picker).toContain('↑↓ options · Enter choose · Space toggle branch')
+    expect(picker).toContain('↑↓←→ options · Enter choose · Space toggle branch')
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))
@@ -2740,13 +2740,15 @@ describe('blue whole-tree e2e', () => {
     expect(picker).toContain('ctx 64k')
     expect(picker).toContain('← current')
     expect(picker).toContain('[High]')
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('P')
+    tree.terminal.sendInput('\x1b[D')
+    tree.terminal.sendInput('\t')
     tree.terminal.sendInput('\r')
-    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Switched to mock-pro (mock) · thinking high') })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Switched to mock-pro (mock) · thinking low') })
     typeLine(tree.terminal, 'go')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
     expect(tree.adapter.requests[0]!.model).toBe('mock-pro')
-    expect(tree.adapter.requests[0]!.reasoningEffort).toBe('high' as never)
+    expect(tree.adapter.requests[0]!.reasoningEffort).toBe('low' as never)
   })
 
   it('/model answers the unknown-id and empty-catalog guards', async () => {
@@ -2763,7 +2765,7 @@ describe('blue whole-tree e2e', () => {
       .resolves.toEqual({ kind: 'success', text: 'no models advertised for the configured providers' })
   })
 
-  it('commits /model session-only with Alt+S and persists the default with Enter', async () => {
+  it('commits /model through explicit session-only and persisted actions', async () => {
     const dir = mkdtempTracked('dsh-blue-e2e-model-')
     const settingsPath = `${dir}/settings.yaml`
     const credentialsPath = `${dir}/.credentials.yaml`
@@ -2778,14 +2780,16 @@ describe('blue whole-tree e2e', () => {
       reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' as never },
     })
 
-    // Alt+S switches the session but leaves the stored default untouched.
+    // The secondary action switches the session but leaves the stored default untouched.
     const sessionOnly = await boot()
     const agent = await currentAgent(sessionOnly)
     sessionOnly.terminal.resize(300, 40)
     await expect(executeCommand(sessionOnly, agent, '/model')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(sessionOnly.terminal.output).toContain('Select a model') })
-    sessionOnly.terminal.sendInput('\x1b[B')
-    sessionOnly.terminal.sendInput('\x1bs')
+    sessionOnly.terminal.sendInput('P')
+    sessionOnly.terminal.sendInput('\t')
+    sessionOnly.terminal.sendInput('\x1b[C')
+    sessionOnly.terminal.sendInput('\r')
     await vi.waitFor(() => {
       expect(sessionOnly.terminal.output).toContain('Switched to mock-pro (mock) · thinking high · session only')
     })
@@ -2801,7 +2805,8 @@ describe('blue whole-tree e2e', () => {
     const persistAgent = await currentAgent(persisting)
     await expect(executeCommand(persisting, persistAgent, '/model')).resolves.toEqual({ kind: 'success' })
     await vi.waitFor(() => { expect(persisting.terminal.output).toContain('Select a model') })
-    persisting.terminal.sendInput('\x1b[B')
+    persisting.terminal.sendInput('P')
+    persisting.terminal.sendInput('\t')
     persisting.terminal.sendInput('\r')
     await vi.waitFor(() => {
       expect(persisting.terminal.output).toContain('Switched to mock-pro (mock) · thinking high')
@@ -2824,8 +2829,10 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Thinking effort') })
     // No live effort → the Default segment starts active.
     expect(tree.terminal.output).toContain('[Default]')
-    // Right steps to Low; Enter applies it session-wide.
+    // Right steps to Low; Enter descends, then the primary action persists it.
     tree.terminal.sendInput('\x1b[C')
+    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('\t')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Thinking set to low') })
 
@@ -3222,6 +3229,7 @@ describe('blue whole-tree e2e', () => {
     })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Still asking?') })
     tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('\r')
     await expect(answer).resolves.toEqual({ answers: [{ id: 'q1', selected: ['yes'] }] })
   })
 
@@ -3400,12 +3408,13 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('First question?') })
     expect(tree.terminal.output).toContain('ONE')
     expect(tree.terminal.output).toContain('TWO')
-    // Tab switches to the second question; Enter confirms its focused option,
-    // then the overlay returns to the first (still unanswered) question.
-    tree.terminal.sendInput('\t')
+    // Right switches to the second question without wrapping. Digit selection
+    // works from the tab layer, then the overlay returns to the unanswered first.
+    tree.terminal.sendInput('\x1b[C')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Second question?') })
-    tree.terminal.sendInput('\r')
-    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('1')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('First question?') })
+    tree.terminal.sendInput('1')
     await expect(answer).resolves.toEqual({
       answers: [
         { id: 'q1', selected: ['alpha'] },
@@ -4163,10 +4172,11 @@ describe('blue whole-tree e2e', () => {
     expect(approvalPolicies.at(-1)).toBe('never')
     expect(agent.session.events.some(event => event.type === 'sandbox/mode')).toBe(true)
     // Switching back through the panel needs no gate. The cursor re-seeds
-    // on the now-current danger row; Down wraps to read-only (row 1 of 3).
+    // on the now-current danger row; two Up presses reach read-only without wrapping.
     typeLine(tree.terminal, '/permission')
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Permissions') })
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\x1b[A')
+    tree.terminal.sendInput('\x1b[A')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('preset read-only') })
     const policiesAfter = agent.session.events
@@ -4220,7 +4230,8 @@ describe('blue whole-tree e2e', () => {
       expect(frame).toContain('Revise [3]')
       expect(frame).not.toContain('plan-task-0')
     })
-    // The cursor seeds on the approving row.
+    // The scroll region owns initial focus; Tab enters the decision group.
+    tree.terminal.sendInput('\t')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
@@ -4238,8 +4249,9 @@ describe('blue whole-tree e2e', () => {
     const planMode = tree.ctx.get('planMode')!
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
-    // Right moves the choice cursor to Reject.
-    tree.terminal.sendInput('\x1b[C')
+    // Tab enters decisions, then Down moves to Reject without wrapping.
+    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('\x1b[B')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
     const followUp = JSON.stringify(tree.adapter.requests[1]!.messages)
@@ -4262,10 +4274,9 @@ describe('blue whole-tree e2e', () => {
     const planMode = tree.ctx.get('planMode')!
     await expect(executeCommand(tree, agent, '/plan draft it')).resolves.toMatchObject({ kind: 'success' })
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('Plan review') })
-    // Right twice focuses the inline revision input; typed text rides the
-    // row (digits included — the input owns the keys while focused).
-    tree.terminal.sendInput('\x1b[C')
-    tree.terminal.sendInput('\x1b[C')
+    // Digit 3 enters the inline revision input directly; typed digits then
+    // belong to the editor while it holds focus.
+    tree.terminal.sendInput('3')
     await vi.waitFor(async () => {
       expect(await fullFrame(tree.terminal)).toContain('Type feedback')
     })

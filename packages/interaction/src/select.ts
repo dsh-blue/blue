@@ -8,8 +8,8 @@
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
-import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
-import { MAX_LIST_VISIBLE, counterRow, cycle, oneLine, windowedRange } from './select-list.ts'
+import { ACTION_SUBMIT } from './keys.ts'
+import { MAX_LIST_VISIBLE, counterRow, oneLine } from './select-list.ts'
 
 /** One selectable entry. */
 export interface BlueSelectItem { readonly value: string, readonly label: string, readonly description?: string }
@@ -25,7 +25,7 @@ export interface BlueSelectOptions {
   readonly onCancel: () => void
 }
 
-/** Canonical multi-select controller with wraparound and fallback confirm. */
+/** Canonical multi-select controller with bounded navigation and fallback confirm. */
 export class CanonicalMultiSelectController implements BlueFocusable {
   private readonly adapter: CanonicalPanelAdapter
   private cursor = 0
@@ -37,8 +37,23 @@ export class CanonicalMultiSelectController implements BlueFocusable {
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onFocusChange: identity => {
+        /* v8 ignore next -- core reports only rows from this list. */
+        if (identity.controlId !== 'blue-select' || identity.itemId === undefined) return
+        const index = this.options.items.findIndex(item => item.value === identity.itemId)
+        /* v8 ignore next -- core reports a changed, enabled item identity. */
+        if (index < 0 || index === this.cursor) return
+        this.cursor = index
+        this.adapter.invalidate()
+      },
       onUnhandledEscape: options.onCancel,
-      contextHints: () => [{ id: 'confirm', keys: 'Enter', label: 'confirm', priority: 95 }],
+      maxLeafRows: MAX_LIST_VISIBLE,
+      suppressAutomaticContextHints: true,
+      contextHints: () => [
+        { id: 'toggle', keys: 'Space', label: 'toggle', priority: 100 },
+        { id: 'confirm', keys: 'Enter', label: 'confirm', priority: 95 },
+        { id: 'dismiss', keys: 'Esc', label: 'close', priority: 90 },
+      ],
     })
   }
 
@@ -46,19 +61,8 @@ export class CanonicalMultiSelectController implements BlueFocusable {
   set focused(value: boolean) { this.adapter.focused = value }
 
   handleInput(data: string): void {
-    const { keymap, items } = this.options
-    if (keymap.matches(data, ACTION_MOVE_UP)) { this.move(-1); return }
-    if (keymap.matches(data, ACTION_MOVE_DOWN)) { this.move(1); return }
-    if (keymap.matches(data, ACTION_TOGGLE)) {
-      const value = items[this.cursor]?.value
-      if (value !== undefined) this.onEvent({
-        kind: 'selection-change', controlId: 'blue-select',
-        value: this.toggled.has(value) ? [...this.toggled].filter(id => id !== value) : [...this.toggled, value],
-      })
-      return
-    }
-    if (keymap.matches(data, ACTION_SUBMIT)) { this.options.onConfirm(this.confirmed()); return }
-    if (keymap.matches(data, ACTION_CANCEL)) this.options.onCancel()
+    if (this.options.keymap.matches(data, ACTION_SUBMIT)) { this.options.onConfirm(this.confirmed()); return }
+    this.adapter.handleInput(data)
   }
 
   invalidate(): void { this.adapter.invalidate() }
@@ -66,24 +70,18 @@ export class CanonicalMultiSelectController implements BlueFocusable {
 
   /** Current canonical overlay node. */
   currentNode(): BlueUiNode {
-    const range = windowedRange(this.cursor, this.options.items.length, MAX_LIST_VISIBLE)
     const counter = counterRow(this.cursor, this.options.items.length, MAX_LIST_VISIBLE)
     return {
       kind: 'surface', chrome: 'overlay', title: this.options.title ?? 'Select',
       child: {
         kind: 'list', id: 'blue-select', mode: 'multiple', selectedIds: [...this.toggled],
-        items: this.options.items.slice(range.start, range.end).map(item => ({
+        items: this.options.items.map(item => ({
           id: item.value, label: item.label,
           ...(item.description === undefined ? {} : { detail: oneLine(item.description) }),
         })),
       },
       ...(counter === undefined ? {} : { footer: { kind: 'text', content: counter, tone: 'muted' } as const }),
     }
-  }
-
-  private move(delta: 1 | -1): void {
-    this.cursor = cycle(this.cursor, this.options.items.length, delta)
-    this.adapter.invalidate()
   }
 
   private onEvent(event: BlueUiEvent): void {

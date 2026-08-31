@@ -69,7 +69,6 @@ const SEQUENCE_BY_KEY_ID: Record<string, string> = {
   'ctrl+s': '\x13',
   'ctrl+g': '\x07',
   'ctrl+v': '\x16',
-  'alt+s': '\x1bs',
   'alt+m': '\x1bm',
   'shift+tab': '\x1b[Z',
 }
@@ -82,7 +81,6 @@ export const KEY = {
   down: '\x1b[B',
   left: '\x1b[D',
   right: '\x1b[C',
-  altS: '\x1bs',
   altM: '\x1bm',
   tab: '\t',
   shiftTab: '\x1b[Z',

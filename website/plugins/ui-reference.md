@@ -374,12 +374,15 @@ ui.actions({
 TUI 会直接从 canonical control 角色推导操作，插件不应在
 surface footer 里重复写通用按键教学：
 
-- `Tab` / `Shift-Tab` 按树序切换语义组，并记住每组上次聚焦项。
-- `←` / `→` 在 tabs/actions 内移动；`↑` / `↓` 在 list/form 内移动。
-- tabs 与 single list 用 `Enter` 激活，multiple list 用 `Space`，action 用
-  `Enter` 或 `Space`。
-- text/select 进入编辑或调整态后，提示会切换为完成、应用、换行或取消；
-  待确认 action 则切换为 `Enter confirm · Esc cancel`。
+- 焦点按外层 tabs → 内层 tabs → 内容语义组 → 编辑态逐层下钻。
+- tab 条用不循环的 `←` / `→` 移动，`Enter` 下钻；`Tab` / `Shift-Tab`
+  在 tab 条上无动作，只在内容层循环语义组并记住组内焦点。
+- 内容方向移动不循环；disabled item 不可聚焦。single list 用 `Enter`
+  激活，multiple list 用 `Space` 切换、`Enter` 确认，action 用 `Enter` 或 `Space`。
+- text/select 进入编辑或调整态后，合法值用 `Enter` 或 `Tab` 确认，非法值
+  保持原字段；Escape 按编辑态 → 内容 → 内层 tabs → 外层 tabs → 关闭逐层返回。
+- 待确认 action 的提示切换为 `Enter confirm · Esc cancel`；只读 scroll 可聚焦，
+  支持方向键、Page、Home 与 End。
 
 该行只在当前 plugin pane 获得焦点或 capturing overlay 打开时显示。
 可关闭 surface 才会提示 Escape；被动 pane 和 non-capturing overlay 不会显示伪操作。

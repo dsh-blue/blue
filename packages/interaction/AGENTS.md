@@ -49,11 +49,17 @@ class hierarchy or a second UI vocabulary.
 
 `CanonicalPanelAdapter` leases stable field editors by semantic path/id across
 compiler rebuilds and delegates rows, secret masking, cursor/IME/paste,
-validation, and width containment to core. Up/Down navigates forms only outside
-text editing; typing enters editing, Enter confirms/advances, Tab crosses
-semantic groups, and Escape leaves editing before cancel. It also enables
-core's focus-derived contextual hint row. Controllers contribute only
-non-inferable operations such as digits, filtering, paging, or question
+validation, and width containment to core. Focus descends outer tabs -> nested
+tabs -> content groups -> editing: tabs use non-wrapping Left/Right plus Enter,
+Tab/Shift-Tab cycle content groups only, and Escape climbs one layer at a time.
+Documents may opt row variants into bounded inline Left/Right adjustment; the
+model picker uses that mode so provider remains its only tab layer and model
+rows own their reasoning-effort draft.
+Up/Down navigates forms only outside text editing; typing enters editing, and
+Enter or valid Tab confirms while invalid fields remain active. Filter Escape
+ends filtering without clearing the query; clearing is an explicit action. It
+also enables core's focus-derived contextual hint row. Controllers contribute
+only non-inferable operations such as digits, filtering, paging, or question
 switching; generic shortcut footers are forbidden, while business state and
 validation copy remain in panel footers.
 

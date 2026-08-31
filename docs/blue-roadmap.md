@@ -2,6 +2,8 @@
 
 > Cutover note (2026-08-26): 本文保留阶段/决策历史；其中 `blueSession`、`blueStatus`、`blueIntents`、event-fold 等名称不再是当前 API。现状见 `blue-architecture.md` 与 `blue-seams.md`。
 
+> Interaction supersession (2026-09-01): 下文 `Alt+S` 和 model 底部 thinking tab 记录的是 2026-08-20 的 S23 历史裁决。`0.1.2-alpha.1` 已移除该绑定，session-only 改为面板中的显式 `Use for this session` action；model 只保留 provider tab，列表行内用 Left/Right 调 thinking。当前交互以 release note 与键位参考为准。
+
 > **仓库形态（2026-08-21 更新）**：Blue 是独立仓库（`blue/` 目录，产品名 blue），以 npm registry 版本依赖 harness（`@deepseek-ai/*@0.1.1-rc.2` 钉版——2026-08-21 随 S26 自 0.1.0-rc.7 迁移、2026-08-22 R1 升至 rc.2，跟随其 prerelease 节奏升级），经 `dsh plugin --profile blue add @dsh-blue/blue` 挂载为 profile。harness 的 pre-release API 破坏风险由"钉版本 + 升级时适配"承担，与 roadmap 风险登记一致。
 
 > 产品名：**Blue**（deepseek-harness 的官方 TUI surface）
