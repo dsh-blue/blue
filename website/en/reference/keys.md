@@ -44,7 +44,7 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | `/sessions` picker | ↑↓ navigate, `Enter` resume, `Esc` cancel |
 | Approval panel | ↑↓ + `Enter`, or number keys `1`–`4` directly; `Escape` rejects |
 | Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter`; `Esc` inside the Other editor returns to the list |
-| Form panel | `Tab` / `↓` forward, `Shift-Tab` / `↑` backward; `Enter` advances, submits from the last field |
+| Form panel | `Up` / `Down` moves between fields; typing starts editing; the first `Enter` enters edit mode and Enter while editing advances or submits; `Tab` switches semantic control groups; `Escape` leaves editing, then cancels |
 | `/model` · `/effort` panels | `←` `→` step the segment control; `Enter` confirms and persists the new default; `Alt+S` confirms **session-only** (the persisted default stays untouched) |
 | `/btw` pane | `Esc` close; mouse wheel / `PageUp` / `PageDown` scroll; `Enter` follow-up |
 

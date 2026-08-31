@@ -67,6 +67,7 @@ export class Questionnaire implements BlueFocusable {
       onEvent: event => this.onEvent(event),
       onTextSubmit: (_controlId, value) => this.submitCustom(this.current(), this.state(), value),
       onUnhandledEscape: options.onCancel,
+      startEditing: () => this.editing,
     })
   }
 
@@ -252,7 +253,6 @@ export class Questionnaire implements BlueFocusable {
   private onEvent(event: BlueUiEvent): void {
     if (event.kind === 'value-change' && event.controlId === 'answer' && typeof event.value === 'string') {
       this.state().draft = event.value
-      this.adapter.invalidate()
       return
     }
     if (event.kind === 'selection-change' && event.controlId === 'questionnaire-options' && typeof event.value === 'string') {

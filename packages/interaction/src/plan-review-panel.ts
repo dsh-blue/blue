@@ -90,6 +90,7 @@ export class PlanReviewPanel implements BlueFocusable {
       },
       onTextSubmit: (_controlId, value) => this.submitRevision(value),
       focusIndex: () => this.cursor === 2 ? 1 : 0,
+      startEditing: () => this.cursor === 2,
     })
   }
 
@@ -158,7 +159,6 @@ export class PlanReviewPanel implements BlueFocusable {
   private onEvent(event: BlueUiEvent): void {
     if (event.kind === 'value-change' && event.controlId === 'revision' && typeof event.value === 'string') {
       this.revision = event.value
-      this.adapter.invalidate()
       return
     }
   }

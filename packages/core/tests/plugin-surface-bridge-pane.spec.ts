@@ -543,6 +543,7 @@ describe('plugin surface bridge panes', () => {
     target.handleInput?.('a')
     await flushMicrotasks()
     target.handleInput?.('\t')
+    target.handleInput?.('\x1b[B')
     target.handleInput?.('b')
     await flushMicrotasks()
     expect(pending).toHaveLength(2)
@@ -551,6 +552,7 @@ describe('plugin surface bridge panes', () => {
     expect(pending[1]!.context.signal.aborted).toBe(false)
 
     target.handleInput?.('\x1b[Z')
+    target.handleInput?.('\x1b[A')
     target.handleInput?.('c')
     await flushMicrotasks()
     expect(pending).toHaveLength(3)
@@ -810,6 +812,7 @@ describe('plugin surface bridge panes', () => {
     const target = entry(runtime.surfaces, 'defaults').focusTarget!
     target.handleInput?.('a')
     target.handleInput?.('\t')
+    target.handleInput?.('\x1b[B')
     target.handleInput?.('b')
     await flushMicrotasks()
     expect(renders).toBe(2)

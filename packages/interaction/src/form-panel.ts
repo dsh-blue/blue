@@ -48,6 +48,7 @@ export class CanonicalFormController implements BlueFocusable {
   private readonly values: Record<string, string>
   private error: string | undefined
   private errorField = -1
+  private editing = false
 
   constructor(private readonly options: FormPanelOptions) {
     this.values = Object.fromEntries(options.fields.map(field => [field.id, field.initial ?? '']))
@@ -57,11 +58,14 @@ export class CanonicalFormController implements BlueFocusable {
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
       onTextSubmit: () => {
+        this.editing = false
         if (this.active === this.options.fields.length - 1) this.submit()
         else this.move(1)
       },
       onUnhandledEscape: options.onCancel,
       focusIndex: () => this.active,
+      focusAxis: 'vertical',
+      startEditing: () => this.editing,
     })
   }
 
@@ -71,23 +75,27 @@ export class CanonicalFormController implements BlueFocusable {
   setError(text: string | undefined): void {
     this.error = text
     this.errorField = text === undefined ? -1 : this.active
+    this.editing = false
     this.adapter.invalidate()
   }
 
   focusField(id: string): void {
     const index = this.options.fields.findIndex(field => field.id === id)
-    if (index >= 0) { this.active = index; this.adapter.invalidate() }
+    if (index >= 0) { this.active = index; this.editing = false; this.adapter.invalidate() }
   }
 
   handleInput(data: string): void {
     const { keymap } = this.options
-    if (keymap.matches(data, ACTION_MOVE_DOWN) || data === '\t') { this.move(1); return }
-    if (keymap.matches(data, ACTION_MOVE_UP) || data === '\x1b[Z') { this.move(-1); return }
+    if (keymap.matches(data, ACTION_MOVE_DOWN)) { this.move(1); return }
+    if (keymap.matches(data, ACTION_MOVE_UP)) { this.move(-1); return }
+    if (data === '\t' || data === '\x1b[Z') { this.adapter.handleInput(data); this.editing = false; return }
     if (keymap.matches(data, ACTION_SUBMIT)) {
+      const wasEditing = this.editing
       this.adapter.handleInput(data)
+      if (!wasEditing) this.editing = true
       return
     }
-    if (keymap.matches(data, ACTION_CANCEL)) { this.options.onCancel(); return }
+    if (keymap.matches(data, ACTION_CANCEL)) { this.adapter.handleInput(data); this.editing = false; return }
     if (data === '\x04' && this.options.onDelete !== undefined) { this.options.onDelete(); return }
     this.adapter.handleInput(data)
   }
@@ -112,20 +120,23 @@ export class CanonicalFormController implements BlueFocusable {
           ...(this.error !== undefined && this.errorField === index ? { error: this.error } : {}),
         })),
       },
-      footer: { kind: 'text', content: `${t('Tab / ↑↓ fields · Enter submit · Esc {cancel}', { cancel })}${deleteHint}`, tone: 'muted' },
+      footer: { kind: 'text', content: `${t('↑↓ fields · Enter edit/submit · Esc back/{cancel}', { cancel })}${deleteHint}`, tone: 'muted' },
     }
   }
 
   private move(delta: 1 | -1): void {
     const count = this.options.fields.length
     if (count === 0) return
+    this.editing = false
     this.active = (this.active + count + delta) % count
-    this.adapter.handleInput(delta === 1 ? '\t' : '\x1b[Z')
+    this.adapter.handleInput('\t')
+    this.adapter.handleInput(delta === 1 ? '\x1b[B' : '\x1b[A')
   }
 
   private onEvent(event: BlueUiEvent): void {
     if (event.kind === 'value-change' && typeof event.value === 'string') {
       this.values[event.controlId] = event.value
+      this.editing = true
       if (this.error !== undefined) { this.error = undefined; this.errorField = -1; this.adapter.invalidate() }
       return
     }

@@ -104,11 +104,16 @@ Dialogs mount through `EditorHostService.mountReplacement()`. The migrated list,
 
 `CanonicalFormController` emits a public `form` inside an overlay `surface`.
 `CanonicalPanelAdapter` alone caches core-created editor engines by canonical
-field path/control id across compiler rebuilds. Core owns field rows, secret
-masking, cursor/IME/bracketed-paste behavior, validation, and width containment;
+field path/control id across compiler rebuilds. On invalidation it blurs those
+engines and detaches only its change/submit callbacks before the replacement
+compiler leases them. It restores a controller selection either by semantic
+group or by the form's vertical axis, and explicit free-text modes re-enter
+editing after a structural rebuild. Core owns field rows, secret masking,
+cursor/IME/bracketed-paste behavior, validation, and width containment;
 controllers and canonical nodes retain only renderer-neutral values and events.
-Enter reaches the active editor and its submit callback advances or submits;
-Tab/Shift-Tab and Escape remain composite-owned roving/cancel keys.
+Up/Down moves within a form. Typing starts editing directly; Enter first enters
+an untouched field, while editor submit advances or submits. Tab/Shift-Tab
+remain composite-owned group navigation and Escape exits editing before cancel.
 Approval, Questionnaire, PlanReview, Help, Info, and loading documents now
 project canonical `surface`, `list`, `form`, `loader`, and content nodes through
 the same adapter. Their controllers retain only answer/draft/window state and

@@ -863,6 +863,7 @@ describe('plugin surface bridge overlays', () => {
       const coalescedComponent = f.stack().at(-1)!.component
       coalescedComponent.handleInput?.('x')
       coalescedComponent.handleInput?.('\t')
+      coalescedComponent.handleInput?.('\x1b[B')
       coalescedComponent.handleInput?.('y')
       await flush()
       expect(coalescedRenders).toBe(2)

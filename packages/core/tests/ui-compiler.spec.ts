@@ -414,7 +414,7 @@ describe('compileBlueUiNode', () => {
     expect(visibleWidth(result.component.render(120)[0]!)).toBe(120)
   })
 
-  it('uses one roving focus target, skips disabled controls, and dispatches structured events', () => {
+  it('uses one roving focus target, skips disabled controls, and keeps Tab inside one group', () => {
     const { options, events } = fixture()
     const result = compiled(ui.actions({ id: 'actions', items: [{ id: 'one', label: 'One' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'three', label: 'Three' }] }), options)
     const focus = result.focusTarget!
@@ -422,9 +422,11 @@ describe('compileBlueUiNode', () => {
     focus.focused = true
     expect(focus.render(40).join('')).toContain(CURSOR_MARKER)
     focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'activate', controlId: 'three' }])
     focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[D')
     focus.handleInput?.(' ')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'one' })
   })
@@ -495,7 +497,7 @@ describe('compileBlueUiNode', () => {
     const { options, events } = fixture()
     const focus = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), options).focusTarget!
     focus.focused = true
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.focused = false
     expect(focus.render(20).join('')).not.toContain(CURSOR_MARKER)
     focus.focused = true
@@ -519,6 +521,7 @@ describe('compileBlueUiNode', () => {
     if (!first.ok) throw new Error(first.message)
     const stale = first.value.focusTarget!
     stale.focused = true
+    stale.handleInput?.('\r')
     stale.handleInput?.('\x1b[D')
     stale.handleInput?.('X')
     expect(firstFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXB' })
@@ -545,6 +548,9 @@ describe('compileBlueUiNode', () => {
     ;(stale as unknown as { focusEditor(): void }).focusEditor()
     stale.invalidate()
 
+    current.handleInput?.('\x1b')
+    current.handleInput?.('\x1b[B')
+    current.handleInput?.('\r')
     current.handleInput?.('\t')
     current.handleInput?.('\r')
     const thirdFixture = fixture()
@@ -559,8 +565,6 @@ describe('compileBlueUiNode', () => {
     if (!third.ok) throw new Error(third.message)
     third.value.focusTarget!.focused = true
     expect(third.value.component.render(80).join('\n')).toContain('Enabled: [on]')
-    third.value.focusTarget!.handleInput?.('\t')
-    third.value.focusTarget!.handleInput?.('\r')
     const confirmationFixture = fixture()
     const confirmation = compileBlueUiSurfaceNode(ui.stack.column([
       ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
@@ -583,6 +587,8 @@ describe('compileBlueUiNode', () => {
     if (!external.ok) throw new Error(external.message)
     external.value.focusTarget!.focused = true
     expect(external.value.component.render(80).join('\n')).toContain('Server')
+    external.value.focusTarget!.handleInput?.('\x1b[A')
+    external.value.focusTarget!.handleInput?.('\r')
     external.value.focusTarget!.handleInput?.('\r')
     expect(externalFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'Server' })
 
@@ -631,6 +637,7 @@ describe('compileBlueUiNode', () => {
     stale.focused = true
     first.value.component.render(80)
     stale.handleInput?.('\t')
+    stale.handleInput?.('\r')
     stale.handleInput?.('\x1b[D')
     stale.handleInput?.('X')
     expect(firstFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'instructions', value: 'AXB' })
@@ -662,7 +669,7 @@ describe('compileBlueUiNode', () => {
     target.handleInput?.('Y')
     expect(restoredFixture.events).toEqual([{ kind: 'value-change', controlId: 'instructions', value: 'AXYB' }])
     expect(editors).toHaveLength(1)
-    expect(editors[0]!.handleInput).toHaveBeenCalledWith('\x1b[B')
+    expect(editors[0]!.handleInput).not.toHaveBeenCalledWith('\x1b[B')
     const restoredRows = restored.value.component.render(80).join('\n')
     expect(restoredRows.replaceAll(CURSOR_MARKER, '')).toContain('Instructions: AXYB')
     expect(restoredRows.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
@@ -718,8 +725,8 @@ describe('compileBlueUiNode', () => {
     target.handleInput?.('\x1b[C')
     target.handleInput?.('\r')
     expect(f.events).toEqual([
-      { kind: 'tab-change', controlId: 'metric-view', tabId: 'cost' },
       { kind: 'tab-change', controlId: 'metric-view', tabId: 'tokens' },
+      { kind: 'tab-change', controlId: 'metric-view', tabId: 'cost' },
     ])
     stale.handleInput?.('\r')
     expect(f.events).toHaveLength(2)
@@ -734,7 +741,6 @@ describe('compileBlueUiNode', () => {
     target.handleInput?.('\x1b[C')
     target.handleInput?.('\x1b[C')
     target.handleInput?.('\r')
-    target.handleInput?.('\t')
     target.handleInput?.('\t')
     target.handleInput?.('\x1b[D')
     target.handleInput?.('\r')
@@ -764,6 +770,9 @@ describe('compileBlueUiNode', () => {
     if (!first.ok) throw new Error(first.message)
     first.value.focusTarget!.focused = true
     first.value.component.render(80)
+    expect(editors[0]!.focused).toBe(false)
+    first.value.focusTarget!.handleInput?.('\r')
+    first.value.component.render(80)
     expect(editors[0]!.focused).toBe(true)
 
     f.viewport.columns = 40
@@ -787,7 +796,7 @@ describe('compileBlueUiNode', () => {
     restored.value.focusTarget!.focused = true
     restored.value.component.render(80)
     expect(editors).toHaveLength(1)
-    expect(editors[0]!.focused).toBe(true)
+    expect(editors[0]!.focused).toBe(false)
   })
 
   it('restores responsive focus by semantic id but forgets controls that are removed', () => {
@@ -805,6 +814,7 @@ describe('compileBlueUiNode', () => {
     if (!first.ok) throw new Error(first.message)
     const firstFocus = first.value.focusTarget!
     firstFocus.focused = true
+    firstFocus.handleInput?.('\t')
     firstFocus.handleInput?.('\r')
     expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'b' })
 
@@ -899,11 +909,14 @@ describe('compileBlueUiNode', () => {
     focus.focused = true
     first.value.component.render(80)
     expect(editors).toHaveLength(1)
+    focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[D')
     focus.handleInput?.('X')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b')
     focus.handleInput?.('\x1b[B')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
     focus.handleInput?.('\t')
     focus.handleInput?.('\r')
@@ -930,6 +943,9 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('\r')
     expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'delete' })
     focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('\r')
     focus.handleInput?.('Y')
     expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXYB' })
     expect(first.value.component.render(40).join('').replaceAll(CURSOR_MARKER, '')).toContain('AXYB')
@@ -956,6 +972,7 @@ describe('compileBlueUiNode', () => {
     firstTarget.focused = true
     first.value.component.render(40)
     expect(editors).toHaveLength(1)
+    firstTarget.handleInput?.('\r')
     firstTarget.handleInput?.('\x1b[D')
     firstTarget.handleInput?.('X')
     expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXB' })
@@ -977,6 +994,7 @@ describe('compileBlueUiNode', () => {
     reused.value.component.render(40)
     expect(editors).toHaveLength(1)
     reused.value.focusTarget!.focused = true
+    reused.value.focusTarget!.handleInput?.('\r')
     reused.value.focusTarget!.handleInput?.('Y')
     expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXYB' })
     firstTarget.handleInput?.('stale')
@@ -987,6 +1005,80 @@ describe('compileBlueUiNode', () => {
     disposedChange('ignored')
     disposedSubmit('ignored')
     expect(f.events).toHaveLength(2)
+  })
+
+  it('cleans replaced and disposed compatibility-resolved editors', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const firstEditor = createTestEditor()
+    const secondEditor = createTestEditor()
+    const firstKey = vi.fn(() => false)
+    const secondKey = vi.fn(() => false)
+    firstEditor.onKey = firstKey
+    secondEditor.onKey = secondKey
+    let resolved = firstEditor
+    const f = fixture({ resolveTextEditor: () => resolved })
+    const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Blue' }] })
+    const first = compileBlueUiSurfaceNode(form, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.focusTarget!.focused = true
+    first.value.focusTarget!.handleInput?.('\r')
+    first.value.component.render(40)
+    expect(firstEditor.focused).toBe(true)
+    const staleChange = firstEditor.onChange!
+    const staleSubmit = firstEditor.onSubmit!
+
+    resolved = secondEditor
+    const replaced = compileBlueUiSurfaceNode(form, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(replaced.ok).toBe(true)
+    if (!replaced.ok) throw new Error(replaced.message)
+    replaced.value.component.render(40)
+    expect(firstEditor.focused).toBe(false)
+    expect(firstEditor.onChange).toBeUndefined()
+    expect(firstEditor.onSubmit).toBeUndefined()
+    expect(firstEditor.onKey).toBe(firstKey)
+    expect(secondEditor.onChange).toBeTypeOf('function')
+    expect(secondEditor.onSubmit).toBeTypeOf('function')
+    staleChange('ignored')
+    staleSubmit('ignored')
+    expect(f.events).toEqual([])
+
+    runtime.deactivate()
+    expect(secondEditor.focused).toBe(false)
+    expect(secondEditor.onChange).toBeUndefined()
+    expect(secondEditor.onSubmit).toBeUndefined()
+    expect(secondEditor.onKey).toBe(secondKey)
+
+    const rebound = compileBlueUiSurfaceNode(form, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(rebound.ok).toBe(true)
+    if (!rebound.ok) throw new Error(rebound.message)
+    rebound.value.component.render(40)
+    const disposedChange = secondEditor.onChange!
+    const disposedSubmit = secondEditor.onSubmit!
+    const externalChange = vi.fn()
+    const externalSubmit = vi.fn()
+    secondEditor.onChange = externalChange
+    secondEditor.onSubmit = externalSubmit
+    runtime.dispose()
+    expect(secondEditor.focused).toBe(false)
+    expect(secondEditor.onChange).toBe(externalChange)
+    expect(secondEditor.onSubmit).toBe(externalSubmit)
+    expect(secondEditor.onKey).toBe(secondKey)
+    disposedChange('ignored')
+    disposedSubmit('ignored')
+    expect(f.events).toEqual([])
   })
 
   it('drops incompatible field state when a semantic field changes kind', () => {
@@ -1146,6 +1238,8 @@ describe('compileBlueUiNode', () => {
     focus.focused = true
     expect(focus.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
     expect(focus.render(80).join('')).toContain('→ Name:')
+    focus.handleInput?.('\x7f')
+    expect(events).toEqual([])
     focus.handleInput?.('B')
     focus.handleInput?.(' ')
     focus.handleInput?.('界🙂')
@@ -1157,19 +1251,22 @@ describe('compileBlueUiNode', () => {
     if (result.node.kind !== 'form') throw new Error('expected form')
     expect(result.node.fields[0]).toMatchObject({ value: 'A' })
 
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('note')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('z')
     expect(focus.render(80).join('\n')).toContain('Secret: ••')
-    focus.handleInput?.('\t')
-    focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b')
     focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[C')
     expect(focus.render(80).join('\n')).toContain('Choice: Alpha')
-    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
 
     expect(events).toEqual([
@@ -1189,19 +1286,26 @@ describe('compileBlueUiNode', () => {
     expect(refreshed.component.render(40).join('')).not.toContain('AB')
 
     const selectDraft = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: null, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
-    selectDraft.focusTarget!.handleInput?.('\x1b[A')
+    selectDraft.focusTarget!.handleInput?.('\x1b[D')
     expect(selectDraft.component.render(40).join('')).toContain('Beta')
     const selectRefresh = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: 'b', options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
     expect(selectRefresh.component.render(40).join('')).toContain('Beta')
 
     const noOptionsEvents: unknown[] = []
     const noOptions = compiled(ui.form({ id: 'empty-select', fields: [{ kind: 'select', id: 'empty', label: 'Empty', value: null, options: [{ id: 'disabled', label: 'Disabled', disabled: true }] }] }), fixture({ emit: event => noOptionsEvents.push(event) }).options)
-    noOptions.focusTarget!.handleInput?.('\x1b[B')
+    noOptions.focusTarget!.handleInput?.('\x1b[C')
     noOptions.focusTarget!.handleInput?.('\r')
     expect(noOptionsEvents).toEqual([{ kind: 'value-change', controlId: 'empty', value: null }])
 
+    const pasteEvents: unknown[] = []
+    const pasteText = compiled(ui.form({ id: 'paste-form', fields: [{ kind: 'input', id: 'paste', label: 'Paste', value: '' }] }), fixture({ emit: event => pasteEvents.push(event) }).options)
+    pasteText.focusTarget!.handleInput?.('\x1b[200~pasted\x1b[201~')
+    expect(pasteEvents).toEqual([{ kind: 'value-change', controlId: 'paste', value: 'pasted' }])
+
     const enterEvents: unknown[] = []
     const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({ emit: event => enterEvents.push(event) }).options)
+    enterText.focusTarget!.handleInput?.('\r')
+    expect(enterEvents).toEqual([])
     enterText.focusTarget!.handleInput?.('\r')
     expect(enterEvents).toEqual([{ kind: 'value-change', controlId: 'enter', value: 'value' }])
   })
@@ -1252,9 +1356,9 @@ describe('compileBlueUiNode', () => {
     expect(escapes).toEqual(['escape'])
     expect(focus.render(80).join('')).not.toContain('Really delete?')
     focus.handleInput?.('\r')
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     expect(focus.render(80).join('')).not.toContain('Really delete?')
-    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\x1b[D')
     focus.handleInput?.(' ')
     focus.focused = false
     focus.focused = true
@@ -1263,12 +1367,12 @@ describe('compileBlueUiNode', () => {
     expect(events).toEqual([])
     focus.handleInput?.(' ')
     expect(events).toEqual([{ kind: 'activate', controlId: 'delete' }])
-    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'keep' })
   })
 
-  it('routes direction keys within the active pattern while Tab crosses controls', () => {
+  it('routes direction keys within the active pattern while Tab crosses groups', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
       ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'disabled', label: 'Disabled', disabled: true }, { id: 'b', label: 'B' }] }),
@@ -1291,6 +1395,223 @@ describe('compileBlueUiNode', () => {
     ])
   })
 
+  it('uses Tab between groups, arrows within groups, and remembers each group item', () => {
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const { options, events } = fixture({ components: localComponents })
+    const focus = compiled(ui.stack.column([
+      ui.tabs({ id: 'tabs', activeId: 'editor', items: [{ id: 'editor', label: 'Editor' }, { id: 'snapshot', label: 'Snapshot' }] }),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'Director' },
+        { kind: 'textarea', id: 'notes', label: 'Notes', value: 'Move the cursor' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      ] }),
+      ui.actions({ id: 'commands', items: [{ id: 'close', label: 'Close' }, { id: 'reset', label: 'Reset', intent: 'primary' }] }),
+    ]), options).focusTarget!
+    focus.focused = true
+    focus.render(80)
+    expect(editors.every(editor => editor.focused === false)).toBe(true)
+
+    focus.handleInput?.('\t')
+    expect(focus.render(80).join('\n')).toContain('→ Name:')
+    focus.handleInput?.('\x1b[B')
+    expect(focus.render(80).join('\n')).toContain('→ Notes:')
+    focus.handleInput?.('\r')
+    focus.render(80)
+    expect(editors[1]!.focused).toBe(true)
+    focus.handleInput?.('\x1b')
+    focus.render(80)
+    expect(editors[1]!.focused).toBe(false)
+
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    expect(events).toEqual([
+      { kind: 'value-change', controlId: 'enabled', value: true },
+      { kind: 'activate', controlId: 'reset' },
+      { kind: 'value-change', controlId: 'enabled', value: false },
+    ])
+
+    focus.handleInput?.('\x1b[A')
+    focus.handleInput?.('!')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[Z')
+    const returned = focus.render(80).join('\n')
+    expect(returned).toContain('→ Notes:')
+    expect(editors[1]!.focused).toBe(false)
+    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'notes', value: 'Move the cursor!' })
+  })
+
+  it('keeps group item memory across a persistent-runtime reorder', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const tabs = ui.tabs({ id: 'views', activeId: 'summary', items: [
+      { id: 'summary', label: 'Summary' },
+      { id: 'details', label: 'Details' },
+    ] })
+    const form = ui.form({ id: 'profile', fields: [
+      { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      { kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+        { id: 'dark', label: 'Dark' },
+        { id: 'light', label: 'Light' },
+      ] },
+    ] })
+    const actions = ui.actions({ id: 'commands', items: [
+      { id: 'save', label: 'Save', intent: 'primary' },
+      { id: 'cancel', label: 'Cancel' },
+    ] })
+    const first = compileBlueUiSurfaceNode(ui.stack.column([tabs, form, actions]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.handleInput?.('\x1b[C')
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[B')
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[C')
+
+    const reordered = compileBlueUiSurfaceNode(ui.stack.column([actions, tabs, form]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(reordered.ok).toBe(true)
+    if (!reordered.ok) throw new Error(reordered.message)
+    const focus = reordered.value.focusTarget!
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[Z')
+    focus.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'value-change', controlId: 'theme', value: 'dark' },
+      { kind: 'tab-change', controlId: 'views', tabId: 'details' },
+      { kind: 'activate', controlId: 'cancel' },
+    ])
+    stale.handleInput?.('\r')
+    expect(f.events).toHaveLength(3)
+  })
+
+  it('forgets removed focus and editing even when the removal generation never renders', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const form = ui.form({ id: 'profile', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+      { kind: 'textarea', id: 'notes', label: 'Notes', value: 'N!' },
+    ] })
+    const actions = ui.actions({ id: 'commands', items: [{ id: 'close', label: 'Close' }] })
+    const first = compileBlueUiSurfaceNode(ui.stack.column([form, actions]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const firstFocus = first.value.focusTarget!
+    firstFocus.focused = true
+    first.value.component.render(80)
+    firstFocus.handleInput?.('\x1b[B')
+    firstFocus.handleInput?.('!')
+    expect(editors[1]!.focused).toBe(true)
+
+    const removed = compileBlueUiSurfaceNode(actions, {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    expect(editors[1]!.focused).toBe(false)
+
+    const restored = compileBlueUiSurfaceNode(ui.stack.column([form, actions]), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'internal',
+    })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    const focus = restored.value.focusTarget!
+    focus.focused = true
+    focus.handleInput?.('\t')
+    const rows = restored.value.component.render(80).join('\n')
+    expect(rows).toContain('→ Name:')
+    expect(rows).not.toContain('→ Notes:')
+    expect(editors[1]!.focused).toBe(false)
+  })
+
+  it('separates form navigation from text editing and select value changes', () => {
+    const editor = createTestEditor()
+    editor.handleInput = vi.fn(editor.handleInput)
+    const escapes: string[] = []
+    const f = fixture({
+      resolveTextEditor: () => editor,
+      onUnhandledEscape: () => escapes.push('escape'),
+    })
+    const result = compiled(ui.form({ id: 'profile', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+      { kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+        { id: 'dark', label: 'Dark' },
+        { id: 'light', label: 'Light' },
+      ] },
+      { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+    ] }), f.options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    focus.render(60)
+    expect(editor.focused).toBe(false)
+
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\x1b[C')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: Light')
+    focus.handleInput?.('\x1b[A')
+    expect(result.component.render(60).join('\n')).toContain('→ Name: Blue')
+    focus.handleInput?.('\x1b[C')
+    expect(editor.handleInput).not.toHaveBeenCalledWith('\x1b[C')
+
+    focus.handleInput?.('\r')
+    focus.render(60)
+    expect(editor.focused).toBe(true)
+    focus.handleInput?.('\x1b')
+    focus.render(60)
+    expect(editor.focused).toBe(false)
+    expect(escapes).toEqual([])
+    focus.handleInput?.('\x1b')
+    expect(escapes).toEqual(['escape'])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.render(60)
+    expect(editor.focused).toBe(false)
+    expect(result.component.render(60).join('\n')).toContain('→ Name: Blue')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    expect(f.events).toEqual([{ kind: 'value-change', controlId: 'theme', value: 'light' }])
+  })
+
   it('dispatches list-add, form toggle/submit/cancel, loader and empty actions', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
@@ -1300,10 +1621,19 @@ describe('compileBlueUiNode', () => {
       ui.empty({ title: 'Empty', actions: ui.actions({ id: 'empty-actions', items: [{ id: 'empty-go', label: 'Go' }] }) }),
     ])
     const focus = compiled(tree, options).focusTarget!
-    for (let index = 0; index < 7; index += 1) {
-      focus.handleInput?.('\r')
-      focus.handleInput?.('\t')
-    }
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
     expect(events).toEqual([
       { kind: 'selection-change', controlId: 'list', value: ['item'] },
       { kind: 'value-change', controlId: 'toggle', value: true },
@@ -1358,7 +1688,7 @@ describe('compileBlueUiNode', () => {
     const trackedColors = new Proxy(colors, { get: (target, key, receiver) => key === 'selectedBg' ? selectedBg : Reflect.get(target, key, receiver) })
     const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), fixture({ colors: trackedColors }).options)
     tabs.focusTarget!.focused = true
-    tabs.focusTarget!.handleInput?.('\t')
+    tabs.focusTarget!.handleInput?.('\x1b[C')
     const tabRow = tabs.component.render(40).join('')
     expect(tabRow).toContain('‹ Active ›')
     expect(tabRow).toContain(`${CURSOR_MARKER} Focused`)
@@ -1669,6 +1999,97 @@ describe('compileBlueEditorShellNode', () => {
     const failedDry = brokenShell.renderChecked(20, { dryRun: true })
     expect(failedDry.runtimeFailure).toBe('checked editor exploded')
     expect(broken.focused).toBe(true)
+  })
+
+  it('restores pooled form editor focus after responsive dry runs', () => {
+    const shell = {
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'editor-control' } },
+        {
+          node: ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Blue' }] }),
+          when: { minWidth: 60 },
+        },
+      ],
+    }
+    const pooled: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        pooled.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const current = compiledEditorShell(shell, createTestEditor(), { components: localComponents })
+    current.result.focusTarget.focused = true
+    current.result.component.render(80)
+    current.result.focusTarget.handleInput?.('\t')
+    current.result.focusTarget.handleInput?.('\r')
+    current.result.component.render(80)
+    expect(pooled).toHaveLength(1)
+    expect(pooled[0]!.focused).toBe(true)
+
+    current.viewport.columns = 40
+    current.result.component.renderChecked(40, { dryRun: true })
+    expect(pooled[0]!.focused).toBe(true)
+    current.viewport.columns = 80
+    current.result.component.renderChecked(80, { dryRun: true })
+    expect(pooled[0]!.focused).toBe(true)
+    current.result.component.render(80)
+    expect(pooled[0]!.focused).toBe(true)
+
+    const emptyRuntime = new BlueUiSurfaceRuntime()
+    const restoreEmptyFocus = emptyRuntime.checkpointEditorFocus()
+    restoreEmptyFocus()
+    restoreEmptyFocus()
+
+    const createdDuringDryRun: BlueEditor[] = []
+    const lateComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        createdDuringDryRun.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const late = compiledEditorShell(shell, createTestEditor(), { components: lateComponents })
+    late.viewport.columns = 40
+    late.result.focusTarget.focused = true
+    late.result.component.render(40)
+    expect(createdDuringDryRun).toEqual([])
+    late.viewport.columns = 80
+    late.result.component.renderChecked(80, { dryRun: true })
+    expect(createdDuringDryRun).toHaveLength(1)
+    expect(createdDuringDryRun[0]!.focused).toBe(false)
+
+    const resolved = createTestEditor()
+    resolved.focused = true
+    const resolvedLate = compiledEditorShell(shell, createTestEditor(), {
+      resolveTextEditor: () => resolved,
+    })
+    resolvedLate.viewport.columns = 40
+    resolvedLate.result.component.render(40)
+    resolvedLate.viewport.columns = 80
+    resolvedLate.result.component.renderChecked(80, { dryRun: true })
+    expect(resolved.focused).toBe(true)
+
+    const shared = createTestEditor()
+    shared.focused = true
+    const sharedResolver = compiledEditorShell({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'editor-control' } },
+        { node: ui.form({ id: 'shared', fields: [
+          { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+          { kind: 'input', id: 'alias', label: 'Alias', value: 'Dsh' },
+        ] }) },
+      ],
+    }, createTestEditor(), { resolveTextEditor: () => shared })
+    sharedResolver.result.component.renderChecked(80, { dryRun: true })
+    expect(shared.focused).toBe(true)
   })
 
   it('compiles a root slot and contains validation, setup, and editor render failures', () => {

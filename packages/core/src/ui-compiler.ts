@@ -210,6 +210,8 @@ interface FocusState {
   activeGroup: string | undefined
   desiredKey: string | undefined
   desiredGroup: string | undefined
+  editingKey: string | undefined
+  readonly groupActiveKeys: Map<string, string>
   lastIndex: number
   focused: boolean
   layoutPass: boolean
@@ -223,6 +225,7 @@ interface FocusState {
   textEditor(field: TextField, key: string): BlueEditor
   setSelectValue(key: string, canonical: string | null, value: string | null): void
   setToggleValue(key: string, canonical: boolean, value: boolean): void
+  setEditing(key: string | undefined): void
   blurInactiveEditors(controls: readonly ControlDescriptor[]): void
   setLayoutViewport(viewport: BlueUiViewport): void
 }
@@ -324,7 +327,7 @@ function editorFieldComponent(field: TextField, key: string, state: FocusState, 
         const editor = currentEditor()
         const available = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
         const focused = state.focused && state.activeKey === key && field.disabled !== true
-        editor.focused = focused
+        editor.focused = focused && state.editingKey === key
         const prefix = focused ? `${FOCUS_SENTINEL}→ ` : '   '
         const labelText = `${prefix}${field.label}: `
         const label = field.disabled === true ? options.colors.muted(labelText) : focused ? options.colors.primary(labelText) : options.colors.textStrong(labelText)
@@ -479,6 +482,43 @@ function actionGroup(node: Extract<BlueUiNode, { readonly kind: 'actions' }>): s
 
 function fieldStateKey(key: string, kind: BlueFormField['kind']): string {
   return JSON.stringify(['field-state', key, kind])
+}
+
+function groupOrder(controls: readonly ControlDescriptor[]): string[] {
+  return [...new Set(controls.map(control => control.group))]
+}
+
+function groupTarget(controls: readonly ControlDescriptor[], group: string, remembered: string | undefined): number {
+  const rememberedIndex = remembered === undefined
+    ? -1
+    : controls.findIndex(control => control.group === group && control.key === remembered)
+  if (rememberedIndex >= 0) return rememberedIndex
+  const preferred = controls.findIndex(control => control.group === group && control.preferred)
+  if (preferred >= 0) return preferred
+  return controls.findIndex(control => control.group === group)
+}
+
+function beginsTextEditing(data: string): boolean {
+  if (/^\x1b\[200~[\s\S]*\x1b\[201~$/u.test(data)) return true
+  return /^[^\x00-\x1f\x7f-\x9f]+$/u.test(data)
+}
+
+interface TextEditorLease {
+  readonly editor: BlueEditor
+  onChange: BlueEditor['onChange']
+  onSubmit: BlueEditor['onSubmit']
+}
+
+function detachTextEditorCallbacks(lease: TextEditorLease): void {
+  if (lease.onChange !== undefined && lease.editor.onChange === lease.onChange) lease.editor.onChange = undefined
+  if (lease.onSubmit !== undefined && lease.editor.onSubmit === lease.onSubmit) lease.editor.onSubmit = undefined
+  lease.onChange = undefined
+  lease.onSubmit = undefined
+}
+
+function releaseTextEditor(lease: TextEditorLease): void {
+  lease.editor.focused = false
+  detachTextEditorCallbacks(lease)
 }
 
 function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
@@ -661,6 +701,11 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
   const controls = state.controls()
   state.blurInactiveEditors(controls)
   const allControls = state.allControls()
+  const allKeys = new Set(allControls.map(control => control.key))
+  for (const [group, key] of state.groupActiveKeys) {
+    if (!allControls.some(control => control.group === group && control.key === key)) state.groupActiveKeys.delete(group)
+  }
+  if (state.editingKey !== undefined && !allKeys.has(state.editingKey)) state.setEditing(undefined)
   if (state.desiredKey !== undefined && !allControls.some(control => control.key === state.desiredKey)) {
     state.desiredKey = undefined
     state.desiredGroup = undefined
@@ -679,6 +724,7 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
     state.lastIndex = desired
     state.activeKey = controls[desired]!.key
     state.activeGroup = controls[desired]!.group
+    state.groupActiveKeys.set(controls[desired]!.group, controls[desired]!.key)
     return controls
   }
   const desiredHidden = state.desiredKey !== undefined && allControls.some(control => control.key === state.desiredKey)
@@ -690,23 +736,22 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
       state.desiredKey = controls[current]!.key
       state.desiredGroup = controls[current]!.group
     }
+    if (!desiredHidden) state.groupActiveKeys.set(controls[current]!.group, controls[current]!.key)
     return controls
   }
-  const fallbackGroup = desiredHidden ? state.desiredGroup : state.activeGroup
-  const sameGroup = controls.findIndex(control => control.group === fallbackGroup && control.preferred)
-  const firstInGroup = controls.findIndex(control => control.group === fallbackGroup)
-  const preferred = controls.findIndex(control => control.preferred)
-  state.lastIndex = sameGroup >= 0
-    ? sameGroup
-    : firstInGroup >= 0
-      ? firstInGroup
-      : preferred >= 0 ? preferred : Math.min(state.lastIndex, controls.length - 1)
+  const groups = groupOrder(controls)
+  const requestedGroup = desiredHidden ? state.desiredGroup : state.activeGroup
+  const fallbackGroup = requestedGroup !== undefined && groups.includes(requestedGroup)
+    ? requestedGroup
+    : groups[0]!
+  state.lastIndex = groupTarget(controls, fallbackGroup, state.groupActiveKeys.get(fallbackGroup))
   state.pendingConfirmation = undefined
   state.activeKey = controls[state.lastIndex]!.key
   state.activeGroup = controls[state.lastIndex]!.group
   if (!desiredHidden) {
     state.desiredKey = state.activeKey
     state.desiredGroup = state.activeGroup
+    state.groupActiveKeys.set(state.activeGroup, state.activeKey)
   }
   return controls
 }
@@ -725,7 +770,8 @@ export class BlueUiSurfaceRuntime {
   private readonly textBuffers = new Map<string, { canonical: string, value: string }>()
   private readonly selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
   private readonly toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
-  private readonly textEditors = new Map<string, BlueEditor>()
+  private readonly textEditors = new Map<string, TextEditorLease>()
+  private readonly editorFocusCheckpoints: Map<BlueEditor, boolean>[] = []
   private readonly fieldKinds = new Map<string, BlueFormField['kind']>()
   private readonly fieldOwners = new Map<string, string>()
   private readonly fieldRecency = new Map<string, true>()
@@ -756,6 +802,8 @@ export class BlueUiSurfaceRuntime {
       activeGroup: undefined,
       desiredKey: undefined,
       desiredGroup: undefined,
+      editingKey: undefined,
+      groupActiveKeys: new Map(),
       lastIndex: 0,
       focused: false,
       layoutPass: false,
@@ -772,11 +820,16 @@ export class BlueUiSurfaceRuntime {
       textEditor: (field, key) => this.textEditor(field, key),
       setSelectValue: (key, canonical, value) => { this.selectDrafts.set(key, { canonical, value }) },
       setToggleValue: (key, canonical, value) => { this.toggleDrafts.set(key, { canonical, value }) },
+      setEditing: key => {
+        if (this.state.editingKey === key) return
+        this.state.editingKey = key
+        for (const lease of this.textEditors.values()) lease.editor.focused = false
+      },
       blurInactiveEditors: controls => {
         const visible = new Set(controls.flatMap(control => control.kind === 'text'
           ? [fieldStateKey(control.key, control.field.kind)]
           : []))
-        for (const [stateKey, editor] of this.textEditors) if (!visible.has(stateKey)) editor.focused = false
+        for (const [stateKey, lease] of this.textEditors) if (!visible.has(stateKey)) lease.editor.focused = false
       },
       setLayoutViewport: viewport => { this.layoutViewport?.(viewport) },
     }
@@ -801,7 +854,7 @@ export class BlueUiSurfaceRuntime {
 
   setFocused(value: boolean): void {
     this.state.focused = value
-    if (!value) for (const editor of this.textEditors.values()) editor.focused = false
+    if (!value) for (const lease of this.textEditors.values()) lease.editor.focused = false
   }
 
   checkpoint(): () => void {
@@ -814,6 +867,7 @@ export class BlueUiSurfaceRuntime {
       activeGroup: this.state.activeGroup,
       desiredKey: this.state.desiredKey,
       desiredGroup: this.state.desiredGroup,
+      editingKey: this.state.editingKey,
       lastIndex: this.state.lastIndex,
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
@@ -822,6 +876,7 @@ export class BlueUiSurfaceRuntime {
     const textBuffers = new Map(this.textBuffers)
     const selectDrafts = new Map(this.selectDrafts)
     const toggleDrafts = new Map(this.toggleDrafts)
+    const groupActiveKeys = new Map(this.state.groupActiveKeys)
     return () => {
       this.node = node
       this.options = options
@@ -831,6 +886,20 @@ export class BlueUiSurfaceRuntime {
       this.textBuffers.clear(); for (const [key, value] of textBuffers) this.textBuffers.set(key, value)
       this.selectDrafts.clear(); for (const [key, value] of selectDrafts) this.selectDrafts.set(key, value)
       this.toggleDrafts.clear(); for (const [key, value] of toggleDrafts) this.toggleDrafts.set(key, value)
+      this.state.groupActiveKeys.clear(); for (const [key, value] of groupActiveKeys) this.state.groupActiveKeys.set(key, value)
+    }
+  }
+
+  checkpointEditorFocus(): () => void {
+    const focused = new Map([...this.textEditors.values()].map(lease => [lease.editor, lease.editor.focused]))
+    this.editorFocusCheckpoints.push(focused)
+    let restored = false
+    return () => {
+      if (restored) return
+      restored = true
+      const index = this.editorFocusCheckpoints.lastIndexOf(focused)
+      this.editorFocusCheckpoints.splice(index, 1)
+      for (const [editor, value] of focused) editor.focused = value
     }
   }
 
@@ -841,15 +910,13 @@ export class BlueUiSurfaceRuntime {
       this.textBuffers.delete(stateKey)
       this.selectDrafts.delete(stateKey)
       this.toggleDrafts.delete(stateKey)
-      const editor = this.textEditors.get(stateKey)
-      if (editor !== undefined) {
-        editor.focused = false
-        editor.onChange = undefined
-        editor.onSubmit = undefined
-        editor.onKey = undefined
+      const lease = this.textEditors.get(stateKey)
+      if (lease !== undefined) {
+        releaseTextEditor(lease)
         this.textEditors.delete(stateKey)
       }
       const owner = this.fieldOwners.get(stateKey)!
+      if (this.state.editingKey === owner) this.state.setEditing(undefined)
       this.fieldKinds.delete(owner)
       this.fieldOwners.delete(stateKey)
       this.fieldRecency.delete(stateKey)
@@ -876,7 +943,7 @@ export class BlueUiSurfaceRuntime {
       }
     }
     visit(node)
-    for (const [stateKey, editor] of this.textEditors) if (!active.has(stateKey)) editor.focused = false
+    for (const [stateKey, lease] of this.textEditors) if (!active.has(stateKey)) lease.editor.focused = false
     let inactive = this.fieldRecency.size - active.size
     // Every active key was just touched and therefore sits after all inactive keys.
     for (const stateKey of this.fieldRecency.keys()) {
@@ -894,24 +961,14 @@ export class BlueUiSurfaceRuntime {
     this.layoutViewport = undefined
     this.setFocused(false)
     this.state.pendingConfirmation = undefined
-    for (const editor of this.textEditors.values()) {
-      editor.focused = false
-      editor.onChange = undefined
-      editor.onSubmit = undefined
-      editor.onKey = undefined
-    }
+    for (const lease of this.textEditors.values()) releaseTextEditor(lease)
   }
 
   dispose(): void {
     if (!this.live) return
     this.deactivate()
     this.live = false
-    for (const editor of this.textEditors.values()) {
-      editor.focused = false
-      editor.onChange = undefined
-      editor.onSubmit = undefined
-      editor.onKey = undefined
-    }
+    for (const lease of this.textEditors.values()) releaseTextEditor(lease)
     this.textEditors.clear()
     this.textBuffers.clear()
     this.selectDrafts.clear()
@@ -923,6 +980,8 @@ export class BlueUiSurfaceRuntime {
     this.state.activeGroup = undefined
     this.state.desiredKey = undefined
     this.state.desiredGroup = undefined
+    this.state.setEditing(undefined)
+    this.state.groupActiveKeys.clear()
     this.state.lastIndex = 0
   }
 
@@ -930,10 +989,21 @@ export class BlueUiSurfaceRuntime {
     const options = this.options
     if (options === undefined) throw new Error('surface runtime is inactive')
     const stateKey = fieldStateKey(key, field.kind)
-    let editor = options.resolveTextEditor?.(field.id, stateKey) ?? this.textEditors.get(stateKey)
+    const previous = this.textEditors.get(stateKey)
+    let editor = options.resolveTextEditor?.(field.id, stateKey) ?? previous?.editor
     if (editor === undefined) {
       editor = options.components.createEditor()
-      this.textEditors.set(stateKey, editor)
+    }
+    for (const checkpoint of this.editorFocusCheckpoints) {
+      if (!checkpoint.has(editor)) checkpoint.set(editor, editor.focused)
+    }
+    let lease = previous
+    if (lease === undefined || lease.editor !== editor) {
+      if (lease !== undefined) releaseTextEditor(lease)
+      lease = { editor, onChange: undefined, onSubmit: undefined }
+      this.textEditors.set(stateKey, lease)
+    } else {
+      detachTextEditorCallbacks(lease)
     }
     const controlled = String(this.state.fieldValue(field, key))
     if (editor.getExpandedText() !== controlled) {
@@ -941,18 +1011,22 @@ export class BlueUiSurfaceRuntime {
       editor.setText(controlled)
     }
     editor.disableSubmit = field.kind === 'textarea'
-    editor.onChange = () => {
-      if (!this.live || this.options !== options) return
+    const onChange = (): void => {
+      if (!this.live || this.options !== options || editor.onChange !== onChange) return
       const value = editor!.getExpandedText()
       this.state.setTextValue(stateKey, field.value, value)
       this.state.emit({ kind: 'value-change', controlId: field.id, value })
     }
-    editor.onSubmit = value => {
-      if (!this.live || this.options !== options) return
+    const onSubmit = (value: string): void => {
+      if (!this.live || this.options !== options || editor.onSubmit !== onSubmit) return
       this.state.setTextValue(stateKey, field.value, value)
       this.state.emit({ kind: 'value-change', controlId: field.id, value })
       try { options.onTextSubmit?.(field.id, value) } catch { /* official submit observers cannot escape input */ }
     }
+    lease.onChange = onChange
+    lease.onSubmit = onSubmit
+    editor.onChange = onChange
+    editor.onSubmit = onSubmit
     return editor
   }
 }
@@ -985,6 +1059,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.state = this.surfaceRuntime.state
     this.root = compileNode(node, this.state, runtimeOptions, '$', mode)
     this.surfaceRuntime.admit(node)
+    reconcile(this.state)
   }
 
   get focused(): boolean { return this.state.focused }
@@ -1054,11 +1129,14 @@ class CompiledSurface implements BlueEditorShellComponent {
     // `dryRun` is exposed only by the validated editor-shell result, whose
     // compiler contract guarantees the injected editor and its one control.
     const editor = this.editor!
+    const restoreEditorFocus = this.surfaceRuntime.checkpointEditorFocus()
     const focus = {
       activeKey: this.state.activeKey,
       activeGroup: this.state.activeGroup,
       desiredKey: this.state.desiredKey,
       desiredGroup: this.state.desiredGroup,
+      editingKey: this.state.editingKey,
+      groupActiveKeys: new Map(this.state.groupActiveKeys),
       lastIndex: this.state.lastIndex,
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
@@ -1077,6 +1155,8 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.activeGroup = focus.activeGroup
       this.state.desiredKey = focus.desiredKey
       this.state.desiredGroup = focus.desiredGroup
+      this.state.editingKey = focus.editingKey
+      this.state.groupActiveKeys.clear(); for (const [key, value] of focus.groupActiveKeys) this.state.groupActiveKeys.set(key, value)
       this.state.lastIndex = focus.lastIndex
       this.state.focused = focus.focused
       this.state.layoutPass = focus.layoutPass
@@ -1084,6 +1164,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.viewport = focus.viewport
       this.runtimeFailure = focus.runtimeFailure
       editor.focused = focus.editorFocused
+      restoreEditorFocus()
     }
   }
 
@@ -1096,6 +1177,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.state.activeGroup = controls[index]!.group
     this.state.desiredKey = controls[index]!.key
     this.state.desiredGroup = controls[index]!.group
+    this.state.groupActiveKeys.set(controls[index]!.group, controls[index]!.key)
     this.state.lastIndex = index
     this.state.pendingConfirmation = undefined
   }
@@ -1107,21 +1189,27 @@ class CompiledSurface implements BlueEditorShellComponent {
     if (!this.surfaceRuntime.current(this.generation)) return
     this.viewport = safeViewport(this.options.getViewport)
     const controls = reconcile(this.state)
+    const active = controls[this.state.lastIndex]
     if (data === '\x1b') {
+      if (active?.kind === 'text' && this.state.editingKey === active.key) {
+        this.state.setEditing(undefined)
+        return
+      }
       const consumed = this.state.pendingConfirmation !== undefined
       this.state.pendingConfirmation = undefined
       if (!consumed) this.options.onUnhandledEscape?.()
       return
     }
-    if (controls.length === 0) return
-    const active = controls[this.state.lastIndex]!
+    if (active === undefined) return
     const moveTo = (index: number): void => {
+      this.state.setEditing(undefined)
       this.state.pendingConfirmation = undefined
       this.state.lastIndex = index
       this.state.activeKey = controls[index]!.key
       this.state.activeGroup = controls[index]!.group
       this.state.desiredKey = controls[index]!.key
       this.state.desiredGroup = controls[index]!.group
+      this.state.groupActiveKeys.set(controls[index]!.group, controls[index]!.key)
     }
     if (data === '\t' || data === '\x1b[Z') {
       // An editor-only provider shell has nowhere to rove. Preserve the
@@ -1131,20 +1219,30 @@ class CompiledSurface implements BlueEditorShellComponent {
         this.editor?.handleInput?.(data)
         return
       }
+      const groups = groupOrder(controls)
+      if (groups.length === 1) {
+        if (active.kind === 'text') this.state.setEditing(undefined)
+        return
+      }
       const delta = data === '\t' ? 1 : -1
-      moveTo((this.state.lastIndex + controls.length + delta) % controls.length)
-      return
-    }
-    if (active.kind === 'text') {
-      this.state.textEditor(active.field, active.key).handleInput?.(data)
+      const groupIndex = groups.indexOf(active.group)
+      const targetGroup = groups[(groupIndex + groups.length + delta) % groups.length]!
+      moveTo(groupTarget(controls, targetGroup, this.state.groupActiveKeys.get(targetGroup)))
       return
     }
     if (active.kind === 'editor') {
       this.editor?.handleInput?.(data)
       return
     }
+    if (active.kind === 'text' && this.state.editingKey === active.key) {
+      const editor = this.state.textEditor(active.field, active.key)
+      editor.focused = this.state.focused
+      editor.handleInput?.(data)
+      return
+    }
     const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
-    if (active.kind === 'select' && direction !== 0) {
+    const horizontal = data === '\x1b[D' || data === '\x1b[C'
+    if (active.kind === 'select' && horizontal) {
       const enabled = active.field.options.filter(option => option.disabled !== true)
       if (enabled.length === 0) return
       const current = this.state.fieldValue(active.field, active.key)
@@ -1157,12 +1255,24 @@ class CompiledSurface implements BlueEditorShellComponent {
     }
     if (direction !== 0) {
       const matchingDirection = active.navigation === 'horizontal'
-        ? data === '\x1b[D' || data === '\x1b[C'
+        ? horizontal
         : active.navigation === 'vertical' && (data === '\x1b[A' || data === '\x1b[B')
       if (!matchingDirection) return
       const siblings = controls.map((control, index) => ({ control, index })).filter(entry => entry.control.group === active.group)
       const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
       moveTo(siblings[(siblingIndex + siblings.length + direction) % siblings.length]!.index)
+      return
+    }
+    if (active.kind === 'text') {
+      if (data === '\r' || data === '\n') {
+        this.state.setEditing(active.key)
+        return
+      }
+      if (!beginsTextEditing(data)) return
+      this.state.setEditing(active.key)
+      const editor = this.state.textEditor(active.field, active.key)
+      editor.focused = this.state.focused
+      editor.handleInput?.(data)
       return
     }
     if (data !== '\r' && data !== '\n' && data !== ' ') return

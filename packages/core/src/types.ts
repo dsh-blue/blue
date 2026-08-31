@@ -596,6 +596,8 @@ export interface BlueEditor extends BlueFocusable {
   getExpandedText(): string
   /**
    * Render only the editor's content rows for a compiler-owned form field.
+   * An unfocused editor omits pi-tui's inverse-video fake caret so navigation
+   * focus can be represented by the form row without a second visual cursor.
    * @param width - assigned content width.
    * @param masked - replace every stored code unit with a bullet before render.
    * @returns editor rows without its standalone outer frame.

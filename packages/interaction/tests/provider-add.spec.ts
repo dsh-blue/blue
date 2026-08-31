@@ -191,8 +191,7 @@ async function skipDefaults(screen: FakeScreen): Promise<void> {
     const rows = (current(screen).render?.(60) ?? []).join('\n')
     expect(rows).toContain('Model defaults')
   })
-  current(screen).handleInput(KEY.enter)
-  current(screen).handleInput(KEY.enter)
+  for (let step = 0; step < 4; step += 1) current(screen).handleInput(KEY.enter)
 }
 
 /** The panel of the latest unhidden overlay. */
@@ -382,7 +381,8 @@ describe('runProviderAdd', () => {
     })
     form = current(invalid.screen)
     form.handleInput('big')
-    form.handleInput(KEY.tab)
+    form.handleInput(KEY.down)
+    form.handleInput(KEY.enter)
     form.handleInput(KEY.enter)
     await new Promise(resolve => setTimeout(resolve, 20))
     expect((form.render?.(60) ?? []).join('\n'))
@@ -414,7 +414,7 @@ describe('runProviderAdd', () => {
       expect((current(badEffort.screen).render?.(60) ?? []).join('\n')).toContain('Model defaults')
     })
     form = current(badEffort.screen)
-    form.handleInput(KEY.tab)
+    form.handleInput(KEY.down)
     form.handleInput('low,ultra')
     form.handleInput(KEY.enter)
     await new Promise(resolve => setTimeout(resolve, 20))
@@ -447,7 +447,7 @@ describe('runProviderAdd', () => {
     })
     form = current(valid.screen)
     form.handleInput('1048576')
-    form.handleInput(KEY.tab)
+    form.handleInput(KEY.down)
     form.handleInput('low,high')
     form.handleInput(KEY.enter)
     await expect(validRun).resolves.toBe('provider "defaults-gw" added')
@@ -676,11 +676,12 @@ describe('runProviderAdd', () => {
     })
     const form = current(bench.screen)
     // Prefilled: name (route fallback), base URL; the key starts empty.
-    // Clear the name field and retype, then walk to the key.
-    form.handleInput('\t')
+    // Clear the base URL and retype, then walk to the key.
+    form.handleInput(KEY.down)
+    form.handleInput(KEY.enter)
     for (let i = 0; i < 40; i += 1) form.handleInput('\x7f')
     form.handleInput('https://new.example.com')
-    form.handleInput('\t')
+    form.handleInput(KEY.down)
     form.handleInput('fresh-key')
     form.handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "my-gw" updated')
@@ -710,8 +711,9 @@ describe('runProviderAdd', () => {
       expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure keepall')
     })
     // Walk to the last field and submit with everything untouched.
-    current(bench.screen).handleInput(KEY.tab)
-    current(bench.screen).handleInput(KEY.tab)
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
     current(bench.screen).handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "keepall" updated')
     const op = ((bench.mutations[0] ?? { ops: [] }).ops as { value?: Record<string, unknown> }[])[0]!
@@ -737,7 +739,7 @@ describe('runProviderAdd', () => {
       expect(rows).not.toContain('Base URL')
     })
     const form = current(bench.screen)
-    form.handleInput(KEY.tab)
+    form.handleInput(KEY.down)
     form.handleInput('replacement-key')
     form.handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "anthropic" updated')
@@ -757,8 +759,9 @@ describe('runProviderAdd', () => {
     await vi.waitFor(() => {
       expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('Configure stuck')
     })
-    current(bench.screen).handleInput(KEY.tab)
-    current(bench.screen).handleInput(KEY.tab)
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.down)
+    current(bench.screen).handleInput(KEY.enter)
     current(bench.screen).handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('could not update provider stuck: locked')
   })
@@ -796,10 +799,12 @@ describe('runProviderAdd', () => {
     })
     const form = current(bench.screen)
     // Clear the name, type a fresh base URL, leave the key empty.
+    form.handleInput(KEY.enter)
     for (let i = 0; i < 10; i += 1) form.handleInput('\x7f')
-    form.handleInput(KEY.tab)
+    form.handleInput(KEY.down)
     form.handleInput('https://bare2.example.com/v1')
-    form.handleInput(KEY.tab)
+    form.handleInput(KEY.down)
+    form.handleInput(KEY.enter)
     form.handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "bare" updated')
     const op = ((bench.mutations[0] ?? { ops: [] }).ops as { value?: Record<string, unknown> }[])[0]!
@@ -824,6 +829,7 @@ describe('runProviderAdd', () => {
     current(bench.screen).handleInput('n')
     current(bench.screen).handleInput(KEY.enter)
     expect((current(bench.screen).render?.(80) ?? []).join('\n')).toContain('type y to confirm')
+    current(bench.screen).handleInput(KEY.enter)
     current(bench.screen).handleInput('\x7f')
     current(bench.screen).handleInput('y')
     current(bench.screen).handleInput(KEY.enter)
@@ -1124,6 +1130,7 @@ describe('runProviderAdd', () => {
     })
     // The matched model keeps its catalog window; the form fills the rest.
     current(bench.screen).handleInput('65536')
+    current(bench.screen).handleInput(KEY.enter)
     current(bench.screen).handleInput(KEY.enter)
     current(bench.screen).handleInput(KEY.enter)
     await expect(outcome).resolves.toBe('provider "mixed-gw" added')

@@ -32,19 +32,19 @@ describe('maskRow', () => {
 })
 
 describe('CanonicalFormController', () => {
-  it('routes typing to the active field and submits from the last', () => {
+  it('routes typing with vertical field navigation and submits from the last', () => {
     const { component, onSubmit } = form([
       { id: 'route', label: 'Route', required: true },
       { id: 'key', label: 'Key', required: true },
     ])
     input(component).handleInput('gw')
-    input(component).handleInput(KEY.tab)
+    input(component).handleInput(KEY.down)
     input(component).handleInput('secret')
     input(component).handleInput(KEY.enter)
     expect(onSubmit).toHaveBeenCalledWith({ route: 'gw', key: 'secret' })
   })
 
-  it('moves back with Up and Shift-Tab and forward with Down', () => {
+  it('moves backward with Up and forward with Down', () => {
     const { component, onSubmit } = form([
       { id: 'a', label: 'A' },
       { id: 'b', label: 'B' },
@@ -53,14 +53,28 @@ describe('CanonicalFormController', () => {
     input(component).handleInput('1')
     input(component).handleInput(KEY.down)
     input(component).handleInput('2')
-    // Shift-Tab returns to the previous field.
-    input(component).handleInput('\x1b[Z')
+    input(component).handleInput(KEY.up)
     input(component).handleInput('3')
     input(component).handleInput(KEY.down)
-    // Enter advances to the last field; the second Enter submits.
+    input(component).handleInput(KEY.down)
+    // An untouched field enters editing before a second Enter submits.
     input(component).handleInput(KEY.enter)
     input(component).handleInput(KEY.enter)
     expect(onSubmit).toHaveBeenCalledWith({ a: '13', b: '2', c: '' })
+  })
+
+  it('uses Tab to leave editing without changing the active form field', () => {
+    const { component, onSubmit } = form([
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+    ])
+    input(component).handleInput('1')
+    input(component).handleInput(KEY.tab)
+    input(component).handleInput('2')
+    input(component).handleInput(KEY.down)
+    input(component).handleInput('3')
+    input(component).handleInput(KEY.enter)
+    expect(onSubmit).toHaveBeenCalledWith({ a: '12', b: '3' })
   })
 
   it('submits a single-field form with one Enter', () => {
@@ -75,8 +89,7 @@ describe('CanonicalFormController', () => {
       { id: 'a', label: 'Alpha', required: true },
       { id: 'b', label: 'Beta', required: true },
     ])
-    input(component).handleInput(KEY.enter)
-    input(component).handleInput(KEY.enter)
+    for (let step = 0; step < 4; step += 1) input(component).handleInput(KEY.enter)
     expect(onSubmit).not.toHaveBeenCalled()
     expect(component.render(60).some(row => row.includes('Alpha cannot be empty'))).toBe(true)
   })
@@ -86,7 +99,7 @@ describe('CanonicalFormController', () => {
       { id: 'a', label: 'A' },
       { id: 'route', label: 'Route', validate: value => value === 'ok' ? undefined : 'route must be ok' },
     ])
-    input(component).handleInput(KEY.tab)
+    input(component).handleInput(KEY.down)
     input(component).handleInput('nope')
     input(component).handleInput(KEY.enter)
     expect(onSubmit).not.toHaveBeenCalled()
@@ -141,12 +154,32 @@ describe('CanonicalFormController', () => {
     expect(rows.some(row => row.includes('Key:') && !row.includes('•'))).toBe(true)
   })
 
-  it('pre-fills a field from its initial value', () => {
+  it('submits a pre-filled field after entering edit mode', () => {
     const { component, onSubmit } = form([
       { id: 'route', label: 'Route', initial: 'preset' },
     ])
     input(component).handleInput(KEY.enter)
+    input(component).handleInput(KEY.enter)
     expect(onSubmit).toHaveBeenCalledWith({ route: 'preset' })
+  })
+
+  it('restores edit mode across a rebuild after the first Enter', () => {
+    const { component, onSubmit } = form([{ id: 'route', label: 'Route', initial: 'preset' }])
+    input(component).handleInput(KEY.enter)
+    component.invalidate()
+    input(component).handleInput(KEY.enter)
+    expect(onSubmit).toHaveBeenCalledWith({ route: 'preset' })
+  })
+
+  it('leaves restored edit mode before Escape cancels', () => {
+    const { component, onCancel } = form([{ id: 'route', label: 'Route', initial: 'preset' }])
+    input(component).handleInput(KEY.enter)
+    component.invalidate()
+    input(component).handleInput(KEY.escape)
+    expect(onCancel).not.toHaveBeenCalled()
+    input(component).handleInput(KEY.escape)
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(component.render(60).join('\n')).toContain('Esc back/cancel')
   })
 
   it('shows hints when the value column has room and hides them when it does not', () => {

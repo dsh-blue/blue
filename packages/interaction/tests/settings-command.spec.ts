@@ -883,6 +883,7 @@ describe('/settings editable rows', () => {
     changeSetting(bench, 'blue.editorCommand', 'nano')
     const panel = form(bench.screen)!
     // The prefill is the stored raw, not the display token: clear it.
+    panel.handleInput(KEY.enter)
     for (let count = 0; count < 4; count += 1) panel.handleInput('\x7f')
     panel.handleInput(KEY.enter)
     await settle()

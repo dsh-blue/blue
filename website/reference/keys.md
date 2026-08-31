@@ -44,7 +44,7 @@
 | `/sessions` 选择器 | ↑↓ 导航，`Enter` 恢复，`Esc` 取消 |
 | 审批面板 | ↑↓ + `Enter`，或数字键 `1`–`4` 直选；`Escape` 拒绝 |
 | 问卷面板 | `Tab` / `Shift-Tab` 切题；单选 ↑↓ + `Enter`；多选 `Space` + `Enter`；Other 编辑器内 `Esc` 返回列表 |
-| 表单面板 | `Tab` / `↓` 前进，`Shift-Tab` / `↑` 后退；`Enter` 前进、末字段提交 |
+| 表单面板 | `↑` / `↓` 切换字段；输入开始编辑；未编辑字段第一次 `Enter` 进入编辑，编辑态 `Enter` 前进或提交；`Tab` 切语义控件组；`Escape` 先退出编辑，再取消 |
 | `/model` · `/effort` 面板 | `←` `→` 步进 segment 控件；`Enter` 确认并持久化为新默认；`Alt+S` **仅本会话**确认（不写持久默认） |
 | `/btw` 面板 | `Esc` 关闭；滚轮 / `PageUp` / `PageDown` 滚动；`Enter` 续问 |
 

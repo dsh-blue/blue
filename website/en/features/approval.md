@@ -40,8 +40,8 @@ Questionnaire answers enter the session as user-visible content the model can se
 
 Custom provider onboarding and the typed `y` confirmation for the danger permission preset use a multi-field form panel:
 
-- each field renders two rows: a `label · hint` row (hint truncated to width, labels column-aligned) above the input row — only the active field shows the `>` prompt;
-- **Tab / ↓** move forward, **Shift-Tab / ↑** backward; **Enter** advances, submitting from the last field;
+- each field starts on one compact `label · hint: value` row; the selected row carries `→`, and wrapped values continue under that row;
+- **Up / Down** moves between fields; typing starts editing, the first **Enter** on an untouched field enters edit mode, and Enter while editing advances or submits the last field; **Tab** is reserved for semantic control groups; **Escape** first returns to navigation, then cancels;
 - a validation error renders directly below the failing field without closing the panel; any edit clears it;
 - values truncate to the panel width, so long pasted keys never break the frame.
 

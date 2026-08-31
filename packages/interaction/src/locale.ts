@@ -180,7 +180,7 @@ const zh: Readonly<Record<string, string>> = {
   'Enter save · Tab next · Esc back': 'Enter 保存 · Tab 下一项 · Esc 返回',
   '↑↓ select · 1-9 choose · Space toggle · Enter choose · Tab next · Esc cancel': '↑↓ 选择 · 1-9 选择 · 空格切换 · Enter 确认 · Tab 下一项 · Esc 取消',
   '↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel': '↑↓ 选择 · 1-9 选择 · Enter 确认 · Tab 下一项 · Esc 取消',
-  'Tab / ↑↓ fields · Enter submit · Esc {cancel}': 'Tab / ↑↓ 切换字段 · Enter 提交 · Esc {cancel}',
+  '↑↓ fields · Enter edit/submit · Esc back/{cancel}': '↑↓ 切换字段 · Enter 编辑/提交 · Esc 返回/{cancel}',
   ' · Ctrl+D delete': ' · Ctrl+D 删除',
   '{label} cannot be empty': '{label}不能为空',
   'cancel': '取消',

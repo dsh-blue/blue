@@ -84,6 +84,7 @@ class ApprovalPrompt implements BlueFocusable {
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
       onTextSubmit: (_controlId, value) => this.submitFeedback(value),
+      startEditing: () => this.feedback,
     })
   }
 
@@ -201,7 +202,6 @@ class ApprovalPrompt implements BlueFocusable {
   private onEvent(event: BlueUiEvent): void {
     if (event.kind === 'value-change' && event.controlId === 'approval-reason' && typeof event.value === 'string') {
       this.reasonDraft = event.value
-      this.adapter.invalidate()
       return
     }
   }
