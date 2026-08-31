@@ -207,8 +207,20 @@ describe('private UI pattern painters', () => {
     expect(vertical.join('\n')).toContain('… Wait')
     expect(renderActions(node, 80, { key: 'busy', focused: true, marker: '|', pendingKey: 'busy' }, colors, true).join('')).not.toContain('|')
     expect(renderActions(node, 80, { key: 'disabled', focused: true, marker: '|', pendingKey: 'disabled' }, colors, true).join('')).not.toContain('|')
-    const actionPalette = new Proxy(colors, { get: (target, key, receiver) => key === 'primary' ? (value: string) => `<primary>${value}</primary>` : Reflect.get(target, key, receiver) })
-    expect(renderActions(node, 80, { key: 'secondary', focused: true, marker: '|' }, actionPalette, true).join('\n')).toContain('|<primary>Later</primary>')
+    const selectedBg = vi.fn((value: string) => `<selected>${value}</selected>`)
+    const actionPalette = new Proxy(colors, { get: (target, key, receiver) => {
+      if (key === 'primary') return (value: string) => `<primary>${value}</primary>`
+      if (key === 'error') return (value: string) => `<error>${value}</error>`
+      if (key === 'selectedBg') return selectedBg
+      return Reflect.get(target, key, receiver)
+    } })
+    expect(renderActions(node, 80, { key: 'secondary', focused: true, marker: '|' }, actionPalette, true).join('\n'))
+      .toContain('|<selected><primary>Later</primary></selected>')
+    expect(selectedBg).toHaveBeenCalledWith('<primary>Later</primary>')
+    expect(renderActions(node, 80, { key: 'danger', focused: true, marker: '|' }, actionPalette, true).join('\n'))
+      .toContain('|<selected><error>! Delete</error></selected>')
+    expect(renderActions(node, 80, { key: 'primary', focused: true, marker: '|' }, actionPalette, true).join('\n'))
+      .toContain('|<selected><primary>[ Run ]</primary></selected>')
     expect(visibleWidth(renderActions(node, 10, { key: 'danger', focused: true, marker: '|' }, colors, false)[0]!)).toBeLessThanOrEqual(10)
     expect(renderActions(ui.actions({ id: 'empty', items: [] }), 10, idle, colors, false)).toEqual([])
     expect(renderLoader(ui.loader({ message: 'Load' }), 20, colors)).toEqual(['⠋ Load'])

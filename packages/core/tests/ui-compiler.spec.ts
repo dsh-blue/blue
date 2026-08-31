@@ -1303,11 +1303,56 @@ describe('compileBlueUiNode', () => {
     expect(pasteEvents).toEqual([{ kind: 'value-change', controlId: 'paste', value: 'pasted' }])
 
     const enterEvents: unknown[] = []
-    const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({ emit: event => enterEvents.push(event) }).options)
+    const enterEditor = createTestEditor()
+    const enterText = compiled(ui.form({ id: 'enter-form', fields: [{ kind: 'input', id: 'enter', label: 'Enter', value: 'value' }] }), fixture({
+      emit: event => enterEvents.push(event),
+      resolveTextEditor: () => enterEditor,
+    }).options)
+    enterText.focusTarget!.focused = true
     enterText.focusTarget!.handleInput?.('\r')
+    enterText.component.render(40)
+    expect(enterEditor.focused).toBe(true)
     expect(enterEvents).toEqual([])
     enterText.focusTarget!.handleInput?.('\r')
+    const submittedRows = enterText.component.render(40).join('\n')
+    expect(enterEditor.focused).toBe(false)
+    expect(submittedRows).toContain('→ Enter: value')
     expect(enterEvents).toEqual([{ kind: 'value-change', controlId: 'enter', value: 'value' }])
+  })
+
+  it('does not leave the active field when another editor submits late', () => {
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const { options, events } = fixture({ components: localComponents })
+    const result = compiled(ui.form({ id: 'late-submit', fields: [
+      { kind: 'input', id: 'first', label: 'First', value: 'one' },
+      { kind: 'input', id: 'second', label: 'Second', value: 'two' },
+    ] }), options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    result.component.render(60)
+    expect(editors).toHaveLength(2)
+    const lateSubmit = editors[0]!.onSubmit!
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    result.component.render(60)
+    expect(editors[1]!.focused).toBe(true)
+
+    lateSubmit('late-one')
+    const rows = result.component.render(60).join('\n')
+    expect(rows).toContain('→ Second: two')
+    expect(editors[1]!.focused).toBe(true)
+    expect(events).toEqual([{ kind: 'value-change', controlId: 'first', value: 'late-one' }])
   })
 
   it('contains editor-backed field render failures', () => {

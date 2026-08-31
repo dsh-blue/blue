@@ -310,7 +310,8 @@ function actionToken(item: ActionsNode['items'][number], focus: PatternFocus, co
   const label = `${busy ? '… ' : ''}${item.label}${pending ? ` ? ${item.confirm}` : ''}`
   const framed = item.intent === 'primary' ? `[ ${label} ]` : item.intent === 'danger' ? `! ${label}` : label
   const content = item.disabled === true || busy ? colors.muted(framed) : item.intent === 'danger' ? colors.error(framed) : focused || item.intent === 'primary' ? colors.primary(framed) : colors.text(framed)
-  return { value: `${focused ? focus.marker : ' '}${content}`, focused, active: item.intent === 'primary' }
+  const selection = focused ? colors.selectedBg(content) : content
+  return { value: `${focused ? focus.marker : ' '}${selection}`, focused, active: item.intent === 'primary' }
 }
 
 export function renderActions(node: ActionsNode, width: number, focus: PatternFocus, colors: BlueSemanticColors, vertical: boolean): string[] {

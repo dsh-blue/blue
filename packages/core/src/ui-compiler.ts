@@ -1020,6 +1020,7 @@ export class BlueUiSurfaceRuntime {
     const onSubmit = (value: string): void => {
       if (!this.live || this.options !== options || editor.onSubmit !== onSubmit) return
       this.state.setTextValue(stateKey, field.value, value)
+      if (this.state.editingKey === key) this.state.setEditing(undefined)
       this.state.emit({ kind: 'value-change', controlId: field.id, value })
       try { options.onTextSubmit?.(field.id, value) } catch { /* official submit observers cannot escape input */ }
     }
