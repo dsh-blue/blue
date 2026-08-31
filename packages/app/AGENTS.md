@@ -22,6 +22,10 @@ Inbox mutations publish a coalesced `'blue/queue-changed'` notification instead 
 
 `src/retraction.ts` provides `blueRetractions.tryRetract(messageId)`: it matches the id to the current open main turn, rejects any assistant tool-call block or `tool/call`/`tool/result`, terminates the Blue lifecycle as `aborted/retracted`, emits `'blue/turn-retracted'`, and cancels with `keepInbox`. After the host `turn/end`, a microtask appends an empty interrupted `assistant/message` surface replacement over that turn's current nodes. The append-only audit remains, while `deriveMessages()` omits the withdrawn turn.
 
+## Background jobs
+
+`src/jobs.ts` provides `blueJobs`: the app-owned background-jobs facade over the optional host `ctx.jobs` registry through the harness-adapter `JobsBridge`. The app supplies the fenced caller (the private active Agent), re-lists at the session commit point, and keeps the last good snapshot across a transient registry failure. Hosts without the service publish `available: false`. Output reads consume the job's single model-facing cursor — a terminal read also marks the job reported, suppressing the model-facing completion notice — so `readJobOutput` fires only on an explicit user request from the `/jobs` panel and is never polled.
+
 ## Side-session actions
 
 `blueSessionActions.createSideSession()` is the narrow app-owned boundary used by the BTW pane. It snapshots the active Agent's full event prefix, cwd, parent id, and provider/model route into a throwaway `btw-*` child, then runs the same Agent setup as create/resume/fork so the seed-selected preset remounts its scoped prompt, skills, and tools. A seed copies history only; it does not substitute for the child Agent Fiber's composition. The returned owned handle exposes only an opaque projection identity, plain-text follow-up, admitted `running`/`idle` status subscription, and idempotent disposal; no side session is committed to the current-session reader or the main switch queue.

@@ -292,10 +292,66 @@ export interface BlueRetractionService {
   tryRetract(messageId: string): boolean
 }
 
+/** Background-job lifecycle state mirrored from the host jobs registry. */
+export type BlueJobStatus = 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+
+/** Renderer-neutral snapshot of one background job; no registry handle crosses. */
+export interface BlueJob {
+  readonly id: string
+  readonly kind: string
+  readonly label: string
+  readonly status: BlueJobStatus
+  readonly detail?: string | undefined
+  readonly startedAt: number
+  readonly finishedAt?: number | undefined
+}
+
+/** The visible background-job set; `available` is false on hosts without a jobs service. */
+export interface BlueJobsSnapshot {
+  readonly available: boolean
+  readonly jobs: readonly BlueJob[]
+}
+
+/** One job's output read, paired with the post-read job state. */
+export interface BlueJobOutput {
+  readonly text: string
+  readonly job: BlueJob
+}
+
+/**
+ * App-owned background-jobs facade. Output reads consume the job's single
+ * model-facing cursor, so callers read only on an explicit user request.
+ */
+export interface BlueJobsService {
+  /** @returns the current visible set; live jobs first by start time, settled newest first. */
+  current(): BlueJobsSnapshot
+  /**
+   * Subscribe to visible-set changes; fires immediately with the current snapshot.
+   * @param listener - receives each published snapshot.
+   * @returns the subscription registration.
+   */
+  subscribe(listener: (snapshot: BlueJobsSnapshot) => void): BlueRegistration
+  /**
+   * Request cancellation of one job.
+   * @param id - the job id from a snapshot row.
+   * @returns `requested` for live work, otherwise `already-finished`.
+   */
+  killJob(id: string): BlueResult<'requested' | 'already-finished'>
+  /**
+   * Read a job's output. Consumes the single output cursor; a terminal read
+   * marks the job reported and suppresses the model-facing completion notice.
+   * @param id - the job id from a snapshot row.
+   * @returns the output text with the post-read job state.
+   */
+  readJobOutput(id: string): BlueResult<BlueJobOutput>
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Safe main-turn retraction gate provided by blue-app. */
     blueRetractions: BlueRetractionService
+    /** App-owned background-jobs facade; `available` is false on hosts without a jobs service. */
+    blueJobs: BlueJobsService
     /** App-owned side-session actions; no Harness Agent or Session crosses this seam. */
     blueSessionActions: BlueSessionActions
     /** Stable renderer-neutral snapshot surface for the active session. */

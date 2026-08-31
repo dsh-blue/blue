@@ -47,6 +47,7 @@ Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue 
 ## 可选子路径
 
 - `./editor-plus`：shell mode 与 completion。
+- `./jobs`：`/jobs` 后台任务面板——live 任务优先的列表，Enter 读取输出（会消费该任务的模型输出游标），`k` 终止运行中的任务。
 - `./pane-queue`：随 inbox 变化即时刷新的 canonical 排队消息 bottom pane。
 - `./mode-status`：从当前 mode snapshot 派生的 canonical footer status node。
 - `./attachments`：有界 filesystem image store。

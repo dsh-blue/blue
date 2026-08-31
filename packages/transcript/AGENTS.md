@@ -40,7 +40,10 @@ entries, reuses frames only for an unchanged model/width/policy state, and
 disposes renderer resources on replacement, eviction, detach, or unload.
 
 `BlueStatusEntryService` is the private additive fixed-footer registry;
-producers publish canonical `BlueStatusNode` and layout metadata. The separate
+producers publish canonical `BlueStatusNode` and layout metadata.
+`status-jobs.ts` counts live background jobs from the app-owned `blueJobs`
+facade (`⏵ N jobs`, accent tier, priority 3, hidden when none); it never
+touches the host registry or an output cursor. The separate
 `BlueStatusCompositionService` selects either `blue.default` or one explicitly
 configured provider. Candidates are inert, dry-rendered at the actual footer
 width, fenced by session/tree generation, and activated atomically. Failure

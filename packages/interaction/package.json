@@ -21,6 +21,10 @@
       "types": "./lib/types/editor-plus.d.ts",
       "default": "./lib/editor-plus.js"
     },
+    "./jobs": {
+      "types": "./lib/types/jobs.d.ts",
+      "default": "./lib/jobs.js"
+    },
     "./pane-queue": {
       "types": "./lib/types/pane-queue.d.ts",
       "default": "./lib/pane-queue.js"

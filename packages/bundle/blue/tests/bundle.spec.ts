@@ -89,6 +89,8 @@ describe('blue bundle', () => {
       'blue-status-git',
       'blue-status-title',
       'blue-status-mode',
+      'blue-status-jobs',
+      'blue-jobs',
       'blue-status-context',
       'blue-pane-activity',
       'blue-pane-queue',
@@ -129,6 +131,7 @@ describe('blue bundle', () => {
       group: true,
       isolate: {
         bluePluginControl: true,
+        blueJobs: true,
         blueSessionActions: true,
         blueSessionProjections: true,
         blueSessionReader: true,
@@ -181,7 +184,7 @@ describe('blue bundle', () => {
     expect(patch).toContain('- id: cordis-host-runner')
     expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
     expect(patch).toContain('- id: blue-creative-host')
-    expect(patch).toMatch(/- id: blue-creative-host[\s\S]*?isolate:[\s\S]*?blueScreen: true[\s\S]*?bluePluginControl: true[\s\S]*?commands: true[\s\S]*?planMode: true[\s\S]*?config:[\s\S]*?- id: cordis-host-runner/u)
+    expect(patch).toMatch(/- id: blue-creative-host[\s\S]*?isolate:[\s\S]*?blueScreen: true[\s\S]*?blueJobs: true[\s\S]*?bluePluginControl: true[\s\S]*?commands: true[\s\S]*?planMode: true[\s\S]*?config:[\s\S]*?- id: cordis-host-runner/u)
     expect(patch).not.toMatch(/isolate:[\s\S]*?bluePluginHost: true/u)
     expect(patch.indexOf('- id: cordis-host-runner')).toBeLessThan(patch.indexOf('- id: blue-core'))
     // The package must install with the bundle (dsh plugin add), exactly as

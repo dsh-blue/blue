@@ -43,6 +43,7 @@ import { createModelSelectionRef } from './model-ref.ts'
 import { foldYolo } from './mode.ts'
 import { createBlueRequestController } from './request-lifecycle.ts'
 import { installRetractionService } from './retraction.ts'
+import { installJobsService } from './jobs.ts'
 import { rewindCandidates } from './rewind.ts'
 import { isBalancedRewindSeed } from './rewind-seed.ts'
 import { sessionDetails } from './session-details.ts'
@@ -65,6 +66,11 @@ import type {
 } from './types.ts'
 
 export type {
+  BlueJob,
+  BlueJobOutput,
+  BlueJobStatus,
+  BlueJobsService,
+  BlueJobsSnapshot,
   BlueRetractionService,
   BluePromptBlock,
   BluePromptReceipt,
@@ -337,6 +343,7 @@ export function apply(ctx: Context, config: Config): void {
   const session: { current: Agent | null; modelRef: BlueModelSelectionRef | undefined } = { current: null, modelRef: undefined }
   const offTitleCadence = installSessionTitleCadence(ctx, () => session.current?.session)
   ctx.effect(() => offTitleCadence)
+  const jobs = installJobsService(ctx, () => session.current ?? undefined)
   const requests = createBlueRequestController(ctx)
   const yoloByAgent = new WeakMap<object, boolean>()
   const sessionListeners = new Set<(snapshot: BlueSessionSnapshot | null) => void>()
@@ -898,6 +905,8 @@ export function apply(ctx: Context, config: Config): void {
     yoloByAgent.set(next.agent, foldYolo(next.agent.session.events))
     requests.commitSession()
     publishSession()
+    // Owner-scoped job visibility follows the committed session.
+    jobs.publish()
   }
 
   enqueue(async () => {

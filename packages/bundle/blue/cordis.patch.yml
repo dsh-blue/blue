@@ -174,6 +174,7 @@
         blueHarnessQuestionAdapter: true
         blueHarnessSessionAdapter: true
         blueInteractionState: true
+        blueJobs: true
         blueLocale: true
         blueProjectionRegistry: true
         blueRequests: true
@@ -228,6 +229,7 @@
       group: true
       isolate:
         bluePluginControl: true
+        blueJobs: true
         blueSessionActions: true
         blueSessionProjections: true
         blueSessionReader: true
@@ -354,6 +356,20 @@
         # mode snapshot; no Harness Agent or controller crosses into the renderer.
         - id: blue-status-mode
           name: '@dsh-blue/blue-interaction/mode-status'
+
+        # Background-jobs footer entry: '⏵ N jobs' (priority 3, accent tier)
+        # while at least one job is running/stopping; renders nothing on hosts
+        # without a jobs service or with an empty queue. Display-only fiber
+        # over the app-owned blueJobs facade.
+        - id: blue-status-jobs
+          name: '@dsh-blue/blue-transcript/status-jobs'
+
+        # The /jobs command: the editor-slot background-job panel — live-first
+        # list with a one-second duration tick, Enter reads output (the sole
+        # consumer of the job's model-facing cursor; the live-job detail carries
+        # the cursor warning), k kills a live job, Esc closes.
+        - id: blue-jobs
+          name: '@dsh-blue/blue-interaction/jobs'
 
         # Context footer entry: the latest model step's context occupancy —
         # 'context: N% (used/window)' when the adapter advertises a window, else

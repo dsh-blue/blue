@@ -28,8 +28,10 @@ live owner. Bundle fixture wrappers mirror source inject lists exactly.
 
 Baseline owns the public API host, locale, core/theme, banner, conversation
 projection, transcript model/status owners, and official transcript consumer.
-Enhancement rows add editor/attachment helpers, status producers, Blue-owned
-bottom panes, public status bridge, and the reference status-provider owner.
+Enhancement rows add editor/attachment helpers, status producers (including
+the jobs footer entry and the `/jobs` command over the app-owned `blueJobs`
+facade), Blue-owned bottom panes, public status bridge, and the reference
+status-provider owner.
 Assembly owns interaction, the editor-provider owner, public interaction
 bridge, startup/app, and the app-owned public session bridge. The latter waits
 for API control plus app reader/projection sources before exposing readonly

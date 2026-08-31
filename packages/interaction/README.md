@@ -51,6 +51,7 @@ The `blue` settings namespace persists both exclusive provider choices. `statusP
 ## Optional Subpaths
 
 - `./editor-plus`: shell mode and completion.
+- `./jobs`: the `/jobs` background-job panel — live-first list, Enter reads output (consuming the job's model-facing cursor), `k` kills a running job.
 - `./pane-queue`: canonical queued-message bottom pane with immediate inbox-change refresh.
 - `./mode-status`: canonical footer status node derived from the current mode snapshot.
 - `./attachments`: bounded filesystem image store.

@@ -61,6 +61,7 @@ import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
 import * as attachmentsPlugin from '../../../interaction/src/attachments.ts'
 import * as pasteImagePlugin from '../../../interaction/src/paste-image.ts'
 import * as modeStatusPlugin from '../../../interaction/src/mode-status.ts'
+import * as jobsCommandPlugin from '../../../interaction/src/jobs.ts'
 import * as paneQueuePlugin from '../../../interaction/src/pane-queue.ts'
 import * as interactionBridgePlugin from '../../../interaction/src/plugin-host-bridge.ts'
 import * as editorProviderOwnerPlugin from '../../../interaction/src/editor-provider-owner.ts'
@@ -77,6 +78,7 @@ import * as statusContextPlugin from '../../../transcript/src/status-context.ts'
 import * as statusCwdPlugin from '../../../transcript/src/status-cwd.ts'
 import * as statusGitPlugin from '../../../transcript/src/status-git.ts'
 import * as statusTitlePlugin from '../../../transcript/src/status-title.ts'
+import * as statusJobsPlugin from '../../../transcript/src/status-jobs.ts'
 import * as exampleHeaderPlugin from '../../../../examples/header/src/index.ts'
 import * as exampleRightInspectorPlugin from '../../../../examples/right-inspector/src/index.ts'
 import * as exampleBottomLogPlugin from '../../../../examples/bottom-log/src/index.ts'
@@ -171,6 +173,88 @@ export async function resetBlueModuleState(): Promise<void> {
 }
 
 /** One booted Blue tree plus its observations. */
+/**
+ * The e2e host `jobs` stand-in: an unowned final-output registry honoring the
+ * dsh-jobs semantics Blue consumes — owner-granular change notification, one
+ * consuming cursor for live reads, terminal reads marking the job reported.
+ */
+export class FakeJobRegistry {
+  private seq = 0
+  private readonly records = new Map<string, {
+    id: string
+    kind: string
+    label: string
+    status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+    detail?: string
+    startedAt: number
+    finishedAt?: number
+    reported: boolean
+    output: string
+  }>()
+  private readonly listeners = new Set<(owner: undefined) => void>()
+  private changed(): void { for (const listener of this.listeners) listener(undefined) }
+  private snapshot(record: FakeJobRegistry['records'] extends Map<string, infer R> ? R : never) {
+    const { output: _output, ...rest } = record
+    return { ...rest }
+  }
+  list(): readonly unknown[] { return [...this.records.values()].map(record => this.snapshot(record)) }
+  get(id: string): unknown {
+    const record = this.records.get(id)
+    if (record === undefined) throw new Error(`unknown job ${id}`)
+    return this.snapshot(record)
+  }
+  read(id: string): { text: string, snapshot: unknown } {
+    const record = this.records.get(id)
+    if (record === undefined) throw new Error(`unknown job ${id}`)
+    if (record.status === 'running' || record.status === 'stopping') {
+      // Live reads consume the single output cursor.
+      const text = record.output
+      record.output = ''
+      return { text, snapshot: this.snapshot(record) }
+    }
+    record.reported = true
+    return { text: record.output, snapshot: this.snapshot(record) }
+  }
+  kill(id: string): 'requested' | 'already-finished' {
+    const record = this.records.get(id)
+    if (record === undefined) throw new Error(`unknown job ${id}`)
+    if (record.status !== 'running' && record.status !== 'stopping') return 'already-finished'
+    record.status = 'stopping'
+    record.reported = true
+    this.changed()
+    return 'requested'
+  }
+  onJobsChanged(listener: (owner: undefined) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+  /** Test helper: register a running unowned job and return its id. */
+  start(label: string, options: { output?: string, startedAt?: number } = {}): string {
+    this.seq += 1
+    const id = `bash-${String(this.seq)}`
+    this.records.set(id, {
+      id,
+      kind: 'bash',
+      label,
+      status: 'running',
+      startedAt: options.startedAt ?? Date.now(),
+      reported: false,
+      output: options.output ?? '',
+    })
+    this.changed()
+    return id
+  }
+  /** Test helper: settle a job into a terminal status with an optional detail. */
+  settle(id: string, status: 'completed' | 'killed' | 'failed', detail?: string): void {
+    const record = this.records.get(id)
+    if (record === undefined) throw new Error(`unknown job ${id}`)
+    record.status = status
+    record.finishedAt = Date.now()
+    if (detail !== undefined) record.detail = detail
+    this.changed()
+  }
+}
+
 export interface BlueTree {
   ctx: Context
   sessionReader: Context['blueSessionReader']
@@ -181,6 +265,7 @@ export interface BlueTree {
   sessionChanges: Agent[]
   creativeIsolation: Record<string, unknown>
   hostileIsolation: Record<string, unknown>
+  jobs: FakeJobRegistry
 }
 
 /** Blue-owned services withheld from the dynamic creative realm. */
@@ -198,6 +283,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueHarnessQuestionAdapter',
   'blueHarnessSessionAdapter',
   'blueInteractionState',
+  'blueJobs',
   'blueKeymap',
   'blueLocale',
   'blueNotifications',
@@ -257,6 +343,8 @@ interface BlueE2EHooks {
   conversationApply: typeof conversationPlugin.apply
   officialTranscriptApply: typeof officialTranscriptPlugin.apply
   modeStatusApply: typeof modeStatusPlugin.apply
+  statusJobsApply: typeof statusJobsPlugin.apply
+  jobsCommandApply: typeof jobsCommandPlugin.apply
   paneActivityApply: typeof paneActivityPlugin.apply
   paneQueueApply: typeof paneQueuePlugin.apply
   paneTodoApply: typeof paneTodoPlugin.apply
@@ -473,6 +561,8 @@ export async function bootBlue(argv: string[], options: {
     conversationApply: conversationPlugin.apply,
     officialTranscriptApply: officialTranscriptPlugin.apply,
     modeStatusApply: modeStatusPlugin.apply,
+    statusJobsApply: statusJobsPlugin.apply,
+    jobsCommandApply: jobsCommandPlugin.apply,
     paneActivityApply: paneActivityPlugin.apply,
     paneQueueApply: paneQueuePlugin.apply,
     paneTodoApply: paneTodoPlugin.apply,
@@ -697,6 +787,20 @@ export const name = 'blue-status-mode'
 export const inject = ['blueStatusEntries', 'blueSessionReader', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.modeStatusApply(ctx)
 `)}`,
+    // The jobs footer entry and the /jobs command rows mirror cordis.patch.yml;
+    // both read the app-owned blueJobs facade over the host jobs stand-in.
+    '- id: blue-status-jobs',
+    `  name: ${fixture('blue-status-jobs.mjs', `
+export const name = 'blue-status-jobs'
+export const inject = ['blueStatusEntries', 'blueJobs']
+export const apply = ctx => globalThis.__blueE2E.statusJobsApply(ctx)
+`)}`,
+    '- id: blue-jobs',
+    `  name: ${fixture('blue-jobs.mjs', `
+export const name = 'blue-jobs'
+export const inject = ['commands', 'blueJobs', 'blueEditorHost']
+export const apply = ctx => globalThis.__blueE2E.jobsCommandApply(ctx)
+`)}`,
     // The enhancement-segment pane rows mirror cordis.patch.yml; each fixture
     // re-declares the source module's inject list (the activity pane injects
     // blueComponents itself, joining the dock-order activation round).
@@ -805,6 +909,7 @@ export const apply = ctx => globalThis.__blueE2E.privateRuntimeApply(ctx)
     '  group: true',
     '  isolate:',
     '    bluePluginControl: true',
+    '    blueJobs: true',
     '    blueSessionActions: true',
     '    blueSessionProjections: true',
     '    blueSessionReader: true',
@@ -1043,6 +1148,10 @@ export const apply = (ctx) => {
     options.models,
   )
   ctx.llm.registerAdapter(['mock'], adapter)
+  // The host-plane jobs registry dsh-base ships; the thin e2e substitutes an
+  // unowned final-output stand-in every Blue row reads through blueJobs.
+  const jobs = new FakeJobRegistry()
+  ctx.provide('jobs', jobs as never)
 
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
@@ -1059,7 +1168,7 @@ export const apply = (ctx) => {
   })
   ctx.effect(() => () => sessionRegistration.dispose())
   disposers.push(async () => { await ctx.fiber.dispose() })
-  return { ctx, sessionReader, sessionActions, terminal, adapter, exits, sessionChanges, creativeIsolation, hostileIsolation }
+  return { ctx, sessionReader, sessionActions, terminal, adapter, exits, sessionChanges, creativeIsolation, hostileIsolation, jobs }
 }
 
 /** Wait until the app driver has published its first Agent. */

@@ -948,6 +948,67 @@ describe('blue whole-tree e2e', () => {
     }
   })
 
+  it('surfaces background jobs in the footer and drives the /jobs panel', async () => {
+    const tree = await bootBlue([], { script: [] })
+    await currentAgent(tree)
+    // No jobs: the footer entry occupies nothing.
+    await vi.waitFor(async () => {
+      const frame = stripCwdName(stripSgr(await fullFrame(tree.terminal)))
+      expect(frame.includes('⏵')).toBe(false)
+    })
+    tree.jobs.start('npm test', { output: 'tests passed\n' })
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('⏵ 1 jobs')
+    })
+    tree.jobs.start('构建 website')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('⏵ 2 jobs')
+    })
+    // The list panel: live jobs first with status marks, then Esc closes.
+    await expect(executeCommand(tree, await currentAgent(tree), '/jobs')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('● bash-1')
+      expect(frame).toContain('npm test')
+      expect(frame).toContain('构建 website')
+      expect(frame).toContain('running')
+    })
+    // Enter reads the selected (live) job's output: the detail carries the
+    // cursor warning, and the read consumes the single output cursor.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('tests passed')
+      expect(frame).toContain('output cursor')
+    })
+    expect(tree.jobs.read('bash-1')).toMatchObject({ text: '' })
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('● bash-1')
+      expect(frame.includes('output cursor')).toBe(false)
+    })
+    // k requests cancellation of the selected live job; the row follows the
+    // registry through stopping into the terminal killed mark.
+    tree.terminal.sendInput('k')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('stopping')
+    })
+    tree.jobs.settle('bash-1', 'killed')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('⊘ bash-1')
+      expect(frame).toContain('⏵ 1 jobs')
+    })
+    tree.terminal.sendInput('\x1b')
+    // The last live job settling hides the footer entry again.
+    tree.jobs.settle('bash-2', 'completed')
+    await vi.waitFor(async () => {
+      const frame = stripCwdName(stripSgr(await fullFrame(tree.terminal)))
+      expect(frame.includes('⏵')).toBe(false)
+    })
+  })
+
   it('echoes a failed shell command with red stderr and the exit-code row', async () => {
     const tree = await bootBlue([], { script: [] })
     await currentAgent(tree)

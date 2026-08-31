@@ -210,6 +210,14 @@ const zh: Readonly<Record<string, string>> = {
   '… output truncated': '… 输出已截断',
   'exit code {code}': '退出码 {code}',
   'no matching files under the session cwd': '会话工作目录下没有匹配文件',
+  'Jobs': '任务',
+  'no background jobs': '没有后台任务',
+  'background jobs are unavailable on this host': '当前 host 不提供后台任务',
+  'jobs panel is unavailable: the Blue screen is not mounted': '任务面板不可用：Blue 屏幕尚未挂载',
+  'Job {id}': '任务 {id}',
+  'kill': '终止',
+  "Reading a live job consumes the model's output cursor; the model will not see this output again.": '读取运行中的任务会消费模型的输出游标；模型之后将看不到这段输出。',
+  'List background jobs (Enter views output, k kills a running job)': '列出后台任务（Enter 查看输出，k 终止运行中的任务）',
 }
 
 const en = Object.freeze(Object.fromEntries(Object.keys(zh).map(key => [key, key])))

@@ -18,6 +18,7 @@ import { CanonicalFormController, type FormField } from '../src/form-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { CanonicalDocumentController } from '../src/frontend-panel.ts'
+import { jobOutputPanelModel, jobsPanelModel } from '../src/jobs.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { pluginCommandInternals } from '../src/plugin-command.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
@@ -379,6 +380,42 @@ describe('interaction width-scan', () => {
       }
       tail.handleInput('\x1b')
       tail.invalidate()
+    })
+
+    it(`/jobs list and output survive ${name}`, () => {
+      const t = (key: string): string => key
+      const listPanel = new CanonicalDocumentController({
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        keymap: new FakeKeymap(),
+        model: () => jobsPanelModel({
+          available: true,
+          jobs: [
+            { id: 'bash-1', kind: 'bash', label: text, status: 'running', startedAt: 0 },
+            { id: 'bash-2', kind: 'bash', label: text, status: 'failed', detail: text, startedAt: 0, finishedAt: 1 },
+          ],
+        }, 61_000, t),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`/jobs-list/${name}`, listPanel.render(width), width)
+      }
+      const outputPanel = new CanonicalDocumentController({
+        theme: IDENTITY_THEME as never,
+        components: new FakeBlueComponents(),
+        keymap: new FakeKeymap(),
+        model: () => jobOutputPanelModel(
+          { id: 'bash-1', kind: 'bash', label: text, status: 'running', startedAt: 0 },
+          `${text}\n${text}`,
+          t,
+        ),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`/jobs-output/${name}`, outputPanel.render(width), width)
+      }
     })
   }
 })
