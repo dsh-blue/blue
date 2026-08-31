@@ -67,7 +67,7 @@ describe('CanonicalFormController', () => {
     expect(onSubmit).toHaveBeenCalledWith({ a: '13', b: '2', c: '' })
   })
 
-  it('uses Tab to leave editing without changing the active form field', () => {
+  it('uses Tab to confirm editing and advance to the next field', () => {
     const { component, onSubmit } = form([
       { id: 'a', label: 'A' },
       { id: 'b', label: 'B' },
@@ -76,9 +76,37 @@ describe('CanonicalFormController', () => {
     input(component).handleInput(KEY.tab)
     input(component).handleInput('2')
     input(component).handleInput(KEY.enter)
-    input(component).handleInput('3')
+    expect(onSubmit).toHaveBeenCalledWith({ a: '1', b: '2' })
+  })
+
+  it('uses Shift-Tab to confirm editing and move to the previous field', () => {
+    const { component, onSubmit } = form([
+      { id: 'a', label: 'A', initial: 'one' },
+      { id: 'b', label: 'B', initial: 'two' },
+    ])
+    input(component).handleInput(KEY.down)
     input(component).handleInput(KEY.enter)
-    expect(onSubmit).toHaveBeenCalledWith({ a: '12', b: '3' })
+    input(component).handleInput(KEY.shiftTab)
+    expect(component.render(60).join('\n')).toContain('→ A:')
+    expect(onSubmit).not.toHaveBeenCalled()
+    input(component).handleInput(KEY.enter)
+    input(component).handleInput(KEY.shiftTab)
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('keeps an invalid field active when Tab tries to advance', () => {
+    const { component, onSubmit } = form([
+      { id: 'a', label: 'Alpha', required: true },
+      { id: 'b', label: 'Beta' },
+    ])
+    input(component).handleInput(KEY.enter)
+    input(component).handleInput(KEY.tab)
+    expect(component.render(60).join('\n')).toContain('Alpha cannot be empty')
+    input(component).handleInput('ok')
+    input(component).handleInput(KEY.tab)
+    input(component).handleInput('done')
+    input(component).handleInput(KEY.enter)
+    expect(onSubmit).toHaveBeenCalledWith({ a: 'ok', b: 'done' })
   })
 
   it('keeps Up and Down inside the active editor while editing', () => {
@@ -113,6 +141,18 @@ describe('CanonicalFormController', () => {
     for (let step = 0; step < 4; step += 1) input(component).handleInput(KEY.enter)
     expect(onSubmit).not.toHaveBeenCalled()
     expect(component.render(60).some(row => row.includes('Alpha cannot be empty'))).toBe(true)
+  })
+
+  it('revalidates earlier fields before submitting from the last field', () => {
+    const { component, onSubmit } = form([
+      { id: 'a', label: 'Alpha', required: true },
+      { id: 'b', label: 'Beta', required: true },
+    ])
+    input(component).handleInput(KEY.down)
+    input(component).handleInput('done')
+    input(component).handleInput(KEY.enter)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(component.render(60).join('\n')).toContain('Alpha cannot be empty')
   })
 
   it('surfaces a validator verdict and jumps to the field', () => {

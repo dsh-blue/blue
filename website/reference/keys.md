@@ -10,19 +10,20 @@
 | --- | --- | --- |
 | `Ctrl-O` | 切换工具输出展开 | 在最近 **3 个 turn** 的工具卡与思考块的一行摘要与完整输出之间切换 |
 | `Ctrl-T` | 切换 todo 面板折叠 | 五行折叠视图 ↔ 整表视图 |
+| `F6` / `Shift+F6` | 切换 surface 焦点 | 按布局顺序在 Editor 与 pane lane 间前进/后退；到边界回到 Editor，capturing overlay 打开时由 overlay 独占焦点 |
 
 ## 共享交互键位
 
-聚焦 surface 使用两级导航：`Tab` / `Shift-Tab` 切换语义控件组，方向键只在当前组内移动。底部上下文提示只在该 surface 聚焦时显示，并会随编辑/调整/确认状态变化：
+聚焦 surface 使用分层导航：外层 tabs → 内层 tabs → 内容控件组 → 编辑态。底部上下文提示只在该 surface 聚焦时显示，并会随当前层、编辑、调整和确认状态变化：
 
 | 键 | 动作 | 说明 |
 | --- | --- | --- |
-| `Tab` / `Shift-Tab` | 切换控件组 | 例如 tabs → form → actions；返回时恢复该组上次焦点 |
-| `←` / `→` | 水平组内导航 | tabs、actions 与 select 调整态 |
-| `Enter` | 提交 / 确认 | 提交输入或确认聚焦选项 |
-| `Escape` | 取消 / 撤回 / 关闭 | 关闭当前活动表面（补全弹层 → 侧问面板 → 清草稿，逐级让位）；agent 运行时，若当前消息尚无工具调用则无痕撤回并回填编辑框，否则按普通中断处理 |
-| `↑` / `↓` | 垂直组内导航 | list 与 form 导航态（到头回绕） |
-| `Space` | 多选切换 | 多选列表中切换聚焦项 |
+| `←` / `→` | 水平层内导航 | 在 tabs、actions 与 select 调整态内移动，到边界不循环 |
+| `Enter` | 下钻 / 提交 / 确认 | 在 tab 条进入下一层；激活列表、action 或输入确认 |
+| `Tab` / `Shift-Tab` | 切换内容组 | 只在内容层循环 list/form/actions 等语义组并记忆组内焦点；在 tab 条上无动作 |
+| `Escape` | 返回 / 取消 / 关闭 | 编辑态 → 内容 → 内层 tabs → 外层 tabs → 关闭，每次只退一层；回到 Editor 后仍沿用补全、撤回与中断链 |
+| `↑` / `↓` | 垂直层内导航 | list 与 form 导航态，到边界不循环；disabled 行会跳过 |
+| `Space` | 多选切换 | 多选列表中切换聚焦项，`Enter` 确认整组 |
 
 ## 编辑器语境
 
@@ -43,12 +44,13 @@
 | 表面 | 键位 |
 | --- | --- |
 | `/help` 浮层 | ↑↓ / PageUp / PageDown 翻页；`Escape` / `Enter` / `q` 关闭 |
-| `/sessions` 选择器 | ↑↓ 导航，`Enter` 恢复，`Esc` 取消 |
-| 审批面板 | ↑↓ + `Enter`，或数字键 `1`–`4` 直选；`Escape` 拒绝 |
-| 问卷面板 | `Tab` / `Shift-Tab` 切题；单选 ↑↓ + `Enter`；多选 `Space` + `Enter`；Other 编辑器内 `Esc` 返回列表 |
-| 表单面板 | `↑` / `↓` 在导航态切字段；文本第一次 `Enter` 进入编辑、再次 `Enter` 确认，textarea 用 `Alt+Enter` 换行；select 用 `Enter` 进入、`←` / `→` 调整、`Enter` 确认；`Tab` 切语义控件组；`Escape` 先退出或取消控件编辑，再取消表面 |
+| `/sessions` 选择器 | ↑↓ 不循环导航，`Enter` 恢复；输入筛选后 `Esc` 只结束筛选并保留 query，聚焦 `Clear filter` 才清空，再按层级退出 |
+| 审批面板 | ↑↓ 不循环 + `Enter`，或数字键 `1`–`4` 直选；`Escape` 拒绝 |
+| 问卷面板 | 问题 tabs 用不循环的 `←` / `→` 切题、`Enter` 进入内容；Tab 在问题 tabs 上无动作；单选 ↑↓ + `Enter`，多选 `Space` + `Enter`，Other 编辑器内 `Esc` 返回列表 |
+| 表单面板 | `↑` / `↓` 在导航态不循环切字段；文本第一次 `Enter` 进入编辑，编辑态 `Enter` 或合法值上的 `Tab` 确认，非法值停在原字段，textarea 用 `Alt+Enter` 换行；select 用 `Enter` 进入、`←` / `→` 调整、`Enter`/合法 `Tab` 确认；内容态 `Tab` 切语义组，`Escape` 逐层返回 |
 | 计划评审 | `←` / `→` 或 `1`–`3` 选决策，`↑` / `↓` / `PageUp` / `PageDown` 滚动计划，`Enter` 确认 |
-| `/model` · `/effort` 面板 | `←` `→` 步进 segment 控件；`Enter` 确认并持久化为新默认；`Alt+S` **仅本会话**确认（不写持久默认） |
+| `/model` 面板 | 唯一 tab 层是 provider：`←` / `→` 不循环切换，`Enter` 进入模型列表；列表中 `↑` / `↓` 选模型，`←` / `→` 调当前模型的思考等级，`Tab` 进入同级提交动作 |
+| `/effort` 面板 | `←` / `→` 在思考等级间不循环移动，`Enter` 下钻；选择 `Set as default` 持久化，或选择 `Use for this session` 仅改当前会话 |
 | `/btw` 面板 | `Esc` 关闭；滚轮 / `PageUp` / `PageDown` 滚动；`Enter` 续问 |
 
 ## 自定义键位

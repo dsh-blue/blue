@@ -30,9 +30,11 @@ describe('model picker models', () => {
     expect(model).toMatchObject({
       title: 'Choose',
       header: { content: '?  fresh cache?' },
-      selectedId: 'mock\u0000chat',
+      selectedId: '["mock","chat"]',
       filterable: true,
       grouped: true,
+      variantNavigation: 'inline',
+      emphasizePrimaryAction: false,
     })
     expect(model.items?.[0]).toMatchObject({
       detail: '· ctx 64k · ← current',

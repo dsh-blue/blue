@@ -11,17 +11,12 @@ import type { BlueComponents, BlueFocusable, BlueTheme } from '@dsh-blue/blue-co
 import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
-import { oneLine, windowedRange } from './select-list.ts'
+import { oneLine } from './select-list.ts'
 
-const KEY_TAB = '\t'
-const KEY_SHIFT_TAB = '\x1b[Z'
-const KEY_UP = '\x1b[A'
-const KEY_DOWN = '\x1b[B'
-const KEY_ENTER = '\r'
 const KEY_SPACE = ' '
-const KEY_ESCAPE = '\x1b'
 const MAX_OPTION_ROWS = 6
 const OTHER_ID = '__other__'
+const QUESTION_TABS_ID = 'questionnaire-questions'
 
 /** Construction options for {@link Questionnaire}. */
 export interface QuestionnaireOptions {
@@ -49,8 +44,10 @@ export class Questionnaire implements BlueFocusable {
   private tab = 0
   private readonly states: QuestionState[]
   private editing = false
+  private focusedControlId = QUESTION_TABS_ID
 
   constructor(private readonly options: QuestionnaireOptions) {
+    if (options.questions.length === 0) throw new Error('questionnaire requires at least one question')
     this.states = options.questions.map(question => ({
       options: question.options ?? [],
       cursor: 0,
@@ -59,17 +56,21 @@ export class Questionnaire implements BlueFocusable {
       draft: '',
       answer: undefined,
     }))
-    this.editing = this.isOptionless(this.current())
     this.adapter = new CanonicalPanelAdapter({
       components: options.components,
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onFocusChange: identity => {
+        this.focusedControlId = identity.controlId
+        this.syncCursor(identity.controlId, identity.itemId)
+      },
       onTextSubmit: (_controlId, value) => this.submitCustom(this.current(), this.state(), value),
       onUnhandledEscape: options.onCancel,
+      maxLeafRows: MAX_OPTION_ROWS,
       startEditing: () => this.editing,
+      fallbackFocusIdentity: () => this.editing ? { controlId: 'answer' } : undefined,
       ...(options.t === undefined ? {} : { t: options.t }),
-      suppressAutomaticContextHints: true,
       contextHints: () => this.contextHints(),
     })
   }
@@ -95,39 +96,18 @@ export class Questionnaire implements BlueFocusable {
 
   private rowCount(state: QuestionState): number { return state.options.length + 1 }
 
-  /** Preserve historical raw keys while delegating text editing to core. */
+  /** Preserve digit and multi-select shortcuts while core owns focus. */
   handleInput(data: string): void {
-    if (this.editing) {
-      if (data === KEY_ESCAPE) {
-        if (this.isOptionless(this.current())) this.options.onCancel()
-        else { this.editing = false; this.adapter.invalidate() }
-        return
-      }
-      if (data === KEY_TAB) { this.move(1); return }
-      if (data === KEY_SHIFT_TAB) { this.move(-1); return }
-      this.adapter.handleInput(data)
-      return
-    }
     const question = this.current()
     const state = this.state()
-    if (data === KEY_TAB) { this.move(1); return }
-    if (data === KEY_SHIFT_TAB) { this.move(-1); return }
-    if (data === KEY_UP) { state.cursor = (state.cursor + this.rowCount(state) - 1) % this.rowCount(state); this.adapter.invalidate(); return }
-    if (data === KEY_DOWN) { state.cursor = (state.cursor + 1) % this.rowCount(state); this.adapter.invalidate(); return }
-    if (data === KEY_SPACE) { this.toggle(question, state); return }
-    if (data === KEY_ENTER) { this.confirm(question, state); return }
-    if (data === KEY_ESCAPE) { this.options.onCancel(); return }
-    if (/^[1-9]$/u.test(data)) {
+    if (!this.editing && this.focusedControlId === 'answer' && (data === '\r' || (data.length === 1 && data >= ' '))) this.editing = true
+    if (!this.editing && this.focusedControlId === 'questionnaire-options' && data === KEY_SPACE) { this.toggle(question, state); return }
+    if (!this.editing && /^[1-9]$/u.test(data)) {
       const index = Number(data) - 1
       if (index < this.rowCount(state)) { state.cursor = index; this.confirm(question, state) }
+      return
     }
-  }
-
-  private move(delta: 1 | -1): void {
-    this.editing = false
-    this.tab = (this.tab + this.options.questions.length + delta) % this.options.questions.length
-    this.editing = this.isOptionless(this.current())
-    this.adapter.invalidate()
+    this.adapter.handleInput(data)
   }
 
   private toggle(question: AskUserQuestionItem, state: QuestionState): void {
@@ -142,7 +122,7 @@ export class Questionnaire implements BlueFocusable {
   private confirm(question: AskUserQuestionItem, state: QuestionState): void {
     if (state.cursor === state.options.length) {
       this.editing = true
-      this.adapter.invalidate()
+      this.adapter.focus({ controlId: 'answer' })
       return
     }
     if (question.multiSelect === true) {
@@ -157,6 +137,7 @@ export class Questionnaire implements BlueFocusable {
       return
     }
     const chosen = state.options[state.cursor]
+    /* v8 ignore next -- canonical navigation and digit shortcuts keep the cursor in range. */
     if (chosen !== undefined) this.recordAnswer(state, { id: question.id, selected: [chosen.label] })
   }
 
@@ -182,7 +163,6 @@ export class Questionnaire implements BlueFocusable {
       return
     }
     this.tab = next
-    this.editing = this.isOptionless(this.current())
     this.adapter.invalidate()
   }
 
@@ -194,17 +174,18 @@ export class Questionnaire implements BlueFocusable {
     const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
     const question = this.current()
     const state = this.state()
-    const progress = this.options.questions.map((entry, index) => ({
-      text: `${index === 0 ? '' : '  '}${this.states[index]?.answer === undefined ? index === this.tab ? '●' : '○' : '✓'} ${entry.header ?? `Q${String(index + 1)}`}`,
-      tone: this.states[index]?.answer === undefined ? index === this.tab ? 'accent' as const : 'muted' as const : 'success' as const,
-      ...(index === this.tab ? { emphasis: 'strong' as const } : {}),
-    }))
     const body: BlueUiNode[] = [
-      { kind: 'rich-text', spans: progress },
+      {
+        kind: 'tabs', id: QUESTION_TABS_ID, activeId: question.id,
+        items: this.options.questions.map((entry, index) => ({
+          id: entry.id,
+          label: `${this.states[index]?.answer === undefined ? index === this.tab ? '●' : '○' : '✓'} ${entry.header ?? `Q${String(index + 1)}`}`,
+        })),
+      },
       { kind: 'rich-text', spans: [{ text: question.question, tone: 'accent', emphasis: 'strong' }] },
       ...(question.detail === undefined ? [] : [{ kind: 'text', content: question.detail, tone: 'muted' } as const]),
     ]
-    if (this.editing) {
+    if (this.editing || this.isOptionless(question)) {
       body.push({
         kind: 'form',
         id: 'questionnaire-answer',
@@ -212,14 +193,12 @@ export class Questionnaire implements BlueFocusable {
       })
     } else {
       const ids = [...state.options.map((_, index) => String(index + 1)), OTHER_ID]
-      const range = windowedRange(state.cursor, ids.length, MAX_OPTION_ROWS)
       body.push({
         kind: 'list',
         id: 'questionnaire-options',
         mode: 'single',
         selectedIds: [ids[state.cursor]!],
-        items: ids.slice(range.start, range.end).map((id, offset) => {
-          const index = range.start + offset
+        items: ids.map((id, index) => {
           const option = state.options[index]
           if (option === undefined) return {
             id,
@@ -244,18 +223,12 @@ export class Questionnaire implements BlueFocusable {
   }
 
   private contextHints() {
-    if (this.editing) return [
-      { id: 'activate', keys: 'Enter', label: 'save', priority: 100 },
-      { id: 'group', keys: 'Tab/Shift-Tab', label: 'questions', compact: 'Tab', priority: 90 },
-      { id: 'dismiss', keys: 'Esc', label: this.isOptionless(this.current()) ? 'cancel' : 'back', priority: 95 },
-    ]
+    if (this.editing || this.isOptionless(this.current())) return []
     return [
-      { id: 'navigate', keys: '↑↓/1-9', label: 'options', priority: 90 },
+      { id: 'digits', keys: '1-9', label: 'choose', priority: 95 },
       ...(this.current().multiSelect === true
-        ? [{ id: 'activate', keys: 'Space/Enter', label: 'toggle / choose', priority: 100 }]
-        : [{ id: 'activate', keys: 'Enter', label: 'choose', priority: 100 }]),
-      { id: 'group', keys: 'Tab/Shift-Tab', label: 'questions', compact: 'Tab', priority: 95 },
-      { id: 'dismiss', keys: 'Esc', label: 'cancel', priority: 85 },
+        ? [{ id: 'toggle', keys: 'Space', label: 'toggle', priority: 96 }]
+        : []),
     ]
   }
 
@@ -264,10 +237,29 @@ export class Questionnaire implements BlueFocusable {
       this.state().draft = event.value
       return
     }
+    if (event.kind === 'tab-change' && event.controlId === QUESTION_TABS_ID) {
+      const index = this.options.questions.findIndex(question => question.id === event.tabId)
+      if (index >= 0) {
+        this.tab = index
+        this.editing = false
+        this.focusedControlId = QUESTION_TABS_ID
+        this.adapter.invalidate()
+      }
+      return
+    }
     if (event.kind === 'selection-change' && event.controlId === 'questionnaire-options' && typeof event.value === 'string') {
       const state = this.state()
       const index = event.value === OTHER_ID ? state.options.length : Number(event.value) - 1
       if (index >= 0 && index < this.rowCount(state)) { state.cursor = index; this.confirm(this.current(), state) }
     }
+  }
+
+  private syncCursor(controlId: string, itemId: string | undefined): void {
+    if (controlId !== 'questionnaire-options' || itemId === undefined) return
+    const state = this.state()
+    const index = itemId === OTHER_ID ? state.options.length : Number(itemId) - 1
+    if (!Number.isInteger(index) || index < 0 || index >= this.rowCount(state) || index === state.cursor) return
+    state.cursor = index
+    this.adapter.invalidate()
   }
 }

@@ -122,7 +122,7 @@ export function modelSwitchNotice(
  * session-only, persist the new default.
  * @param ctx - plugin context (`agentDefaultModel` resolved lazily).
  * @param next - the selection to commit.
- * @param persist - `false` for the Alt+S session-only channel.
+ * @param persist - `false` for an explicit session-only action.
  * @returns the notice text describing the outcome.
  */
 async function commitModelSelection(

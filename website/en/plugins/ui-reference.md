@@ -796,13 +796,19 @@ ui.actions({
 The TUI derives operations directly from canonical control roles. Plugins
 should not repeat generic keyboard teaching in a surface footer:
 
-- Tab/Shift-Tab switches semantic groups in tree order and remembers each
-  group's last focused item.
-- Left/Right moves inside tabs/actions; Up/Down moves inside lists/forms.
-- Tabs and single lists activate with Enter, multiple lists toggle with Space,
-  and actions accept Enter or Space.
-- Text/select editing changes the hint to finish, apply, newline, or cancel;
-  a pending action confirmation changes it to `Enter confirm · Esc cancel`.
+- Focus descends through outer tabs → nested tabs → content groups → editing.
+- A tab strip uses non-wrapping Left/Right and Enter to descend. Tab/Shift-Tab
+  is inert on tab strips and cycles semantic groups only in content, remembering
+  the last focused item in each group.
+- Directional content movement does not wrap and disabled items cannot receive
+  focus. Single lists activate with Enter; multiple lists toggle with Space and
+  confirm with Enter; actions accept Enter or Space.
+- Valid text/select editing confirms with Enter or Tab, while invalid input
+  stays active. Escape climbs editing → content → nested tabs → outer tabs →
+  close, one layer at a time.
+- A pending action confirmation changes the hint to `Enter confirm · Esc
+  cancel`. Read-only scroll regions are focusable and support arrows, Page,
+  Home, and End.
 
 The row appears only while a plugin pane owns focus or a capturing overlay is
 open. Escape is advertised only for a surface that can actually close; passive

@@ -18,13 +18,13 @@
 
 
 
-
-
-
 ╭ Select a model ──────────────────────────────────────────────────────────────╮
 │mock                                                                          │
 │ → mock/Mock — ← current [Low] [High]                                         │
 │   mock/Mock Pro — [Low] [High]                                               │
-│  ↑↓ rows · Enter choose · ←→ actions                                         │
+│                                                                              │
+│ Set as default                                                               │
+│ Use for this session                                                         │
+│  ↑↓ models · Enter choose · ←→ thinking                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

@@ -13,7 +13,7 @@ When a tool call needs authorization, a four-choice panel opens: an amber rule +
 4. Reject with feedback
 ```
 
-(Number keys select directly; ↑↓ + Enter navigate with wrap; the selected row carries a `▶` pointer.)
+(Number keys select directly; non-wrapping ↑↓ navigates and Enter confirms; the selected row carries a `▶` pointer.)
 
 - **Session-level remember** — choice 2 records the tool in a session allowance table; later requests for the same agent + tool skip the panel entirely and pass through.
 - **Reject with feedback** — choice 4 swaps the menu for an inline reason editor; submitting steers the agent with a user message (`User rejected …: <reason>`), so the agent sees why. An empty reason is a plain Reject (no steering).
@@ -27,11 +27,11 @@ Requests from other agents (not the one mounted in the UI) don't open a panel �
 `ctx.userQuestions` requests (clarifying questions and the like) open a per-question panel that focuses one question at a time:
 
 - the panel title reads `Question {i} of {N}`; the first row carries the progress `{i}/{N}` followed by every question's header (or `Q{i+1}`) — `●` current, `✓` answered, `○` unanswered;
-- **Tab / Shift-Tab** move between questions; unsubmitted editor text is kept as a per-question draft and restored on return; Enter records the answer and jumps to the next unanswered question;
+- the question tab strip uses non-wrapping **Left / Right**, with Enter descending into content; Tab / Shift-Tab is inert on the question tabs and switches semantic groups only inside content. Unsubmitted editor text is kept as a per-question draft and restored on return; Enter records the answer and jumps to the next unanswered question;
 - single-choice via ↑↓ + Enter, multi-choice via Space + Enter; the cursor row is highlighted full-width (the Other row included);
 - every question ends with a fixed **Other** pseudo-entry that opens a compact single-line input — a highlighted `> Answer` row; multi-line text is flattened to one line;
 - questions without options go straight to the same single-line input;
-- the footer keys follow the state: editing shows `↵ save · tab next · esc back` (`esc cancel` on optionless questions); the option list adds `space toggle` only for multi-choice;
+- the footer follows the state: editing shows confirmation and return operations; the option list adds `space toggle` only for multi-choice;
 - answering everything resolves automatically. Escape rejects the whole request — though inside the Other editor, Escape first saves the draft and returns to the option list; an aborted signal closes and rejects it too.
 
 Questionnaire answers enter the session as user-visible content the model can see.
@@ -41,7 +41,7 @@ Questionnaire answers enter the session as user-visible content the model can se
 Custom provider onboarding and the typed `y` confirmation for the danger permission preset use a multi-field form panel:
 
 - each field starts on one compact `label · hint: value` row; the selected row carries `→`, and wrapped values continue under that row;
-- **Up / Down** moves between fields only in navigation and remains available for cursor movement while editing; typing starts editing, the first **Enter** on an untouched field enters edit mode, and Enter while editing advances or submits the last field; **Tab** is reserved for semantic control groups; **Escape** first returns to navigation, then cancels;
+- non-wrapping **Up / Down** moves between fields only in navigation and remains available for cursor movement while editing; typing starts editing, the first **Enter** on an untouched field enters edit mode, and Enter or a valid Tab while editing confirms and advances or submits the last field; invalid input stays active; **Tab** switches semantic groups only in content navigation, and **Escape** climbs one layer at a time;
 - a validation error renders directly below the failing field without closing the panel; any edit clears it;
 - values truncate to the panel width, so long pasted keys never break the frame.
 

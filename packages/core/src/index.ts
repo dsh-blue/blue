@@ -95,6 +95,7 @@ export type {
   BlueEditorOptions,
   BlueEditorSubmitAttempt,
   BlueFocusable,
+  BlueFocusIdentity,
   BlueImage,
   BlueImageOptions,
   BlueKeyAction,

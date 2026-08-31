@@ -12,12 +12,8 @@ import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
 
-const KEY_UP = '\x1b[A'
-const KEY_DOWN = '\x1b[B'
-const KEY_PAGE_UP = '\x1b[5~'
-const KEY_PAGE_DOWN = '\x1b[6~'
 const DEFAULT_MAX_VISIBLE = 16
-const INFO_LEAF_PATH = '$.child'
+const INFO_LEAF_PATH = '$.child.scroll'
 const PASSIVE_EVENT_SINK = Function.prototype as () => void
 
 /** Legacy internal spelling mapped directly to canonical semantic tones. */
@@ -126,10 +122,6 @@ export class InfoPanel implements BlueFocusable {
       this.options.onClose()
       return
     }
-    if (data === KEY_UP) { this.scrollTop = Math.max(0, this.scrollTop - 1); this.adapter.invalidate(); return }
-    if (data === KEY_DOWN) { this.scrollTop += 1; this.adapter.invalidate(); return }
-    if (data === KEY_PAGE_UP) { this.scrollTop = Math.max(0, this.scrollTop - this.contentLimit); this.adapter.invalidate(); return }
-    if (data === KEY_PAGE_DOWN) { this.scrollTop += this.contentLimit; this.adapter.invalidate(); return }
     this.adapter.handleInput(data)
   }
 
@@ -167,7 +159,7 @@ export class InfoPanel implements BlueFocusable {
       kind: 'surface',
       chrome: 'overlay',
       title: this.options.title,
-      child: { kind: 'rich-text', spans },
+      child: { kind: 'scroll', child: { kind: 'rich-text', spans } },
       ...(showing === '' ? {} : { footer: { kind: 'divider', label: showing.slice(0, -3) } as const }),
     }
   }

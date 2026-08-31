@@ -51,9 +51,9 @@ Keys still resolve **per request**, so adding or rotating one while Blue is runn
 
 ### Model and thinking effort
 
-- **`/model`** — no argument opens the model picker (`←` `→` step the thinking-effort segment); with an id it switches directly. A switch persists as the new default.
+- **`/model`** — no argument opens the model picker; with an id it switches directly. The panel's `Set as default` action persists the selection.
 - **`Alt+M`** — cycles models without opening the panel.
-- **`Alt+S`** (inside the panel) — confirm **for this session only**: the next step switches immediately without persisting a new default.
+- **`Use for this session`** (panel action) — switch the next step immediately without persisting a new default.
 - **`/effort`** (alias `/thinking`) — switch the current model's thinking effort; `default` restores the provider default.
 
 `/model` persistence lands in the `agent-default-model:` section of settings.yaml (shape [below](#the-three-core-settings-yaml-sections)).

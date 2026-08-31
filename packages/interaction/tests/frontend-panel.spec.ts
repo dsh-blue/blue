@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CanonicalDocumentController, type FrontendPanelDocument } from '../src/frontend-panel.ts'
 import { fakeBlueContext, KEY } from './fakes.ts'
 
-function fixture(initial?: FrontendPanelDocument, options: { hint?: string, showSelectedVariantInFooter?: boolean, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
+function fixture(initial?: FrontendPanelDocument, options: { focused?: boolean, hint?: string, showSelectedVariantInFooter?: boolean, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
   const display = fakeBlueContext()
   let model: FrontendPanelDocument = initial ?? { mode: 'info', title: 'Fixture', view: { kind: 'text', content: 'body' }, submit: { kind: 'refresh' } }
   const onAction = vi.fn()
@@ -15,7 +15,7 @@ function fixture(initial?: FrontendPanelDocument, options: { hint?: string, show
     ...(options.showSelectedVariantInFooter === undefined ? {} : { showSelectedVariantInFooter: options.showSelectedVariantInFooter }),
     ...(options.onUnhandledInput === undefined ? {} : { onUnhandledInput: options.onUnhandledInput }),
   })
-  panel.focused = true
+  if (options.focused !== false) panel.focused = true
   return { panel, onAction, onClose, setModel(next: FrontendPanelDocument) { model = next; panel.invalidate() } }
 }
 
@@ -29,11 +29,22 @@ describe('CanonicalDocumentController', () => {
     active.panel.invalidate()
     const passive = fixture({ mode: 'info', title: 'Passive' })
     passive.panel.handleInput('x')
-    passive.panel.handleInput(KEY.enter)
+    passive.panel.handleInput(KEY.escape)
     expect(passive.onClose).toHaveBeenCalledOnce()
+
   })
 
-  it('selects enabled rows, wraps, and dispatches cancel', () => {
+  it('scrolls read-only documents with arrows, pages, and boundary keys', () => {
+    const value = fixture({
+      mode: 'info', title: 'Long document',
+      view: { kind: 'text', content: Array.from({ length: 30 }, (_, index) => `line-${String(index)}`).join('\n') },
+    })
+    for (const key of [KEY.up, KEY.down, '\x1b[5~', '\x1b[6~', 'G', 'g']) value.panel.handleInput(key)
+    expect(value.panel.render(40).join('\n')).toContain('line-0')
+    expect(value.onClose).not.toHaveBeenCalled()
+  })
+
+  it('selects enabled rows with bounded navigation and dispatches cancel', () => {
     const value = fixture({
       mode: 'select', title: 'Choose', selectedId: 'a', cancel: { kind: 'cancel' },
       items: [
@@ -50,14 +61,16 @@ describe('CanonicalDocumentController', () => {
     expect(value.onClose).toHaveBeenCalledOnce()
   })
 
-  it('filters, clears search before close, and handles no matches', () => {
+  it('leaves filtering before explicitly clearing search or closing', () => {
     const value = fixture({ mode: 'select', title: 'Filter', filterable: true, items: [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }] })
     value.panel.handleInput('z')
     expect(value.panel.render(40).join('\n')).toContain('/ z')
     expect(value.panel.render(40).join('\n')).toContain('no matches')
-    expect(value.panel.render(80).join('\n')).toContain('Esc close')
+    expect(value.panel.render(80).join('\n')).toContain('Esc finish search')
     value.panel.handleInput(KEY.escape)
     expect(value.onClose).not.toHaveBeenCalled()
+    expect(value.panel.render(40).join('\n')).toContain('/ z')
+    value.panel.handleInput(KEY.enter)
     expect(value.panel.render(40).join('\n')).not.toContain('/ z')
     value.panel.handleInput(KEY.escape)
     expect(value.onClose).toHaveBeenCalledOnce()
@@ -81,6 +94,7 @@ describe('CanonicalDocumentController', () => {
       { text: ' [Low]', tone: 'accent', emphasis: 'strong' },
       { text: ' [High]', tone: 'muted' },
     ])
+    value.panel.handleInput(KEY.enter)
     value.panel.handleInput(KEY.right)
     expect(value.panel.render(80).join('\n')).toContain('[High]')
     expect(extractList(value.panel.currentNode()).items[0]!.detailSpans).toEqual([
@@ -88,11 +102,15 @@ describe('CanonicalDocumentController', () => {
       { text: ' [Low]', tone: 'muted' },
       { text: ' [High]', tone: 'accent', emphasis: 'strong' },
     ])
-    value.panel.handleInput('\x1bs'); value.panel.handleInput(KEY.enter)
-    expect(value.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'session', id: 'high' }, { kind: 'pick', id: 'high' }])
+    value.panel.handleInput(KEY.enter)
     value.panel.handleInput(KEY.tab)
+    value.panel.handleInput(KEY.right)
+    value.panel.handleInput(KEY.enter)
     value.panel.handleInput(KEY.left)
-    value.panel.handleInput('\x1b[Z')
+    value.panel.handleInput(KEY.enter)
+    expect(value.onAction.mock.calls.map(call => call[0])).toEqual([{ kind: 'session', id: 'high' }, { kind: 'pick', id: 'high' }])
+    value.panel.handleInput(KEY.escape)
+    value.panel.handleInput(KEY.escape)
 
     const groupsOnly = fixture({
       mode: 'select', title: 'Groups', grouped: true,
@@ -102,7 +120,78 @@ describe('CanonicalDocumentController', () => {
       ],
     })
     groupsOnly.panel.handleInput(KEY.right)
-    expect(groupsOnly.panel.render(80).join('\n')).toContain('Two')
+    groupsOnly.panel.handleInput(KEY.right)
+    const groupsOnlyNode = groupsOnly.panel.currentNode()
+    if (groupsOnlyNode.kind !== 'surface' || groupsOnlyNode.child.kind !== 'stack') throw new Error('expected grouped surface')
+    expect(groupsOnlyNode.child.children.map(child => child.node).find(node => node.kind === 'tabs')).toMatchObject({ activeId: 'Two' })
+  })
+
+  it('keeps inline variants on the list row and renders equal action choices', () => {
+    const value = fixture({
+      mode: 'select', title: 'Models', grouped: true, variantNavigation: 'inline', emphasizePrimaryAction: false,
+      items: [
+        { id: 'a', label: 'Alpha', group: 'One', selectedVariantId: 'low', variants: [
+          { id: 'low', label: 'Low', action: { kind: 'pick', id: 'low' }, actionLabel: 'Set as default', secondaryAction: { kind: 'session', id: 'low' }, secondaryActionLabel: 'Use for this session' },
+          { id: 'high', label: 'High', action: { kind: 'pick', id: 'high' }, actionLabel: 'Set as default', secondaryAction: { kind: 'session', id: 'high' }, secondaryActionLabel: 'Use for this session' },
+        ] },
+        { id: 'b', label: 'Beta', group: 'Two' },
+      ],
+    })
+    const node = value.panel.currentNode()
+    if (node.kind !== 'surface' || node.child.kind !== 'stack') throw new Error('expected panel surface')
+    const children = node.child.children.map(child => child.node)
+    expect(children.filter(child => child.kind === 'tabs').map(child => child.id)).toEqual(['frontend-panel-groups'])
+    const actions = children.find(child => child.kind === 'actions')
+    if (actions?.kind !== 'actions') throw new Error('expected actions')
+    expect(actions.items).toEqual([
+      { id: 'frontend-panel-primary', label: 'Set as default' },
+      { id: 'frontend-panel-secondary', label: 'Use for this session' },
+    ])
+
+    value.panel.handleInput(KEY.enter)
+    value.panel.handleInput(KEY.right)
+    value.panel.handleInput(KEY.right)
+    expect(extractList(value.panel.currentNode()).items[0]!.detailSpans).toContainEqual({ text: ' [High]', tone: 'accent', emphasis: 'strong' })
+    value.panel.handleInput(KEY.left)
+    expect(extractList(value.panel.currentNode()).items[0]!.detailSpans).toContainEqual({ text: '[Low]', tone: 'accent', emphasis: 'strong' })
+    expect(value.panel.render(80).join('\n')).toContain('←→ thinking')
+    value.panel.handleInput(KEY.right)
+    value.panel.handleInput(KEY.tab)
+    value.panel.handleInput(KEY.right)
+    value.panel.handleInput(KEY.enter)
+    expect(value.onAction).toHaveBeenCalledWith({ kind: 'session', id: 'high' })
+
+    const empty = fixture({ mode: 'select', title: 'Empty inline', variantNavigation: 'inline', items: [] })
+    empty.panel.handleInput(KEY.left)
+    const plain = fixture({ mode: 'select', title: 'Plain inline', variantNavigation: 'inline', items: [{ id: 'plain', label: 'Plain' }] })
+    plain.panel.handleInput(KEY.right)
+    const single = fixture({
+      mode: 'select', title: 'Single inline', variantNavigation: 'inline',
+      items: [{ id: 'single', label: 'Single', variants: [{ id: 'only', label: 'Only' }, { id: 'off', label: 'Off', disabled: true }] }],
+    })
+    single.panel.handleInput(KEY.right)
+    expect(empty.onAction).not.toHaveBeenCalled()
+    expect(plain.onAction).not.toHaveBeenCalled()
+    expect(single.onAction).not.toHaveBeenCalled()
+  })
+
+  it('bounds inline variants before compiler focus exists', () => {
+    const row = { id: 'a', label: 'Alpha', selectedVariantId: 'low', variants: [
+      { id: 'low', label: 'Low' },
+      { id: 'high', label: 'High' },
+    ] }
+    const ungrouped = fixture({ mode: 'select', title: 'Ungrouped', variantNavigation: 'inline', items: [row] }, { focused: false })
+    ungrouped.panel.handleInput(KEY.right)
+    expect(extractList(ungrouped.panel.currentNode()).items[0]!.detailSpans)
+      .toContainEqual({ text: ' [High]', tone: 'accent', emphasis: 'strong' })
+
+    const grouped = fixture({
+      mode: 'select', title: 'Grouped', grouped: true, variantNavigation: 'inline',
+      items: [{ ...row, group: 'One' }, { id: 'b', label: 'Beta', group: 'Two' }],
+    }, { focused: false })
+    grouped.panel.handleInput(KEY.left)
+    expect(extractList(grouped.panel.currentNode()).items[0]!.detailSpans)
+      .toContainEqual({ text: '[Low]', tone: 'accent', emphasis: 'strong' })
   })
 
   it('renders named counted tabs, group empty states, badges, and disabled variants', () => {
@@ -134,10 +223,14 @@ describe('CanonicalDocumentController', () => {
       { text: ' · v1' },
     ])
     expect(node.footer).toMatchObject({ content: expect.stringContaining('Verify selected') })
-    value.panel.handleInput(KEY.right)
+    value.panel.handleInput(KEY.enter)
+    value.panel.handleInput(KEY.enter)
+    value.panel.handleInput(KEY.tab)
     value.panel.handleInput(KEY.enter)
     expect(value.onAction).toHaveBeenCalledWith({ kind: 'verify' })
-    value.panel.handleInput(KEY.tab)
+    value.panel.handleInput(KEY.escape)
+    value.panel.handleInput(KEY.escape)
+    value.panel.handleInput(KEY.right)
     expect(value.panel.render(80).join('\n')).toContain('catalog unavailable')
     expect(value.panel.render(80).join('\n')).toContain('offline')
 
@@ -150,8 +243,10 @@ describe('CanonicalDocumentController', () => {
     const value = fixture({
       mode: 'select', title: 'Long', items: Array.from({ length: 20 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` })),
     }, { hint: 'custom', onUnhandledInput: (data, id) => data === 'c' && id === '0' ? shortcut() : undefined })
-    expect(extractList(value.panel.currentNode()).items).toHaveLength(5)
-    value.panel.handleInput('c'); value.panel.handleInput('\x1b[6~'); value.panel.handleInput('G'); value.panel.handleInput('g'); value.panel.handleInput('\x1b[5~')
+    expect(extractList(value.panel.currentNode()).items).toHaveLength(20)
+    expect(value.panel.render(60).join('\n')).toContain('Item 0')
+    expect(value.panel.render(60).join('\n')).not.toContain('Item 5')
+    value.panel.handleInput('c'); value.panel.handleInput('\x1b[6~'); value.panel.handleInput('\x1b[F'); value.panel.handleInput('\x1b[H'); value.panel.handleInput('\x1b[5~')
     expect(value.onAction).toHaveBeenCalledWith({ kind: 'shortcut' })
     expect(value.panel.render(60).join('\n')).toContain('custom')
   })
@@ -174,7 +269,7 @@ describe('CanonicalDocumentController', () => {
       items: [{ id: 'i', label: 'Installed', group: 'installed' }, { id: 'c', label: 'Catalog', group: 'catalog' }],
     }
     const grouped = fixture(groupedModel, { showSelectedVariantInFooter: true })
-    grouped.panel.handleInput(KEY.tab)
+    grouped.panel.handleInput(KEY.right)
     grouped.setModel({ mode: 'loading', title: 'Stable tab', dismissible: false })
     grouped.panel.render(80)
     grouped.setModel(groupedModel)
@@ -183,7 +278,9 @@ describe('CanonicalDocumentController', () => {
     expect(groupedNode.child.children.map(child => child.node).find(node => node.kind === 'tabs')).toMatchObject({ activeId: 'catalog' })
 
     const cancellable = fixture({ mode: 'loading', title: 'Cancellable', view: { kind: 'text', content: 'working' }, submit: { kind: 'cancel' } })
-    expect(cancellable.panel.render(80).join('\n')).toContain('Enter cancel')
+    expect(cancellable.panel.render(80).join('\n')).toContain('Cancel')
+    cancellable.panel.handleInput(KEY.enter)
+    expect(cancellable.onAction).toHaveBeenCalledWith({ kind: 'cancel' })
 
     const errorStatus = fixture({ mode: 'error', title: 'Failed update', dismissible: false })
     expect(errorStatus.panel.currentNode()).toMatchObject({ footer: { content: 'updating - do not close', tone: 'danger' } })
@@ -222,7 +319,8 @@ describe('CanonicalDocumentController', () => {
     expect(empty.onClose).not.toHaveBeenCalled()
 
     const secondary = fixture({ mode: 'select', title: 'Secondary', items: [{ id: 'a', label: 'A', secondaryAction: { kind: 'session' } }] })
-    secondary.panel.handleInput('\x1bs')
+    secondary.panel.handleInput(KEY.tab)
+    secondary.panel.handleInput(KEY.enter)
     expect(secondary.onAction).toHaveBeenCalledWith({ kind: 'session' })
 
     const info = fixture({ mode: 'info', title: 'Nothing' })
@@ -230,7 +328,7 @@ describe('CanonicalDocumentController', () => {
     const error = fixture({ mode: 'error', title: 'Nothing' })
     expect(error.panel.render(40).join('\n')).toContain('unavailable')
     const loading = fixture({ mode: 'loading', title: 'Loading' })
-    expect(loading.panel.render(80).join('\n')).toContain('Esc/q cancel')
+    expect(loading.panel.render(80).join('\n')).toContain('Esc close')
 
     const detailed = fixture({ mode: 'select', title: 'Detail', items: [{ id: 'a', label: 'A', detail: 'description' }] })
     expect(extractList(detailed.panel.currentNode()).items[0]).toMatchObject({ detail: 'description' })
@@ -277,6 +375,8 @@ describe('CanonicalDocumentController', () => {
     events.onEvent({ kind: 'selection-change', controlId: 'frontend-panel-list', value: 1 })
     events.onEvent({ kind: 'selection-change', controlId: 'frontend-panel-list', value: 'a' })
     events.onEvent({ kind: 'tab-change', controlId: 'frontend-panel-groups', tabId: 'missing' })
+    events.onEvent({ kind: 'tab-change', controlId: 'frontend-panel-variants', tabId: 'missing' })
+    events.onEvent({ kind: 'tab-change', controlId: 'frontend-panel-variants', tabId: 'only' })
   })
 })
 

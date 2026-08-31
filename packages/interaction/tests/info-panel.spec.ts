@@ -85,11 +85,11 @@ describe('InfoPanel', () => {
       ],
     })
     const node = panel.currentNode()
-    if (node.kind !== 'surface' || node.child.kind !== 'rich-text') throw new Error('expected canonical info surface')
-    expect(node.child.spans.some(span => span.text === '\n')).toBe(true)
-    expect(node.child.spans.some(span => span.text.includes('primary') && span.tone === 'accent')).toBe(true)
-    expect(node.child.spans.some(span => span.text.includes('one two'))).toBe(true)
-    expect(node.child.spans.some(span => span.text === '\n\nSecond')).toBe(true)
+    if (node.kind !== 'surface' || node.child.kind !== 'scroll' || node.child.child.kind !== 'rich-text') throw new Error('expected canonical info scroll surface')
+    expect(node.child.child.spans.some(span => span.text === '\n')).toBe(true)
+    expect(node.child.child.spans.some(span => span.text.includes('primary') && span.tone === 'accent')).toBe(true)
+    expect(node.child.child.spans.some(span => span.text.includes('one two'))).toBe(true)
+    expect(node.child.child.spans.some(span => span.text === '\n\nSecond')).toBe(true)
   })
 
   it('contains over-wide rows through the canonical width contract', () => {

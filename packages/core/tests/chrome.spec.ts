@@ -161,7 +161,7 @@ describe('framePanel', () => {
 
   it('clips an over-wide footer row to the panel width', () => {
     const lines = framePanel(['body'], 12, {
-      footer: ['esc cancel', 'enter resume', 'alt+s session-only'],
+      footer: ['esc cancel', 'enter resume', 'f6 next surface'],
       footerPaint: text => text,
     })
     expect(lines[2]).toBe('  esc can\u001b[0m...\u001b[0m')

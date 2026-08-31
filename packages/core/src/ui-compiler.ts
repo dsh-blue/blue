@@ -8,11 +8,12 @@
 
 import type { BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, Key, matchesKey, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
+import { renderLayoutFrame, type LayoutBox, type LayoutRect } from '@earendil-works/pi-tui/dist/layout.js'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { hintRow } from './chrome.ts'
 import { ownDataErrorMessage } from './error-message.ts'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
-import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueSemanticColors } from './types.ts'
+import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueFocusIdentity, BlueSemanticColors } from './types.ts'
 import {
   renderActions,
   renderDivider,
@@ -57,10 +58,14 @@ export interface BlueUiCompilerOptions {
   readonly leafRowOffset?: () => number
   /** Receives the selected leaf's clamped offset and post-wrap row metadata. */
   readonly onLeafRowOffset?: (offset: number, totalRows: number, limit: number) => void
+  /** Requests a new compatibility-leaf offset after a focused scroll gesture. */
+  readonly onLeafRowScroll?: (offset: number) => void
   /** Internal stable editor pool used only by official form adapters. */
   readonly resolveTextEditor?: (controlId: string, path: string) => BlueEditor
   /** Internal official-form submit bridge. */
   readonly onTextSubmit?: (controlId: string, value: string) => void
+  /** Interaction-private observation of renderer focus; public UI events stay confirmation-only. */
+  readonly onFocusChange?: (identity: BlueFocusIdentity) => void
   /** Renderer-private contextual key hints used by official panel adapters. */
   readonly contextHints?: {
     readonly enabled?: boolean
@@ -203,6 +208,7 @@ interface RuntimeCompilerOptions extends BlueUiCompilerOptions {
 interface ControlBase {
   readonly key: string
   readonly renderKey: string
+  readonly identity: BlueFocusIdentity
   readonly preferred: boolean
   readonly group: string
   readonly navigation: 'horizontal' | 'vertical' | 'none'
@@ -219,6 +225,7 @@ type ControlDescriptor =
       readonly role: 'tab' | 'list-single' | 'list-multiple' | 'action' | 'cancel'
       readonly activation: 'enter' | 'space' | 'both'
       readonly event: BlueUiEvent
+      readonly commitEvent?: BlueUiEvent
       readonly confirm?: string
     })
   | (ControlBase & { readonly kind: 'text', readonly field: TextField })
@@ -226,6 +233,26 @@ type ControlDescriptor =
   | (ControlBase & { readonly kind: 'toggle', readonly field: ToggleField })
   | (ControlBase & { readonly kind: 'submit', readonly form: FormNode })
   | (ControlBase & { readonly kind: 'editor' })
+  | (ControlBase & { readonly kind: 'scroll' })
+
+interface ControlGroup {
+  readonly id: string
+  readonly kind: 'tabs' | 'content'
+  readonly entries: readonly { readonly control: ControlDescriptor, readonly index: number }[]
+}
+
+interface ControlBinding {
+  readonly component: Component
+  readonly axis: 'horizontal' | 'vertical' | 'none'
+}
+
+interface ScrollControl {
+  readonly viewportHeight: number
+  scrollBy(amount: number): void
+  scrollToStart(): void
+  scrollToEnd(): void
+  setScrollbarActive(active: boolean): void
+}
 
 interface FocusState {
   activeKey: string | undefined
@@ -234,6 +261,9 @@ interface FocusState {
   desiredGroup: string | undefined
   editingKey: string | undefined
   readonly groupActiveKeys: Map<string, string>
+  readonly controlBindings: Map<string, ControlBinding>
+  readonly scrollViews: Map<string, ScrollControl>
+  lastTabGroupIndex: number
   lastIndex: number
   focused: boolean
   layoutPass: boolean
@@ -252,6 +282,8 @@ interface FocusState {
   setEditing(key: string | undefined): void
   blurInactiveEditors(controls: readonly ControlDescriptor[]): void
   setLayoutViewport(viewport: BlueUiViewport): void
+  bindControls(keys: readonly string[], binding: ControlBinding): void
+  bindScroll(key: string, scroll: ScrollControl): void
 }
 
 function safeViewport(getViewport: () => BlueUiViewport): BlueUiViewport {
@@ -396,6 +428,42 @@ function windowLeafRows(rows: string[], path: string, options: BlueUiCompilerOpt
   return rows.slice(offset, offset + limit)
 }
 
+class MainLeafScrollControl implements ScrollControl {
+  private offset = 0
+  private totalRows = Number.MAX_SAFE_INTEGER
+  viewportHeight = 1
+
+  constructor(
+    private readonly notify?: (offset: number) => void,
+    readOffset?: () => number,
+    initialLimit = 1,
+  ) {
+    try {
+      const value = readOffset?.() ?? 0
+      if (Number.isFinite(value)) this.offset = Math.max(0, Math.floor(value))
+    } catch { /* compatibility state failures start at the first row */ }
+    this.viewportHeight = Math.max(1, Math.floor(initialLimit))
+  }
+
+  update(offset: number, totalRows: number, limit: number): void {
+    this.offset = offset
+    this.totalRows = totalRows
+    this.viewportHeight = Math.max(1, limit)
+  }
+
+  scrollBy(amount: number): void { this.move(this.offset + amount) }
+  scrollToStart(): void { this.move(0) }
+  scrollToEnd(): void { this.move(this.totalRows) }
+  setScrollbarActive(_active: boolean): void {}
+
+  private move(requested: number): void {
+    const offset = Math.max(0, Math.min(Math.floor(requested), Math.max(0, this.totalRows - this.viewportHeight)))
+    if (offset === this.offset) return
+    this.offset = offset
+    try { this.notify?.(offset) } catch { /* official scroll observers cannot escape input */ }
+  }
+}
+
 function safePaint(colors: BlueSemanticColors, tone: BlueTone | undefined, value: string): string {
   return paintPluginTone(colors, tone)(value)
 }
@@ -501,6 +569,10 @@ function controlKey(kind: string, controlId: string, itemId?: string): string {
   return JSON.stringify(itemId === undefined ? [kind, controlId] : [kind, controlId, itemId])
 }
 
+function focusIdentity(controlId: string, itemId?: string): BlueFocusIdentity {
+  return itemId === undefined ? { controlId } : { controlId, itemId }
+}
+
 function controlGroup(kind: string, controlId: string): string {
   return JSON.stringify([kind, controlId])
 }
@@ -515,6 +587,29 @@ function fieldStateKey(key: string, kind: BlueFormField['kind']): string {
 
 function groupOrder(controls: readonly ControlDescriptor[]): string[] {
   return [...new Set(controls.map(control => control.group))]
+}
+
+function controlGroups(controls: readonly ControlDescriptor[]): ControlGroup[] {
+  const groups: { id: string, kind: 'tabs' | 'content', entries: { control: ControlDescriptor, index: number }[] }[] = []
+  const byId = new Map<string, (typeof groups)[number]>()
+  for (const [index, control] of controls.entries()) {
+    let group = byId.get(control.group)
+    if (group === undefined) {
+      group = {
+        id: control.group,
+        kind: control.kind === 'event' && control.role === 'tab' ? 'tabs' : 'content',
+        entries: [],
+      }
+      groups.push(group)
+      byId.set(control.group, group)
+    }
+    group.entries.push({ control, index })
+  }
+  return groups
+}
+
+function sameFocusIdentity(left: BlueFocusIdentity, right: BlueFocusIdentity): boolean {
+  return left.controlId === right.controlId && left.itemId === right.itemId
 }
 
 function groupTarget(controls: readonly ControlDescriptor[], group: string, remembered: string | undefined): number {
@@ -546,6 +641,13 @@ function automaticContextKeyHints(state: FocusState, options: RuntimeCompilerOpt
       ? []
       : [keyHint('dismiss', 'Esc', escapeHint, 70)]
   }
+  if (active.kind === 'scroll') {
+    return [
+      keyHint('navigate', '↑↓/PgUp/PgDn', 'scroll', 100, 'PgUp/PgDn'),
+      ...(groupOrder(controls).length > 1 ? [keyHint('group', 'Tab/Shift-Tab', 'groups', 80, 'Tab')] : []),
+      ...(escapeHint === undefined ? [] : [keyHint('dismiss', 'Esc', 'back', 90)]),
+    ]
+  }
   if (state.pendingConfirmation === active.key) {
     return [keyHint('activate', 'Enter', 'confirm', 100), keyHint('dismiss', 'Esc', 'cancel', 95)]
   }
@@ -568,11 +670,11 @@ function automaticContextKeyHints(state: FocusState, options: RuntimeCompilerOpt
   }
 
   const siblings = controls.filter(control => control.group === active.group)
-  const movement = siblings.length <= 1 || active.navigation === 'none'
+  const movement = siblings.length <= 1 && groupOrder(controls).length <= 1
     ? []
     : [keyHint(
         'navigate',
-        active.navigation === 'horizontal' ? '←→' : '↑↓',
+        active.kind === 'event' && active.role === 'tab' ? '←→' : '↑↓←→',
         active.kind === 'event' && active.role === 'tab'
           ? 'tabs'
           : active.kind === 'event' && active.role === 'action'
@@ -591,18 +693,18 @@ function automaticContextKeyHints(state: FocusState, options: RuntimeCompilerOpt
         : active.kind === 'submit'
           ? keyHint('activate', 'Enter', 'submit', 100)
           : active.role === 'tab'
-            ? keyHint('activate', 'Enter', 'switch', 100)
+            ? keyHint('activate', 'Enter', 'open', 100)
             : active.role === 'list-single'
               ? keyHint('activate', 'Enter', 'choose', 100)
               : active.role === 'list-multiple'
-                ? keyHint('activate', 'Space', 'toggle', 100)
+                ? keyHint('activate', 'Space / Enter', 'toggle / confirm', 100, 'Space/Enter')
                 : active.role === 'cancel'
                   ? keyHint('activate', 'Enter', 'cancel', 100)
                   : keyHint('activate', 'Enter', 'run', 100)
   return [
     ...movement,
     primary,
-    ...(groupOrder(controls).length > 1 ? [keyHint('group', 'Tab/Shift-Tab', 'groups', 80, 'Tab')] : []),
+    ...(active.kind === 'event' && active.role === 'tab' ? [] : groupOrder(controls).length > 1 ? [keyHint('group', 'Tab/Shift-Tab', 'groups', 80, 'Tab')] : []),
     ...(escapeHint === undefined ? [] : [keyHint('dismiss', 'Esc', escapeHint, 70)]),
   ]
 }
@@ -707,7 +809,7 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
   const visit = (current: CompilableNode, currentPath: string): void => {
     switch (current.kind) {
       case 'editor-control':
-        controls.push({ kind: 'editor', key: controlKey('editor', 'editor-control'), renderKey: 'editor-control', preferred: true, group: controlGroup('editor', 'editor-control'), navigation: 'none' })
+        controls.push({ kind: 'editor', key: controlKey('editor', 'editor-control'), renderKey: 'editor-control', identity: focusIdentity('editor-control'), preferred: true, group: controlGroup('editor', 'editor-control'), navigation: 'none' })
         break
       case 'stack':
         for (const [index, child] of current.children.entries()) {
@@ -718,34 +820,56 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
         visit(current.child, `${currentPath}.child`)
         if (current.footer !== undefined) visit(current.footer, `${currentPath}.footer`)
         break
-      case 'scroll': visit(current.child, `${currentPath}.scroll`); break
+      case 'scroll': {
+        const before = controls.length
+        visit(current.child, `${currentPath}.scroll`)
+        const mainWindow = options.screenMode === 'main'
+          && options.leafRowWindowPath?.startsWith(`${currentPath}.scroll`) === true
+        if (controls.length === before && (options.screenMode === 'alternate' || mainWindow)) {
+          const key = controlKey('scroll', currentPath)
+          controls.push({ kind: 'scroll', key, renderKey: currentPath, identity: focusIdentity(key), preferred: true, group: controlGroup('scroll', currentPath), navigation: 'none' })
+        }
+        break
+      }
       case 'tabs':
-        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', role: 'tab', activation: 'enter', key: controlKey('tabs', current.id, item.id), renderKey: item.id, preferred: item.id === current.activeId, group: controlGroup('tabs', current.id), navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
+        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', role: 'tab', activation: 'enter', key: controlKey('tabs', current.id, item.id), renderKey: item.id, identity: focusIdentity(current.id, item.id), preferred: item.id === current.activeId, group: controlGroup('tabs', current.id), navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
         break
       case 'list':
         for (const item of current.items) if (item.disabled !== true) {
           const value = current.mode === 'multiple'
             ? current.selectedIds.includes(item.id) ? current.selectedIds.filter(id => id !== item.id) : [...current.selectedIds, item.id]
             : item.id
-          controls.push({ kind: 'event', role: current.mode === 'multiple' ? 'list-multiple' : 'list-single', activation: current.mode === 'multiple' ? 'space' : 'enter', key: controlKey('list', current.id, item.id), renderKey: item.id, preferred: current.selectedIds.includes(item.id), group: controlGroup('list', current.id), navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
+          controls.push({
+            kind: 'event',
+            role: current.mode === 'multiple' ? 'list-multiple' : 'list-single',
+            activation: current.mode === 'multiple' ? 'space' : 'enter',
+            key: controlKey('list', current.id, item.id),
+            renderKey: item.id,
+            identity: focusIdentity(current.id, item.id),
+            preferred: current.selectedIds.includes(item.id),
+            group: controlGroup('list', current.id),
+            navigation: 'vertical',
+            event: { kind: 'selection-change', controlId: current.id, value },
+            ...(current.mode === 'multiple' ? { commitEvent: { kind: 'selection-change', controlId: current.id, value: current.selectedIds } as BlueUiEvent } : {}),
+          })
         }
         if (current.items.length === 0 && current.empty !== undefined) visit(current.empty, `${currentPath}.empty`)
         break
       case 'form':
         for (const field of current.fields) if (field.disabled !== true) {
-          const base: ControlBase = { key: controlKey('form-field', current.id, field.id), renderKey: field.id, preferred: false, group: controlGroup('form', current.id), navigation: 'vertical' }
+          const base: ControlBase = { key: controlKey('form-field', current.id, field.id), renderKey: field.id, identity: focusIdentity(field.id), preferred: false, group: controlGroup('form', current.id), navigation: 'vertical' }
           if (field.kind === 'toggle') controls.push({ ...base, kind: 'toggle', field })
           else if (field.kind === 'select') controls.push({ ...base, kind: 'select', field })
           else controls.push({ ...base, kind: 'text', field })
         }
-        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: controlKey('form-submit', current.id), renderKey: 'submit', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', form: current })
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', role: 'cancel', activation: 'both', key: controlKey('form-cancel', current.id), renderKey: 'cancel', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: controlKey('form-submit', current.id), renderKey: 'submit', identity: focusIdentity(current.submitActionId), preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', form: current })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', role: 'cancel', activation: 'both', key: controlKey('form-cancel', current.id), renderKey: 'cancel', identity: focusIdentity(current.cancelActionId), preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'actions':
-        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', role: 'action', activation: 'both', key: controlKey('action', current.id, item.id), renderKey: item.id, preferred: item.intent === 'primary', group: actionGroup(current), navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
+        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', role: 'action', activation: 'both', key: controlKey('action', current.id, item.id), renderKey: item.id, identity: focusIdentity(item.id), preferred: item.intent === 'primary', group: actionGroup(current), navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
         break
       case 'loader':
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', role: 'cancel', activation: 'both', key: controlKey('loader-cancel', current.cancelActionId), renderKey: 'cancel', preferred: false, group: controlGroup('loader', current.cancelActionId!), navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', role: 'cancel', activation: 'both', key: controlKey('loader-cancel', current.cancelActionId), renderKey: 'cancel', identity: focusIdentity(current.cancelActionId), preferred: false, group: controlGroup('loader', current.cancelActionId!), navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'empty': if (current.actions !== undefined) visit(current.actions, `${currentPath}.actions`); break
       default: break
@@ -760,7 +884,7 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
     case 'editor-control': {
       const editor = options.editor
       if (editor === undefined) throw new Error('editor-control requires a host editor')
-      return {
+      const component: BlueComponent = {
         render: width => {
           try {
             editor.focused = state.focused && state.activeKey === controlKey('editor', 'editor-control')
@@ -773,6 +897,8 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
         },
         invalidate: () => editor.invalidate(),
       }
+      state.bindControls([controlKey('editor', 'editor-control')], { component, axis: 'none' })
+      return component
     }
     case 'text': if (options.markdownLeafPath === path) return markdownLeafComponent(node, path, options)
       return staticComponent(width => windowLeafRows(renderCanonicalView(
@@ -833,37 +959,77 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
     }
     case 'surface': return surfaceComponent(node, compileNode(node.child, state, options, `${path}.child`, mode), node.footer === undefined ? undefined : compileNode(node.footer, state, options, `${path}.footer`, mode), contextHint, options)
     case 'scroll': {
-      const child = compileNode(node.child, state, options, `${path}.scroll`, mode)
-      if (options.screenMode === 'main') return child
-      return new ScrollView(child, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
+      const childPath = `${path}.scroll`
+      if (options.screenMode === 'main') {
+        if (options.leafRowWindowPath?.startsWith(childPath) !== true) return compileNode(node.child, state, options, childPath, mode)
+        const scroll = new MainLeafScrollControl(options.onLeafRowScroll, options.leafRowOffset, options.maxLeafRows)
+        const child = compileNode(node.child, state, {
+          ...options,
+          onLeafRowOffset: (offset, totalRows, limit) => {
+            scroll.update(offset, totalRows, limit)
+            options.onLeafRowOffset?.(offset, totalRows, limit)
+          },
+        }, childPath, mode)
+        const key = controlKey('scroll', path)
+        state.bindControls([key], { component: child, axis: 'none' })
+        state.bindScroll(key, scroll)
+        return child
+      }
+      const child = compileNode(node.child, state, options, childPath, mode)
+      const scroll = new ScrollView(child, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
+      const key = controlKey('scroll', path)
+      state.bindControls([key], { component: scroll, axis: 'none' })
+      state.bindScroll(key, scroll)
+      return scroll
     }
     case 'tabs': {
-      return staticComponent(width => renderTabs(node, width, patternFocus(state, controlGroup('tabs', node.id)), options.colors), options)
+      const component = staticComponent(width => renderTabs(node, width, patternFocus(state, controlGroup('tabs', node.id)), options.colors), options)
+      state.bindControls(node.items.filter(item => item.disabled !== true).map(item => controlKey('tabs', node.id, item.id)), { component, axis: 'horizontal' })
+      return component
     }
     case 'list': {
       if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`, mode)
-      return staticComponent(width => renderList(node, width, options.screenMode === 'main' ? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, controlGroup('list', node.id)), options.colors), options)
+      const component = staticComponent(width => renderList(node, width, options.screenMode === 'main' ? options.maxLeafRows ?? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, controlGroup('list', node.id)), options.colors), options)
+      state.bindControls(node.items.filter(item => item.disabled !== true).map(item => controlKey('list', node.id, item.id)), { component, axis: 'vertical' })
+      return component
     }
     case 'form': {
       const stack = new VStack()
       for (const field of node.fields) {
         const key = controlKey('form-field', node.id, field.id)
-        stack.addChild(field.kind === 'input' || field.kind === 'textarea' || field.kind === 'secret'
+        const component = field.kind === 'input' || field.kind === 'textarea' || field.kind === 'secret'
           ? editorFieldComponent(field, key, state, options)
-          : staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, controlGroup('form', node.id)), options.colors), options))
+          : staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, controlGroup('form', node.id)), options.colors), options)
+        stack.addChild(component)
+        if (field.disabled !== true) state.bindControls([key], { component, axis: 'none' })
       }
-      if (node.submitActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, controlGroup('form', node.id)), options.colors, true), options))
-      if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, controlGroup('form', node.id)), options.colors, true), options))
+      if (node.submitActionId !== undefined) {
+        const component = staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, controlGroup('form', node.id)), options.colors, true), options)
+        stack.addChild(component)
+        state.bindControls([controlKey('form-submit', node.id)], { component, axis: 'none' })
+      }
+      if (node.cancelActionId !== undefined) {
+        const component = staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, controlGroup('form', node.id)), options.colors, true), options)
+        stack.addChild(component)
+        state.bindControls([controlKey('form-cancel', node.id)], { component, axis: 'none' })
+      }
       return stack
     }
     case 'actions': {
-      return staticComponent(width => renderActions(node, width, patternFocus(state, actionGroup(node)), options.colors, options.screenMode === 'main'), options)
+      const vertical = options.screenMode === 'main'
+      const component = staticComponent(width => renderActions(node, width, patternFocus(state, actionGroup(node)), options.colors, vertical), options)
+      state.bindControls(node.items.filter(item => item.disabled !== true && item.busy !== true).map(item => controlKey('action', node.id, item.id)), { component, axis: vertical ? 'vertical' : 'horizontal' })
+      return component
     }
     case 'loader': {
       const stack = new VStack()
       stack.addChild(staticComponent(width => renderLoader(node, width, options.colors), options))
       const cancelActionId = node.cancelActionId
-      if (cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: cancelActionId, items: [{ id: 'cancel', label: cancelActionId }] }, width, patternFocus(state, controlGroup('loader', cancelActionId)), options.colors, true), options))
+      if (cancelActionId !== undefined) {
+        const component = staticComponent(width => renderActions({ kind: 'actions', id: cancelActionId, items: [{ id: 'cancel', label: cancelActionId }] }, width, patternFocus(state, controlGroup('loader', cancelActionId)), options.colors, true), options)
+        stack.addChild(component)
+        state.bindControls([controlKey('loader-cancel', cancelActionId)], { component, axis: 'none' })
+      }
       return stack
     }
     case 'empty': {
@@ -880,6 +1046,8 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
 
 function reconcile(state: FocusState): readonly ControlDescriptor[] {
   const controls = state.controls()
+  const groups = controlGroups(controls)
+  const tabGroups = groups.filter(group => group.kind === 'tabs')
   state.blurInactiveEditors(controls)
   const allControls = state.allControls()
   const allKeys = new Set(allControls.map(control => control.key))
@@ -898,7 +1066,17 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
     }
     state.pendingConfirmation = undefined
     state.lastIndex = 0
+    state.lastTabGroupIndex = 0
+    for (const scroll of state.scrollViews.values()) scroll.setScrollbarActive(false)
     return controls
+  }
+  state.lastTabGroupIndex = Math.min(state.lastTabGroupIndex, Math.max(0, tabGroups.length - 1))
+  const syncScrollFocus = (): void => {
+    for (const [key, scroll] of state.scrollViews) scroll.setScrollbarActive(state.focused && key === state.activeKey)
+  }
+  const rememberTabGroup = (control: ControlDescriptor): void => {
+    const index = tabGroups.findIndex(group => group.id === control.group)
+    if (index >= 0) state.lastTabGroupIndex = index
   }
   const desired = controls.findIndex(control => control.key === state.desiredKey)
   if (desired >= 0) {
@@ -906,6 +1084,8 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
     state.activeKey = controls[desired]!.key
     state.activeGroup = controls[desired]!.group
     state.groupActiveKeys.set(controls[desired]!.group, controls[desired]!.key)
+    rememberTabGroup(controls[desired]!)
+    syncScrollFocus()
     return controls
   }
   const desiredHidden = state.desiredKey !== undefined && allControls.some(control => control.key === state.desiredKey)
@@ -918,13 +1098,15 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
       state.desiredGroup = controls[current]!.group
     }
     if (!desiredHidden) state.groupActiveKeys.set(controls[current]!.group, controls[current]!.key)
+    rememberTabGroup(controls[current]!)
+    syncScrollFocus()
     return controls
   }
-  const groups = groupOrder(controls)
+  const groupIds = groups.map(group => group.id)
   const requestedGroup = desiredHidden ? state.desiredGroup : state.activeGroup
-  const fallbackGroup = requestedGroup !== undefined && groups.includes(requestedGroup)
+  const fallbackGroup = requestedGroup !== undefined && groupIds.includes(requestedGroup)
     ? requestedGroup
-    : groups[0]!
+    : groupIds[0]!
   state.lastIndex = groupTarget(controls, fallbackGroup, state.groupActiveKeys.get(fallbackGroup))
   state.pendingConfirmation = undefined
   state.activeKey = controls[state.lastIndex]!.key
@@ -934,7 +1116,80 @@ function reconcile(state: FocusState): readonly ControlDescriptor[] {
     state.desiredGroup = state.activeGroup
     state.groupActiveKeys.set(state.activeGroup, state.activeKey)
   }
+  rememberTabGroup(controls[state.lastIndex]!)
+  syncScrollFocus()
   return controls
+}
+
+type NavigationDirection = 'up' | 'down' | 'left' | 'right'
+
+function intersectRect(rect: LayoutRect, clip: LayoutRect): LayoutRect | undefined {
+  const x = Math.max(rect.x, clip.x)
+  const y = Math.max(rect.y, clip.y)
+  const right = Math.min(rect.x + rect.width, clip.x + clip.width)
+  const bottom = Math.min(rect.y + rect.height, clip.y + clip.height)
+  return right <= x || bottom <= y ? undefined : { x, y, width: right - x, height: bottom - y }
+}
+
+function layoutBoxes(root: LayoutBox): Map<Component, LayoutRect> {
+  const boxes = new Map<Component, LayoutRect>()
+  const visit = (box: LayoutBox): void => {
+    const visible = intersectRect(box.rect, box.clip)
+    if (visible !== undefined) boxes.set(box.component, visible)
+    for (const child of box.children) visit(child)
+  }
+  visit(root)
+  return boxes
+}
+
+function divideRect(rect: LayoutRect, axis: ControlBinding['axis'], index: number, count: number): LayoutRect {
+  if (axis === 'horizontal' && count > 1) {
+    const start = Math.floor(rect.width * index / count)
+    const end = Math.floor(rect.width * (index + 1) / count)
+    return { x: rect.x + start, y: rect.y, width: Math.max(1, end - start), height: rect.height }
+  }
+  if (axis === 'vertical' && count > 1) {
+    const start = Math.floor(rect.height * index / count)
+    const end = Math.floor(rect.height * (index + 1) / count)
+    return { x: rect.x, y: rect.y + start, width: rect.width, height: Math.max(1, end - start) }
+  }
+  return rect
+}
+
+function nearestDirectionalControl(
+  controls: readonly ControlDescriptor[],
+  rectangles: ReadonlyMap<string, LayoutRect>,
+  activeIndex: number,
+  direction: NavigationDirection,
+): number | undefined {
+  const active = rectangles.get(controls[activeIndex]!.key)
+  if (active === undefined) return undefined
+  const activeCenterX = active.x + active.width / 2
+  const activeCenterY = active.y + active.height / 2
+  const candidates = controls.flatMap((control, index) => {
+    if (index === activeIndex || (control.kind === 'event' && control.role === 'tab')) return []
+    const rect = rectangles.get(control.key)
+    if (rect === undefined) return []
+    const centerX = rect.x + rect.width / 2
+    const centerY = rect.y + rect.height / 2
+    const eligible = direction === 'left' ? centerX < activeCenterX
+      : direction === 'right' ? centerX > activeCenterX
+        : direction === 'up' ? centerY < activeCenterY
+          : centerY > activeCenterY
+    if (!eligible) return []
+    const horizontal = direction === 'left' || direction === 'right'
+    const overlap = horizontal
+      ? Math.min(active.y + active.height, rect.y + rect.height) > Math.max(active.y, rect.y)
+      : Math.min(active.x + active.width, rect.x + rect.width) > Math.max(active.x, rect.x)
+    const primary = horizontal ? Math.abs(centerX - activeCenterX) : Math.abs(centerY - activeCenterY)
+    const secondary = horizontal ? Math.abs(centerY - activeCenterY) : Math.abs(centerX - activeCenterX)
+    return [{ index, overlap, primary, secondary }]
+  })
+  return candidates
+    .toSorted((left, right) => left.index - right.index)
+    .toSorted((left, right) => left.secondary - right.secondary)
+    .toSorted((left, right) => left.primary - right.primary)
+    .toSorted((left, right) => Number(right.overlap) - Number(left.overlap))[0]?.index
 }
 
 /**
@@ -956,6 +1211,8 @@ export class BlueUiSurfaceRuntime {
   private readonly fieldKinds = new Map<string, BlueFormField['kind']>()
   private readonly fieldOwners = new Map<string, string>()
   private readonly fieldRecency = new Map<string, true>()
+  private readonly controlBindings = new Map<string, ControlBinding>()
+  private readonly scrollViews = new Map<string, ScrollControl>()
   readonly state: FocusState
 
   constructor() {
@@ -985,6 +1242,9 @@ export class BlueUiSurfaceRuntime {
       desiredGroup: undefined,
       editingKey: undefined,
       groupActiveKeys: new Map(),
+      controlBindings: this.controlBindings,
+      scrollViews: this.scrollViews,
+      lastTabGroupIndex: 0,
       lastIndex: 0,
       focused: false,
       layoutPass: false,
@@ -1044,6 +1304,8 @@ export class BlueUiSurfaceRuntime {
         for (const [stateKey, lease] of this.textEditors) if (!visible.has(stateKey)) lease.editor.focused = false
       },
       setLayoutViewport: viewport => { this.layoutViewport?.(viewport) },
+      bindControls: (keys, binding) => { for (const key of keys) this.controlBindings.set(key, binding) },
+      bindScroll: (key, scroll) => { this.scrollViews.set(key, scroll) },
     }
   }
 
@@ -1059,6 +1321,8 @@ export class BlueUiSurfaceRuntime {
     this.node = node
     this.options = options
     this.layoutViewport = setLayoutViewport
+    this.controlBindings.clear()
+    this.scrollViews.clear()
     this.generation += 1
     return this.generation
   }
@@ -1085,11 +1349,14 @@ export class BlueUiSurfaceRuntime {
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
       pendingConfirmation: this.state.pendingConfirmation,
+      lastTabGroupIndex: this.state.lastTabGroupIndex,
     }
     const textBuffers = new Map(this.textBuffers)
     const selectDrafts = new Map(this.selectDrafts)
     const toggleDrafts = new Map(this.toggleDrafts)
     const groupActiveKeys = new Map(this.state.groupActiveKeys)
+    const controlBindings = new Map(this.controlBindings)
+    const scrollViews = new Map(this.scrollViews)
     return () => {
       this.node = node
       this.options = options
@@ -1100,6 +1367,8 @@ export class BlueUiSurfaceRuntime {
       this.selectDrafts.clear(); for (const [key, value] of selectDrafts) this.selectDrafts.set(key, value)
       this.toggleDrafts.clear(); for (const [key, value] of toggleDrafts) this.toggleDrafts.set(key, value)
       this.state.groupActiveKeys.clear(); for (const [key, value] of groupActiveKeys) this.state.groupActiveKeys.set(key, value)
+      this.controlBindings.clear(); for (const [key, value] of controlBindings) this.controlBindings.set(key, value)
+      this.scrollViews.clear(); for (const [key, value] of scrollViews) this.scrollViews.set(key, value)
     }
   }
 
@@ -1189,6 +1458,8 @@ export class BlueUiSurfaceRuntime {
     this.fieldKinds.clear()
     this.fieldOwners.clear()
     this.fieldRecency.clear()
+    this.controlBindings.clear()
+    this.scrollViews.clear()
     this.state.activeKey = undefined
     this.state.activeGroup = undefined
     this.state.desiredKey = undefined
@@ -1196,6 +1467,7 @@ export class BlueUiSurfaceRuntime {
     this.state.setEditing(undefined)
     this.state.groupActiveKeys.clear()
     this.state.lastIndex = 0
+    this.state.lastTabGroupIndex = 0
   }
 
   private textEditor(field: TextField, key: string): BlueEditor {
@@ -1292,6 +1564,41 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.surfaceRuntime.setFocused(value)
     if (!value && this.editor !== undefined) this.editor.focused = false
     if (!value) this.state.pendingConfirmation = undefined
+    reconcile(this.state)
+  }
+
+  captureFocusIdentity(): BlueFocusIdentity | undefined {
+    if (!this.surfaceRuntime.current(this.generation)) return undefined
+    this.viewport = safeViewport(this.options.getViewport)
+    const controls = reconcile(this.state)
+    const active = controls[this.state.lastIndex]
+    /* v8 ignore next -- a live focus facade is created only for a tree with controls. */
+    if (active === undefined) return undefined
+    const tabControlId = controlGroups(controls)
+      .filter(group => group.kind === 'tabs')[this.state.lastTabGroupIndex]
+      ?.entries[0]?.control.identity.controlId
+    return tabControlId === undefined ? active.identity : { ...active.identity, tabControlId }
+  }
+
+  restoreFocusIdentity(identity: BlueFocusIdentity): boolean {
+    if (!this.surfaceRuntime.current(this.generation)) return false
+    this.viewport = safeViewport(this.options.getViewport)
+    const controls = this.state.controls()
+    const index = controls.findIndex(control => sameFocusIdentity(control.identity, identity))
+    if (index < 0) return false
+    const control = controls[index]!
+    this.state.activeKey = control.key
+    this.state.activeGroup = control.group
+    this.state.desiredKey = control.key
+    this.state.desiredGroup = control.group
+    this.state.groupActiveKeys.set(control.group, control.key)
+    this.state.lastIndex = index
+    const tabGroups = controlGroups(controls).filter(group => group.kind === 'tabs')
+    const tabIndex = tabGroups.findIndex(group => group.entries[0]?.control.identity.controlId === identity.tabControlId)
+    if (tabIndex >= 0) this.state.lastTabGroupIndex = tabIndex
+    this.state.pendingConfirmation = undefined
+    reconcile(this.state)
+    return true
   }
 
   [LAYOUT_NODE](): LayoutNode {
@@ -1365,6 +1672,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
       pendingConfirmation: this.state.pendingConfirmation,
+      lastTabGroupIndex: this.state.lastTabGroupIndex,
       viewport: this.viewport,
       runtimeFailure: this.runtimeFailure,
       editorFocused: editor.focused,
@@ -1385,6 +1693,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.focused = focus.focused
       this.state.layoutPass = focus.layoutPass
       this.state.pendingConfirmation = focus.pendingConfirmation
+      this.state.lastTabGroupIndex = focus.lastTabGroupIndex
       this.viewport = focus.viewport
       this.runtimeFailure = focus.runtimeFailure
       editor.focused = focus.editorFocused
@@ -1409,11 +1718,74 @@ class CompiledSurface implements BlueEditorShellComponent {
   /** Render a passive status surface with a fixed row budget and overflow signal. */
   renderStatus(width: number, maxRows: number): BlueStatusRenderResult { return this.renderFrame(width, maxRows) }
 
+  private controlRectangles(controls: readonly ControlDescriptor[]): Map<string, LayoutRect> {
+    const rectangles = new Map<string, LayoutRect>()
+    /* v8 ignore next -- input returns before geometry lookup when no control exists. */
+    if (controls.length === 0) return rectangles
+    const width = Math.max(1, this.viewport.columns)
+    const measuredHeight = Math.max(1, this.root.render(width).length)
+    const height = this.options.screenMode === 'alternate'
+      ? Math.max(1, this.viewport.rows)
+      : measuredHeight
+    const previousLayoutPass = this.state.layoutPass
+    this.state.layoutPass = true
+    try {
+      /* v8 ignore next -- pi-tui does not request repaint during synchronous measurement. */
+      const frame = renderLayoutFrame(this.root, width, height, () => {})
+      const boxes = layoutBoxes(frame.root)
+      const byComponent = new Map<Component, ControlDescriptor[]>()
+      for (const control of controls) {
+        const binding = this.state.controlBindings.get(control.key)
+        if (binding === undefined || !boxes.has(binding.component)) continue
+        const siblings = byComponent.get(binding.component) ?? []
+        siblings.push(control)
+        byComponent.set(binding.component, siblings)
+      }
+      for (const [component, siblings] of byComponent) {
+        const rect = boxes.get(component)!
+        for (const [index, control] of siblings.entries()) {
+          const binding = this.state.controlBindings.get(control.key)!
+          rectangles.set(control.key, divideRect(rect, binding.axis, index, siblings.length))
+        }
+      }
+    } catch { /* a missing layout box falls back to semantic group navigation */ }
+    finally { this.state.layoutPass = previousLayoutPass }
+    return rectangles
+  }
+
   handleInput(data: string): void {
     if (!this.surfaceRuntime.current(this.generation)) return
     this.viewport = safeViewport(this.options.getViewport)
     const controls = reconcile(this.state)
     const active = controls[this.state.lastIndex]
+    const groups = controlGroups(controls)
+    const tabGroups = groups.filter(group => group.kind === 'tabs')
+    const contentGroups = groups.filter(group => group.kind === 'content')
+    const moveTo = (index: number): void => {
+      const control = controls[index]
+      /* v8 ignore next -- every caller resolves an entry from the current control set. */
+      if (control === undefined) return
+      this.state.setEditing(undefined)
+      this.state.pendingConfirmation = undefined
+      this.state.lastIndex = index
+      this.state.activeKey = control.key
+      this.state.activeGroup = control.group
+      this.state.desiredKey = control.key
+      this.state.desiredGroup = control.group
+      this.state.groupActiveKeys.set(control.group, control.key)
+      const tabIndex = tabGroups.findIndex(group => group.id === control.group)
+      if (tabIndex >= 0) this.state.lastTabGroupIndex = tabIndex
+      reconcile(this.state)
+      try { this.options.onFocusChange?.(control.identity) } catch { /* focus observers cannot escape input */ }
+    }
+    const moveGroup = (delta: -1 | 1): void => {
+      if (active === undefined || (active.kind === 'event' && active.role === 'tab') || contentGroups.length <= 1) return
+      const current = contentGroups.findIndex(group => group.id === active.group)
+      /* v8 ignore next -- a non-tab active control belongs to one content group above. */
+      if (current < 0) return
+      const target = contentGroups[(current + contentGroups.length + delta) % contentGroups.length]!
+      moveTo(groupTarget(controls, target.id, this.state.groupActiveKeys.get(target.id)))
+    }
     if (matchesKey(data, Key.escape)) {
       if (active !== undefined && this.state.editingKey === active.key && (active.kind === 'text' || active.kind === 'select')) {
         if (active.kind === 'select') this.state.finishSelectEditing(active.field, active.key, true)
@@ -1422,20 +1794,25 @@ class CompiledSurface implements BlueEditorShellComponent {
       }
       const consumed = this.state.pendingConfirmation !== undefined
       this.state.pendingConfirmation = undefined
-      if (!consumed) this.options.onUnhandledEscape?.()
+      if (consumed) return
+      if (active !== undefined && tabGroups.length > 0) {
+        const activeTabIndex = tabGroups.findIndex(group => group.id === active.group)
+        if (activeTabIndex > 0) {
+          const parent = tabGroups[activeTabIndex - 1]!
+          moveTo(groupTarget(controls, parent.id, this.state.groupActiveKeys.get(parent.id)))
+          return
+        }
+        if (activeTabIndex < 0) {
+          /* v8 ignore next -- reconcile keeps the remembered tab index in range. */
+          const parent = tabGroups[this.state.lastTabGroupIndex] ?? tabGroups.at(-1)!
+          moveTo(groupTarget(controls, parent.id, this.state.groupActiveKeys.get(parent.id)))
+          return
+        }
+      }
+      this.options.onUnhandledEscape?.()
       return
     }
     if (active === undefined) return
-    const moveTo = (index: number): void => {
-      this.state.setEditing(undefined)
-      this.state.pendingConfirmation = undefined
-      this.state.lastIndex = index
-      this.state.activeKey = controls[index]!.key
-      this.state.activeGroup = controls[index]!.group
-      this.state.desiredKey = controls[index]!.key
-      this.state.desiredGroup = controls[index]!.group
-      this.state.groupActiveKeys.set(controls[index]!.group, controls[index]!.key)
-    }
     if (data === '\t' || data === '\x1b[Z') {
       // An editor-only provider shell has nowhere to rove. Preserve the
       // editing engine's Tab contract so it can accept or explicitly open
@@ -1444,18 +1821,23 @@ class CompiledSurface implements BlueEditorShellComponent {
         this.editor?.handleInput?.(data)
         return
       }
-      const groups = groupOrder(controls)
-      if (active.kind === 'select' && this.state.editingKey === active.key) {
-        this.state.finishSelectEditing(active.field, active.key, true)
-      }
-      if (groups.length === 1) {
-        if (active.kind === 'text') this.state.setEditing(undefined)
+      if (active.kind === 'event' && active.role === 'tab') return
+      const delta = data === '\t' ? 1 : -1
+      if (active.kind === 'text' && this.state.editingKey === active.key) {
+        if (active.field.error !== undefined) return
+        const editor = this.state.textEditor(active.field, active.key)
+        editor.onSubmit?.(editor.getExpandedText())
+        moveGroup(delta)
         return
       }
-      const delta = data === '\t' ? 1 : -1
-      const groupIndex = groups.indexOf(active.group)
-      const targetGroup = groups[(groupIndex + groups.length + delta) % groups.length]!
-      moveTo(groupTarget(controls, targetGroup, this.state.groupActiveKeys.get(targetGroup)))
+      if (active.kind === 'select' && this.state.editingKey === active.key) {
+        if (active.field.error !== undefined) return
+        const value = this.state.finishSelectEditing(active.field, active.key, false)
+        this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
+        moveGroup(delta)
+        return
+      }
+      moveGroup(delta)
       return
     }
     if (active.kind === 'editor') {
@@ -1476,7 +1858,11 @@ class CompiledSurface implements BlueEditorShellComponent {
       editor.handleInput?.(data)
       return
     }
-    const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
+    const direction: NavigationDirection | undefined = data === '\x1b[A' ? 'up'
+      : data === '\x1b[B' ? 'down'
+        : data === '\x1b[D' ? 'left'
+          : data === '\x1b[C' ? 'right'
+            : undefined
     const horizontal = data === '\x1b[D' || data === '\x1b[C'
     if (active.kind === 'select' && this.state.editingKey === active.key) {
       if (horizontal) {
@@ -1484,9 +1870,9 @@ class CompiledSurface implements BlueEditorShellComponent {
         if (enabled.length === 0) return
         const current = this.state.fieldValue(active.field, active.key)
         const currentIndex = enabled.findIndex(option => option.id === current)
-        const nextIndex = currentIndex < 0
-          ? direction > 0 ? 0 : enabled.length - 1
-          : (currentIndex + enabled.length + direction) % enabled.length
+        const delta = direction === 'left' ? -1 : 1
+        const nextIndex = currentIndex < 0 ? (delta > 0 ? 0 : enabled.length - 1) : currentIndex + delta
+        if (nextIndex < 0 || nextIndex >= enabled.length) return
         this.state.setSelectValue(fieldStateKey(active.key, active.field.kind), active.field.value, enabled[nextIndex]!.id)
         return
       }
@@ -1496,14 +1882,62 @@ class CompiledSurface implements BlueEditorShellComponent {
       }
       return
     }
-    if (direction !== 0) {
-      const matchingDirection = active.navigation === 'horizontal'
-        ? horizontal
-        : active.navigation === 'vertical' && (data === '\x1b[A' || data === '\x1b[B')
-      if (!matchingDirection) return
-      const siblings = controls.map((control, index) => ({ control, index })).filter(entry => entry.control.group === active.group)
-      const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
-      moveTo(siblings[(siblingIndex + siblings.length + direction) % siblings.length]!.index)
+    if (active.kind === 'scroll') {
+      const scroll = this.state.scrollViews.get(active.key)
+      /* v8 ignore next -- compiler registration creates both descriptors atomically. */
+      if (scroll === undefined) return
+      if (direction === 'up') scroll.scrollBy(-1)
+      else if (direction === 'down') scroll.scrollBy(1)
+      else if (data === '\x1b[5~') scroll.scrollBy(-Math.max(1, scroll.viewportHeight))
+      else if (data === '\x1b[6~') scroll.scrollBy(Math.max(1, scroll.viewportHeight))
+      else if (data === '\x1b[H' || data === 'g') scroll.scrollToStart()
+      else if (data === '\x1b[F' || data === 'G') scroll.scrollToEnd()
+      return
+    }
+    if (active.kind === 'event' && active.role === 'tab') {
+      if (direction === 'left' || direction === 'right') {
+        const group = tabGroups.find(candidate => candidate.id === active.group)!
+        const current = group.entries.findIndex(entry => entry.index === this.state.lastIndex)
+        const next = current + (direction === 'left' ? -1 : 1)
+        const target = group.entries[next]
+        if (target !== undefined) {
+          moveTo(target.index)
+          this.state.emit((target.control as Extract<ControlDescriptor, { readonly kind: 'event' }>).event)
+        }
+        return
+      }
+      if (matchesKey(data, Key.enter)) {
+        const groupIndex = groups.findIndex(group => group.id === active.group)
+        const target = groups[groupIndex + 1]
+        if (target !== undefined) moveTo(groupTarget(controls, target.id, this.state.groupActiveKeys.get(target.id)))
+      }
+      return
+    }
+    if ((data === '\x1b[5~' || data === '\x1b[6~' || data === '\x1b[H' || data === '\x1b[F')
+      && active.kind === 'event'
+      && (active.role === 'list-single' || active.role === 'list-multiple')) {
+      const group = groups.find(candidate => candidate.id === active.group)!
+      const current = group.entries.findIndex(entry => entry.index === this.state.lastIndex)
+      const page = Math.max(1, Math.min(10, this.viewport.rows - 1))
+      const targetIndex = data === '\x1b[H' ? 0
+        : data === '\x1b[F' ? group.entries.length - 1
+          : Math.max(0, Math.min(group.entries.length - 1, current + (data === '\x1b[5~' ? -page : page)))
+      const target = group.entries[targetIndex]
+      if (target !== undefined && target.index !== this.state.lastIndex) moveTo(target.index)
+      return
+    }
+    if (direction !== undefined) {
+      const group = groups.find(candidate => candidate.id === active.group)
+      const matchingAxis = active.navigation === 'horizontal'
+        ? direction === 'left' || direction === 'right'
+        : active.navigation === 'vertical' && (direction === 'up' || direction === 'down')
+      let target: number | undefined
+      if (matchingAxis && group !== undefined) {
+        const current = group.entries.findIndex(entry => entry.index === this.state.lastIndex)
+        target = group.entries[current + (direction === 'left' || direction === 'up' ? -1 : 1)]?.index
+      }
+      if (target === undefined) target = nearestDirectionalControl(controls, this.controlRectangles(controls), this.state.lastIndex, direction)
+      if (target !== undefined) moveTo(target)
       return
     }
     if (active.kind === 'text') {
@@ -1537,17 +1971,22 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.emit({ kind: 'submit', controlId: active.form.id, values })
       return
     }
-    const activates = active.activation === 'both'
-      ? enter || space
-      : active.activation === 'enter' ? enter : space
-    if (!activates) return
-    if (active.confirm !== undefined && this.state.pendingConfirmation !== active.key) {
-      this.state.pendingConfirmation = active.key
+    const eventControl = active as Extract<ControlDescriptor, { readonly kind: 'event' }>
+    if (eventControl.role === 'list-multiple' && enter) {
+      this.state.emit(eventControl.commitEvent!)
       return
     }
-    if (active.confirm !== undefined && !enter) return
+    const activates = eventControl.activation === 'both'
+      ? enter || space
+      : eventControl.activation === 'enter' ? enter : space
+    if (!activates) return
+    if (eventControl.confirm !== undefined && this.state.pendingConfirmation !== eventControl.key) {
+      this.state.pendingConfirmation = eventControl.key
+      return
+    }
+    if (eventControl.confirm !== undefined && !enter) return
     this.state.pendingConfirmation = undefined
-    this.state.emit(active.event)
+    this.state.emit(eventControl.event)
   }
 
   invalidate(): void { if (this.surfaceRuntime.current(this.generation)) this.root.invalidate?.() }

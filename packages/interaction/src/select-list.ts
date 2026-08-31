@@ -10,7 +10,7 @@ import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter, type CanonicalContextHint, type CanonicalNodeSource } from './canonical-panel.ts'
-import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
+import { ACTION_CANCEL, ACTION_TOGGLE } from './keys.ts'
 
 /** One selectable row of a {@link CanonicalSelectController}. */
 export interface SelectRow {
@@ -45,16 +45,6 @@ export interface SelectListPanelOptions {
 
 export const MAX_LIST_VISIBLE = 8
 
-export function cycle(index: number, count: number, delta: 1 | -1): number {
-  if (count <= 1) return Math.max(0, index)
-  return ((index + delta) % count + count) % count
-}
-
-export function windowedRange(cursor: number, count: number, maxVisible: number): { start: number, end: number } {
-  const start = Math.max(0, Math.min(cursor - Math.floor(maxVisible / 2), count - maxVisible))
-  return { start, end: Math.min(start + maxVisible, count) }
-}
-
 export function counterRow(cursor: number, count: number, maxVisible: number): string | undefined {
   return count > maxVisible ? `  (${cursor + 1}/${count})` : undefined
 }
@@ -68,6 +58,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
   private readonly adapter: CanonicalPanelAdapter
   private cursor: number
   private query = ''
+  private filterEditing = false
   private readonly filter: boolean
   private rows: readonly SelectRow[]
 
@@ -81,7 +72,19 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onFocusChange: identity => {
+        if (identity.controlId !== 'select-list' || identity.itemId === undefined) return
+        const view = this.filtered()
+        const index = view.findIndex(row => row.value === identity.itemId)
+        if (index < 0 || index === this.cursor) return
+        this.cursor = index
+        const row = view[index]!
+        this.options.onHighlight?.(row)
+        this.options.onCursorChanged?.(this.cursor, view)
+        this.adapter.invalidate()
+      },
       onUnhandledEscape: options.onCancel,
+      maxLeafRows: MAX_LIST_VISIBLE,
       ...(options.t === undefined ? {} : { t: options.t }),
       contextHints: () => [
         ...(this.filter && this.query === '' ? [{ id: 'filter', keys: 'Type', label: 'to search', priority: 85 }] : []),
@@ -107,8 +110,6 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
 
   handleInput(data: string): void {
     const view = this.filtered()
-    if (this.options.keymap.matches(data, ACTION_MOVE_UP)) { this.move(-1); return }
-    if (this.options.keymap.matches(data, ACTION_MOVE_DOWN)) { this.move(1); return }
     if (this.query.length === 0 && this.options.onToggle !== undefined && this.options.keymap.matches(data, ACTION_TOGGLE)) {
       const row = view[this.cursor]
       if (row === undefined) return
@@ -119,17 +120,14 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       this.adapter.invalidate()
       return
     }
-    if (this.options.keymap.matches(data, ACTION_SUBMIT)) { this.activate(); return }
     if (this.options.keymap.matches(data, ACTION_CANCEL)) {
-      if (this.filter && this.query !== '') {
-        this.query = ''
-        this.reseedCursor()
-        this.options.onCursorChanged?.(this.cursor, this.filtered())
+      if (this.filterEditing) {
+        this.filterEditing = false
         this.adapter.invalidate()
-      } else this.options.onCancel()
+      } else this.adapter.handleInput(data)
       return
     }
-    if (!this.filter) return
+    if (!this.filter) { this.adapter.handleInput(data); return }
     if (data === '\x7f') {
       this.query = this.query.slice(0, -1)
       this.reseedCursor()
@@ -137,11 +135,14 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       return
     }
     if (data.length === 1 && data >= ' ') {
+      this.filterEditing = true
       this.query += data
       this.reseedCursor()
       this.options.onCursorChanged?.(this.cursor, this.filtered())
       this.adapter.invalidate()
+      return
     }
+    this.adapter.handleInput(data)
   }
 
   invalidate(): void { this.adapter.invalidate() }
@@ -151,31 +152,39 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     const t = this.options.t ?? ((value: string) => value)
     const view = this.filtered()
     const selected = view[this.cursor]
-    const range = windowedRange(this.cursor, view.length, MAX_LIST_VISIBLE)
-    const visible = view.slice(range.start, range.end)
     const footer = [
       this.options.footer === undefined ? undefined : t(this.options.footer),
       counterRow(this.cursor, view.length, MAX_LIST_VISIBLE),
     ].filter((value): value is string => value !== undefined && value !== '')
+    const list = {
+      kind: 'list' as const,
+      id: 'select-list',
+      selectedIds: selected === undefined ? [] : [selected.value],
+      ...(this.query === '' ? {} : { filter: this.query }),
+      items: view.map(row => ({
+        id: row.value,
+        label: t(row.label),
+        ...(row.description === undefined ? {} : { detail: oneLine(t(row.description)) }),
+        ...(row.badge === undefined ? {} : { badge: row.badge }),
+        ...(row.disabled === true ? { disabled: true } : {}),
+      })),
+      ...(view.length === 0 ? { empty: { kind: 'empty', title: t('no matches') } as const } : {}),
+    }
+    const footerNode: BlueUiNode | undefined = this.query === ''
+      ? footer.length === 0 ? undefined : { kind: 'text', content: footer.join(' · '), tone: 'muted' }
+      : {
+          kind: 'stack', direction: 'column', gap: 1,
+          children: [
+            ...footer.length === 0 ? [] : [{ node: { kind: 'text' as const, content: footer.join(' · '), tone: 'muted' as const } }],
+            { node: { kind: 'actions', id: 'select-list-filter-actions', items: [{ id: 'select-list-clear-filter', label: t('Clear filter') }] } },
+          ],
+        }
     return {
       kind: 'surface',
       chrome: 'overlay',
       title: this.options.title === undefined ? t('Select') : t(this.options.title),
-      child: {
-        kind: 'list',
-        id: 'select-list',
-        selectedIds: selected === undefined ? [] : [selected.value],
-        ...(this.query === '' ? {} : { filter: this.query }),
-        items: visible.map(row => ({
-          id: row.value,
-          label: t(row.label),
-          ...(row.description === undefined ? {} : { detail: oneLine(t(row.description)) }),
-          ...(row.badge === undefined ? {} : { badge: row.badge }),
-          ...(row.disabled === true ? { disabled: true } : {}),
-        })),
-        ...(view.length === 0 ? { empty: { kind: 'empty', title: t('no matches') } as const } : {}),
-      },
-      ...(footer.length === 0 ? {} : { footer: { kind: 'text', content: footer.join(' · '), tone: 'muted' } as const }),
+      child: list,
+      ...(footerNode === undefined ? {} : { footer: footerNode }),
     }
   }
 
@@ -196,22 +205,18 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     this.cursor = seeded >= 0 ? seeded : 0
   }
 
-  private move(delta: 1 | -1): void {
-    const view = this.filtered()
-    this.cursor = cycle(this.cursor, view.length, delta)
-    const row = view[this.cursor]
-    if (row !== undefined) this.options.onHighlight?.(row)
-    this.options.onCursorChanged?.(this.cursor, view)
-    this.adapter.invalidate()
-  }
-
-  private activate(): void {
-    const row = this.filtered()[this.cursor]
-    if (row === undefined) return
-    this.onEvent({ kind: 'selection-change', controlId: 'select-list', value: row.value })
-  }
-
   private onEvent(event: BlueUiEvent): void {
+    if (event.kind === 'activate' && event.controlId === 'select-list-clear-filter') {
+      this.query = ''
+      this.filterEditing = false
+      this.reseedCursor()
+      const view = this.filtered()
+      this.options.onCursorChanged?.(this.cursor, view)
+      const selected = view[this.cursor]
+      if (selected === undefined) this.adapter.invalidate()
+      else this.adapter.focus({ controlId: 'select-list', itemId: selected.value })
+      return
+    }
     if (event.kind !== 'selection-change' || event.controlId !== 'select-list' || typeof event.value !== 'string') return
     const row = this.filtered().find(candidate => candidate.value === event.value)
     if (row === undefined) return

@@ -52,6 +52,11 @@ canonical grant permits only declared placements. One consumer may register up
 to eight panes, and each registration may successfully refresh at most 20 times
 in a rolling second.
 
+Users move through the Editor and focusable panes in layout order with `F6` /
+`Shift+F6`; crossing either end returns focus to the Editor. The host owns lane
+tabs, so they do not reuse Tab semantics from inside a pane. An open capturing
+overlay temporarily owns focus.
+
 ## Overlay contract
 
 ```ts

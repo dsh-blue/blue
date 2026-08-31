@@ -50,12 +50,6 @@ export const ACTION_SEGMENT_LEFT = 'blue.interaction.segment-left'
  */
 export const ACTION_SEGMENT_RIGHT = 'blue.interaction.segment-right'
 /**
- * Confirm the active surface session-only — no persisted default
- * (Alt+S) — contextual only: the model-family panels match it to commit a
- * switch that leaves the default-model service untouched.
- */
-export const ACTION_SESSION_ONLY = 'blue.interaction.session-only'
-/**
  * Cycle the session mode normal → plan → yolo (Shift+Tab) — contextual
  * only: the main editor's `onKey` chain matches it in
  * `./input-plugin.ts`; panels and questionnaires keep their own
@@ -91,7 +85,6 @@ export const INTERACTION_KEY_ACTIONS: readonly BlueKeyAction[] = [
   { id: ACTION_BACKSPACE, keys: 'backspace', description: 'Delete backward / exit bash mode on an empty prompt' },
   { id: ACTION_SEGMENT_LEFT, keys: 'left', description: 'Step the segment control left (contextual)' },
   { id: ACTION_SEGMENT_RIGHT, keys: 'right', description: 'Step the segment control right (contextual)' },
-  { id: ACTION_SESSION_ONLY, keys: 'alt+s', description: 'Confirm session-only, no persisted default (contextual)' },
   { id: ACTION_CYCLE_MODE, keys: 'shift+tab', description: 'Cycle the session mode: normal → plan → yolo' },
   { id: ACTION_EXTERNAL_EDITOR, keys: 'ctrl+g', description: 'Edit the draft in your external editor ($VISUAL/$EDITOR)' },
   { id: ACTION_CYCLE_MODEL, keys: 'alt+m', description: 'Cycle the session model within the current provider (contextual)' },

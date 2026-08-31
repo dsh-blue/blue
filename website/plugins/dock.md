@@ -48,6 +48,10 @@ if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.messa
 manifest 声明的 placement；同一 consumer 最多 8 个 pane，每个 registration 的
 `refresh()` 在滚动一秒内最多成功 20 次。
 
+用户用 `F6` / `Shift+F6` 按布局顺序在 Editor 与可聚焦 pane 之间移动；跨过首尾
+边界会回到 Editor。Lane tabs 由宿主管理，不复用 pane 内部的 Tab 语义；capturing
+overlay 打开时会暂时独占焦点。
+
 ## Overlay 契约
 
 ```ts

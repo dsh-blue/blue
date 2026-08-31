@@ -575,8 +575,8 @@ describe('registerSessionCommands', () => {
     const overlay = screen.overlays.at(-1)!
     const panel = overlay.component as InfoPanel
     const node = panel.currentNode()
-    if (node.kind !== 'surface' || node.child.kind !== 'rich-text') throw new Error('expected changelog rich-text surface')
-    expect(node.child.spans.length).toBeLessThanOrEqual(200)
+    if (node.kind !== 'surface' || node.child.kind !== 'scroll' || node.child.child.kind !== 'rich-text') throw new Error('expected scrollable changelog rich-text surface')
+    expect(node.child.child.spans.length).toBeLessThanOrEqual(200)
     const rows = plain(panel.render(100))
     expect(rows.join('\n')).toContain('changelog')
     expect(rows.some(row => row.includes('Exact Harness alpha contract'))).toBe(true)

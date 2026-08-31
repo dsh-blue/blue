@@ -86,6 +86,14 @@ describe('blue-approval answerer', () => {
     prompt.onEvent({ kind: 'activate', controlId: 'other' })
     prompt.onEvent({ kind: 'value-change', controlId: 'other', value: 'ignored' })
     prompt.onEvent({ kind: 'value-change', controlId: 'approval-reason', value: 3 })
+    prompt.onEvent({ kind: 'selection-change', controlId: 'approval-choices', value: 'missing' })
+    prompt.onEvent({ kind: 'selection-change', controlId: 'approval-choices', value: '9' })
+    const internals = prompt as unknown as { syncCursor(controlId: string, itemId: string | undefined): void }
+    internals.syncCursor('other', '1')
+    internals.syncCursor('approval-choices', undefined)
+    internals.syncCursor('approval-choices', 'missing')
+    internals.syncCursor('approval-choices', '9')
+    internals.syncCursor('approval-choices', '0')
     overlay(screen).handleInput(KEY.enter)
     await expect(pending).resolves.toBe('allowed-once')
     expect(pending.fallback).not.toHaveBeenCalled()
@@ -121,14 +129,13 @@ describe('blue-approval answerer', () => {
     await pending
   })
 
-  it('moves the highlight with Up/Down, wrapping at both ends', async () => {
+  it('moves the highlight with Up/Down without wrapping', async () => {
     const { ctx, screen, agent } = await mount()
     const pending = decide(ctx, request(agent))
     overlay(screen).handleInput(KEY.up)
-    expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Reject with feedback [4]')
-    overlay(screen).handleInput(KEY.down)
     expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Allow once [1]')
     overlay(screen).handleInput(KEY.down)
+    expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Allow bash for this session [2]')
     overlay(screen).handleInput(KEY.down)
     expect(screen.overlays[0]?.component.render(60).join('\n')).toContain('→ Reject [3]')
     overlay(screen).handleInput(KEY.up)
@@ -250,10 +257,12 @@ describe('blue-approval answerer', () => {
     expect(steer).not.toHaveBeenCalled()
   })
 
-  it('rejects on Escape from the feedback editor', async () => {
+  it('leaves feedback editing before Escape rejects', async () => {
     const { ctx, screen, agent, steer } = await mount()
     const pending = decide(ctx, request(agent))
     overlay(screen).handleInput('4')
+    overlay(screen).handleInput(KEY.escape)
+    expect(screen.overlays[0]?.hidden).toBe(false)
     overlay(screen).handleInput(KEY.escape)
     await expect(pending).resolves.toBe('rejected')
     expect(steer).not.toHaveBeenCalled()

@@ -24,6 +24,11 @@
     "README.zh.md"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-blue/blue.git",
+    "directory": "packages/plugin-kit"
+  },
   "dependencies": {
     "@dsh-blue/blue-api": "workspace:*",
     "@dsh-blue/blue-ui": "workspace:*",

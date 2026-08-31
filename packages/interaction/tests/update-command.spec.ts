@@ -485,6 +485,7 @@ describe('/update confirm and swap', () => {
     form.handleInput(KEY.enter)
     expect(form.render(100).join('\n')).toContain('type y to confirm')
     form.handleInput(KEY.escape)
+    form.handleInput(KEY.escape)
     const execution = await pending
     expect(execution?.result).toEqual({ kind: 'success', text: 'update cancelled' })
     world.dispose()
@@ -874,7 +875,7 @@ describe('update panel model', () => {
     rows = plain(panel.render(80))
     expect(rows).toContain('restart dsh to apply')
     expect(rows).toContain('log: /tmp/update.log')
-    panel.handleInput('\r')
+    panel.handleInput(KEY.escape)
     expect(closed).toHaveBeenCalledOnce()
     expect(updatePanelSummary(state)).toContain('restart dsh to apply')
   })

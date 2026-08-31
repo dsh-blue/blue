@@ -3,8 +3,9 @@
  * `approval/request` waterfall. Requests for the agent currently attached
  * to the UI open a dialog panel with four choices — Allow once, Allow the
  * tool for this session, Reject, Reject with feedback — navigated with
- * Up/Down and Enter, direct-selected with the `1`–`4` digit keys; Escape
- * rejects, an aborted request signal cancels, and the feedback choice swaps
+ * Up/Down and Enter without wrapping, direct-selected with the `1`–`4` digit
+ * keys; Escape backs out of editing before it rejects, an aborted request
+ * signal cancels, and the feedback choice swaps
  * the list for an inline reason editor whose submission steers the agent
  * with the rejection reason. The panel replaces the editor in its dock
  * slot (D30), so below it only the footer remains. Session-scoped
@@ -36,11 +37,6 @@ export const name = 'blue-approval'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'blueSessionActions']
 
 /** Decoded input sequences the prompt handles directly (no keymap actions). */
-const KEY_UP = '\x1b[A'
-const KEY_DOWN = '\x1b[B'
-const KEY_ENTER = '\r'
-const KEY_ESCAPE = '\x1b'
-
 /** Construction options for {@link ApprovalPrompt}. */
 interface ApprovalPromptOptions {
   /** Theme supplying the header/reason/highlight colors. */
@@ -64,8 +60,8 @@ interface ApprovalPromptOptions {
 }
 
 /**
- * The approval overlay component: a four-choice menu (Up/Down wrap the
- * highlight, Enter confirms, `1`–`4` direct-select, Escape rejects) that
+ * The approval overlay component: a four-choice menu (Up/Down move without
+ * wrapping, Enter confirms, `1`–`4` direct-select, Escape rejects) that
  * swaps to an inline reason editor for "Reject with feedback".
  */
 class ApprovalPrompt implements BlueFocusable {
@@ -83,8 +79,11 @@ class ApprovalPrompt implements BlueFocusable {
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onFocusChange: identity => this.syncCursor(identity.controlId, identity.itemId),
       onTextSubmit: (_controlId, value) => this.submitFeedback(value),
+      onUnhandledEscape: () => this.options.settle('rejected'),
       startEditing: () => this.feedback,
+      fallbackFocusIdentity: () => this.feedback ? { controlId: 'approval-reason' } : undefined,
       t: options.t,
       suppressAutomaticContextHints: true,
       contextHints: () => this.feedback
@@ -120,32 +119,11 @@ class ApprovalPrompt implements BlueFocusable {
    * @param data - the input sequence as read from the terminal.
    */
   handleInput(data: string): void {
-    if (this.feedback) {
-      if (data === KEY_ESCAPE) this.options.settle('rejected')
-      else this.adapter.handleInput(data)
+    if (!this.feedback && data >= '1' && data <= '4') {
+      this.choose(Number(data) - 1)
       return
     }
-    if (data === KEY_UP) {
-      this.cursor = this.cursor === 0 ? this.labels().length - 1 : this.cursor - 1
-      this.adapter.invalidate()
-      this.options.screen.requestRender()
-      return
-    }
-    if (data === KEY_DOWN) {
-      this.cursor = this.cursor === this.labels().length - 1 ? 0 : this.cursor + 1
-      this.adapter.invalidate()
-      this.options.screen.requestRender()
-      return
-    }
-    if (data === KEY_ENTER) {
-      this.choose(this.cursor)
-      return
-    }
-    if (data === KEY_ESCAPE) {
-      this.options.settle('rejected')
-      return
-    }
-    if (data >= '1' && data <= '4') this.choose(Number(data) - 1)
+    this.adapter.handleInput(data)
   }
 
   /** Act on one confirmed choice. */
@@ -169,7 +147,7 @@ class ApprovalPrompt implements BlueFocusable {
   /** Swap the menu for the inline reason editor. */
   private enterFeedback(): void {
     this.feedback = true
-    this.adapter.invalidate()
+    this.adapter.focus({ controlId: 'approval-reason' })
     this.options.screen.requestRender()
   }
 
@@ -210,6 +188,19 @@ class ApprovalPrompt implements BlueFocusable {
       this.reasonDraft = event.value
       return
     }
+    if (event.kind === 'selection-change' && event.controlId === 'approval-choices' && typeof event.value === 'string') {
+      const index = Number(event.value)
+      if (Number.isInteger(index) && index >= 0 && index < this.labels().length) this.choose(index)
+    }
+  }
+
+  private syncCursor(controlId: string, itemId: string | undefined): void {
+    if (controlId !== 'approval-choices' || itemId === undefined) return
+    const index = Number(itemId)
+    if (!Number.isInteger(index) || index < 0 || index >= this.labels().length || index === this.cursor) return
+    this.cursor = index
+    this.adapter.invalidate()
+    this.options.screen.requestRender()
   }
 }
 

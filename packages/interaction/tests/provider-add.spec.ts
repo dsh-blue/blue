@@ -385,6 +385,7 @@ describe('runProviderAdd', () => {
     expect((form.render?.(60) ?? []).join('\n'))
       .toContain('the context window is a token count (digits only)')
     form.handleInput(KEY.escape)
+    form.handleInput(KEY.escape)
     await expect(invalidRun).resolves.toBe('add provider cancelled')
 
     // Invalid effort level: same treatment.
@@ -410,6 +411,7 @@ describe('runProviderAdd', () => {
     confirmTextFields(form, ['low,ultra'])
     await new Promise(resolve => setTimeout(resolve, 20))
     expect((form.render?.(60) ?? []).join('\n')).toContain('efforts come from')
+    form.handleInput(KEY.escape)
     form.handleInput(KEY.escape)
     await expect(badEffortRun).resolves.toBe('add provider cancelled')
 
@@ -1092,11 +1094,12 @@ describe('runProviderAdd', () => {
     current(bench.screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
     const form = current(bench.screen)
-    confirmTextFields(form, ['BAD_ROUTE', 'https://x', 'k'])
+    confirmTextFields(form, ['BAD_ROUTE'])
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(bench.mutations).toEqual([])
     expect((form.render?.(60) ?? []).some(row => row.includes('provider names are lowercase kebab-case'))).toBe(true)
     // The wizard stays pending; cancel it through the still-open form.
+    form.handleInput(KEY.escape)
     form.handleInput(KEY.escape)
     await expect(outcome).resolves.toBe('add provider cancelled')
   })
@@ -1125,10 +1128,11 @@ describe('runProviderAdd', () => {
     current(bench.screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(bench.screen.overlays).toHaveLength(3) })
     const form = current(bench.screen)
-    confirmTextFields(form, ['mock', 'https://x', 'k'])
+    confirmTextFields(form, ['mock'])
     await new Promise(resolve => setTimeout(resolve, 10))
     expect((form.render?.(60) ?? []).some(row => row.includes('provider name "mock" already exists'))).toBe(true)
     expect(bench.mutations).toEqual([])
+    form.handleInput(KEY.escape)
     form.handleInput(KEY.escape)
     await expect(outcome).resolves.toBe('add provider cancelled')
   })

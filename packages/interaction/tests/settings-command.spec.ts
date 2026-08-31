@@ -255,8 +255,12 @@ function settingsPanels(bench: { screen: FakeScreen }): CanonicalSettingsControl
 /** Move the level-one cursor onto the row with the given label and press Enter. */
 async function selectL1(bench: { screen: FakeScreen }, label: string): Promise<void> {
   const panel = l1(bench.screen)
-  for (let guard = 0; guard < 30 && l1CursorLabel(panel) !== label; guard += 1) {
-    panel.handleInput(KEY.down)
+  const list = findList(panel.currentNode())
+  const current = list?.items.findIndex(item => item.id === list.selectedIds[0]) ?? -1
+  const target = list?.items.findIndex(item => item.label === label) ?? -1
+  if (current >= 0 && target >= 0) {
+    const key = target > current ? KEY.down : KEY.up
+    for (let step = 0; step < Math.abs(target - current); step += 1) panel.handleInput(key)
   }
   if (l1CursorLabel(panel) !== label) throw new Error(`level-one row not found: ${label}`)
   panel.handleInput(KEY.enter)
@@ -346,7 +350,7 @@ describe('/settings level one', () => {
     // The focused panel carries title plus one contextual operation row.
     const frame = panel.render(80).join('\n')
     expect(frame).toContain('settings')
-    expect(frame).toContain('↑↓ options · Enter choose')
+    expect(frame).toContain('↑↓←→ options · Enter choose')
     expect(settingsPanels(bench)).toHaveLength(0)
   })
 
@@ -442,7 +446,7 @@ describe('/settings level two', () => {
     // The frame carries the namespace title and contextual operation row.
     const frame = frameText(bench)
     expect(frame).toContain('settings › blue')
-    expect(frame).toContain('↑↓ options · Enter/Space change · Esc back')
+    expect(frame).toContain('↑↓←→ options · Enter/Space change · Esc back')
   })
 
   it('merges off-preset and unresolved current values into the cycle', async () => {

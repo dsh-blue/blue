@@ -10,21 +10,11 @@ import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueTheme } from '@dsh-blue/blue-core'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem, AskUserQuestionOption } from '@deepseek-ai/dsh-user-questions'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
-import { cycle } from './select-list.ts'
-
-const KEY_UP = '\x1b[A'
-const KEY_DOWN = '\x1b[B'
-const KEY_LEFT = '\x1b[D'
-const KEY_RIGHT = '\x1b[C'
-const KEY_PAGE_UP = '\x1b[5~'
-const KEY_PAGE_DOWN = '\x1b[6~'
-const KEY_ENTER = '\r'
-const KEY_ESCAPE = '\x1b'
 const RESERVED_ROWS = 14
 const MIN_PLAN_ROWS = 6
 const REJECT_LABEL = 'Reject'
 const REVISE_LABEL = 'Revise'
-const PLAN_LEAF_PATH = '$.child.0.child.0'
+const PLAN_LEAF_PATH = '$.child.0.scroll.0'
 
 type DecisionId = 'approve' | 'reject'
 
@@ -63,6 +53,7 @@ export class PlanReviewPanel implements BlueFocusable {
   private cursor = 0
   private scrollTop = 0
   private revision = ''
+  private editing = false
   private planRows: number
   private planLimit: number
   private readonly labels: readonly [string, string, string]
@@ -76,6 +67,7 @@ export class PlanReviewPanel implements BlueFocusable {
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      onFocusChange: identity => this.syncCursor(identity.controlId, identity.itemId),
       onUnhandledEscape: options.onCancel,
       maxLeafRows: () => this.planWindowRows(),
       leafRowWindowPath: PLAN_LEAF_PATH,
@@ -89,19 +81,14 @@ export class PlanReviewPanel implements BlueFocusable {
         if (changed) this.adapter.invalidate()
       },
       onTextSubmit: (_controlId, value) => this.submitRevision(value),
-      focusIndex: () => this.cursor === 2 ? 1 : 0,
-      startEditing: () => this.cursor === 2,
-      suppressAutomaticContextHints: true,
-      contextHints: () => this.cursor === 2
+      fallbackFocusIdentity: () => this.editing ? { controlId: 'revision' } : undefined,
+      startEditing: () => this.editing,
+      contextHints: () => this.editing
         ? [
             { id: 'feedback', keys: 'Type', label: 'feedback', priority: 90 },
-            { id: 'activate', keys: 'Enter', label: 'submit', priority: 100 },
-            { id: 'dismiss', keys: 'Esc', label: 'cancel', priority: 95 },
           ]
         : [
-            { id: 'activate', keys: '←→/1-3/Enter', label: 'choose', compact: '1-3/Enter', priority: 100 },
-            { id: 'scroll', keys: '↑↓/PgUp/PgDn', label: 'scroll', compact: 'PgUp/PgDn', priority: 90 },
-            { id: 'dismiss', keys: 'Esc', label: 'cancel', priority: 95 },
+            { id: 'digits', keys: '1-3', label: 'choose', priority: 95 },
           ],
     })
   }
@@ -111,23 +98,13 @@ export class PlanReviewPanel implements BlueFocusable {
 
   private planWindowRows(): number { return Math.max(MIN_PLAN_ROWS, this.options.viewportRows() - RESERVED_ROWS) }
 
-  /** Preserve the two-axis plan/decision key map and digit shortcuts. */
+  /** Preserve direct decision shortcuts; core owns focus and scrolling. */
   handleInput(data: string): void {
-    if (data === KEY_UP) { this.scrollTop = Math.max(0, this.scrollTop - 1); this.adapter.invalidate(); return }
-    if (data === KEY_DOWN) { this.scrollTop += 1; this.adapter.invalidate(); return }
-    if (data === KEY_LEFT) { this.cursor = cycle(this.cursor, this.labels.length, -1); this.adapter.invalidate(); return }
-    if (data === KEY_RIGHT) { this.cursor = cycle(this.cursor, this.labels.length, 1); this.adapter.invalidate(); return }
-    if (this.cursor !== 2 && data === '1') { this.fire('approve'); return }
-    if (this.cursor !== 2 && data === '2') { this.fire('reject'); return }
-    if (this.cursor !== 2 && data === '3') { this.cursor = 2; this.adapter.invalidate(); return }
-    if (data === KEY_PAGE_UP) { this.scrollTop = Math.max(0, this.scrollTop - this.planWindowRows()); this.adapter.invalidate(); return }
-    if (data === KEY_PAGE_DOWN) { this.scrollTop += this.planWindowRows(); this.adapter.invalidate(); return }
-    if (data === KEY_ESCAPE) { this.options.onCancel(); return }
-    if (this.cursor === 2) {
-      this.adapter.handleInput(data)
-      return
-    }
-    if (data === KEY_ENTER) this.fire(this.cursor === 0 ? 'approve' : 'reject')
+    if (!this.editing && data === '1') { this.fire('approve'); return }
+    if (!this.editing && data === '2') { this.fire('reject'); return }
+    if (!this.editing && data === '3') { this.enterRevision(); return }
+    this.adapter.handleInput(data)
+    if (this.editing && data === '\x1b') this.editing = false
   }
 
   invalidate(): void { this.adapter.invalidate() }
@@ -140,8 +117,7 @@ export class PlanReviewPanel implements BlueFocusable {
       : []
     const children: BlueUiNode[] = [
       {
-        kind: 'surface',
-        chrome: 'surface',
+        kind: 'scroll',
         child: {
           kind: 'stack', direction: 'column', children: [
             { node: { kind: 'text', content: this.options.question.detail ?? '' } },
@@ -172,10 +148,31 @@ export class PlanReviewPanel implements BlueFocusable {
       this.revision = event.value
       return
     }
+    if (event.kind === 'selection-change' && event.controlId === 'plan-review-decisions' && typeof event.value === 'string') {
+      const index = Number(event.value)
+      if (index === 0) this.fire('approve')
+      else if (index === 1) this.fire('reject')
+      else if (index === 2) this.enterRevision()
+    }
+  }
+
+  private enterRevision(): void {
+    this.cursor = 2
+    this.editing = true
+    this.adapter.focus({ controlId: 'revision' })
+  }
+
+  private syncCursor(controlId: string, itemId: string | undefined): void {
+    if (controlId !== 'plan-review-decisions' || itemId === undefined) return
+    const index = Number(itemId)
+    if (!Number.isInteger(index) || index < 0 || index >= this.labels.length || index === this.cursor) return
+    this.cursor = index
+    this.adapter.invalidate()
   }
 
   private submitRevision(value: string): void {
     this.revision = value
+    this.editing = false
     if (value.length === 0) this.fire('reject')
     else this.options.onComplete({ id: this.options.question.id, selected: [], custom: value })
   }

@@ -97,7 +97,7 @@ describe('PlanReviewPanel rendering', () => {
     expect(frame).toContain('Ship it [1]')
     expect(frame).toContain('Reject [2]')
     expect(frame).toContain('Revise [3]')
-    expect(frame).toContain('1-3/Enter')
+    expect(frame).toContain('1-3 choose')
   })
 
   it('windows a long plan behind a showing tail inside the box and scrolls it', () => {
@@ -109,8 +109,7 @@ describe('PlanReviewPanel rendering', () => {
     expect(first).toContain('PgUp/PgDn')
     expect(first).toContain('line 1')
     expect(first).not.toContain('line 14')
-    // ↓/↑ step one line — the mouse wheel arrives as those arrows, so the
-    // wheel scrolls the plan (the round-4 ruling).
+    // The read-only plan is the initial content group and owns scrolling.
     panel.handleInput(KEY.down)
     expect(panel.render(60).join('\n')).toContain('showing 2-11/15')
     panel.handleInput(KEY.up)
@@ -132,12 +131,12 @@ describe('PlanReviewPanel rendering', () => {
     const first = panel.render(20).join('\n')
     expect(first).toMatch(/showing 1-10\/\d+/u)
     expect(first).toContain('# Heading')
-    expect(first).toContain('1-3/Enter')
+    expect(first).toContain('PgUp/PgDn')
 
     panel.handleInput(KEY.down)
     const scrolled = panel.render(20).join('\n')
     expect(scrolled).toMatch(/showing 2-11\/\d+/u)
-    expect(scrolled).toContain('1-3/Enter')
+    expect(scrolled).toContain('PgUp/PgDn')
 
     for (let page = 0; page < 10; page += 1) panel.handleInput('\x1b[6~')
     expect(panel.render(20).join('\n')).toContain('THE_END')
@@ -196,11 +195,13 @@ describe('PlanReviewPanel rendering', () => {
     await runtime.stop()
   })
 
-  it('scrolling never moves the choice cursor — the arrows are two axes', () => {
+  it('uses Tab to move from the scroll group into decisions', () => {
     const { panel, onComplete } = mount(ask({ detail: LONG_DETAIL }))
     for (let step = 0; step < 20; step += 1) panel.handleInput(KEY.down)
     expect(onComplete).not.toHaveBeenCalled()
-    // Still the seeded Approve row: Enter approves, not rejects.
+    panel.handleInput(KEY.enter)
+    expect(onComplete).not.toHaveBeenCalled()
+    panel.handleInput(KEY.tab)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Ship it'] })
   })
@@ -219,18 +220,13 @@ describe('PlanReviewPanel rendering', () => {
 
   it('rides the typed revision text inline with the cursor block and hint', () => {
     const { panel } = mount(ask())
-    panel.handleInput(KEY.right)
-    panel.handleInput(KEY.right)
+    panel.handleInput('3')
     for (const char of 'redo') panel.handleInput(char)
     const frame = panel.render(60).join('\n')
     expect(frame).toContain('Revise:')
     expect(frame).toContain('redo')
-    expect(frame).toContain('Enter submit · Type feedback · Esc cancel')
-    // Leaving the row drops the form but keeps the draft.
-    panel.handleInput(KEY.left)
-    const moved = panel.render(60).join('\n')
-    expect(moved).not.toContain('Type feedback')
-    panel.handleInput(KEY.right)
+    expect(frame).toContain('Enter finish · Type feedback · Esc leave')
+    panel.handleInput(KEY.escape)
     expect(panel.render(60).join('\n')).toContain('redo')
   })
 
@@ -259,6 +255,7 @@ describe('PlanReviewPanel rendering', () => {
 describe('PlanReviewPanel decisions', () => {
   it('approves from the seeded cursor with the intent-named label', () => {
     const { panel, onComplete, onCancel } = mount(ask())
+    panel.handleInput(KEY.tab)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Ship it'] })
     expect(onCancel).not.toHaveBeenCalled()
@@ -266,7 +263,8 @@ describe('PlanReviewPanel decisions', () => {
 
   it('rejects with the other option label from the second row', () => {
     const { panel, onComplete } = mount(ask())
-    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.tab)
+    panel.handleInput(KEY.down)
     panel.handleInput(KEY.enter)
     expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
   })
@@ -310,18 +308,23 @@ describe('PlanReviewPanel decisions', () => {
     expect(panel.render(60).join('\n')).not.toContain('3. Revise  redo')
   })
 
-  it('moves with ←/→ and wraps at both ends', () => {
-    const { panel, onComplete } = mount(ask())
-    // Left off the seeded Approve wraps to Revise; left again lands on Reject.
-    panel.handleInput(KEY.left)
-    panel.handleInput(KEY.left)
-    panel.handleInput(KEY.enter)
-    expect(onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
-    // Right off the tail wraps back to Approve.
-    panel.handleInput(KEY.right)
-    panel.handleInput(KEY.right)
-    panel.handleInput(KEY.enter)
-    expect(onComplete).toHaveBeenLastCalledWith({ id: 'plan-review', selected: ['Ship it'] })
+  it('moves decisions with Up/Down according to the vertical layout', () => {
+    const value = mount(ask())
+    value.panel.handleInput(KEY.tab)
+    value.panel.handleInput(KEY.down)
+    value.panel.handleInput(KEY.enter)
+    expect(value.onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: ['Keep planning'] })
+  })
+
+  it('enters revision editing from the third canonical decision row', () => {
+    const value = mount(ask())
+    value.panel.handleInput(KEY.tab)
+    value.panel.handleInput(KEY.down)
+    value.panel.handleInput(KEY.down)
+    value.panel.handleInput(KEY.enter)
+    value.panel.handleInput('redo')
+    value.panel.handleInput(KEY.enter)
+    expect(value.onComplete).toHaveBeenCalledWith({ id: 'plan-review', selected: [], custom: 'redo' })
   })
 
   it('dismisses on Escape without answering', () => {
@@ -338,6 +341,14 @@ describe('PlanReviewPanel decisions', () => {
     events.onEvent({ kind: 'activate', controlId: 'revision' })
     events.onEvent({ kind: 'value-change', controlId: 'other', value: 'ignored' })
     events.onEvent({ kind: 'value-change', controlId: 'revision', value: 3 })
+    events.onEvent({ kind: 'selection-change', controlId: 'plan-review-decisions', value: '2' })
+    events.onEvent({ kind: 'selection-change', controlId: 'plan-review-decisions', value: '9' })
+    const cursor = panel as unknown as { syncCursor(controlId: string, itemId: string | undefined): void }
+    cursor.syncCursor('other', '0')
+    cursor.syncCursor('plan-review-decisions', undefined)
+    cursor.syncCursor('plan-review-decisions', 'missing')
+    cursor.syncCursor('plan-review-decisions', '9')
+    cursor.syncCursor('plan-review-decisions', '0')
     panel.invalidate()
     expect(panel.render(60).length).toBeGreaterThan(0)
   })
