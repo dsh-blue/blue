@@ -229,6 +229,7 @@ describe('validateBlueUiNode', () => {
       ],
     })).toMatchObject({ ok: false, message: expect.stringContaining('duplicates pageup') })
     expect(validateBlueUiNode({ kind: 'actions', id: 'actions', items: [{ id: 'page', label: 'Page', shortcut: 'pageup', shortcutFor: 'missing' }] })).toMatchObject({ ok: false, message: expect.stringContaining('does not name a tabs, list, or form control') })
+    expect(validateBlueUiNode({ kind: 'actions', id: 'actions', items: [{ id: 'page', label: 'Page', shortcut: 'pageup', shortcutFor: '*', focusable: false }] })).toMatchObject({ ok: true })
   })
 
   it('contains proxies/accessors, ignores unknown getters, and never freezes caller data', () => {

@@ -387,6 +387,73 @@ describe('compileBlueUiNode', () => {
     expect(paddedScroll).toMatchObject({ scrollTop: 7, viewportHeight: 3, primary: false })
   })
 
+  it('keeps the canonical focused control visible inside a nested scroll', () => {
+    const tree = ui.surface({
+      child: ui.scroll(ui.stack.column([
+        ui.tabs({ id: 'tabs', activeId: 'tab', items: [{ id: 'tab', label: 'Tab' }] }),
+        ...Array.from({ length: 8 }, (_, index) => ui.text(`line-${String(index)}`)),
+        ui.list({ id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      ]), { scrollbar: true }),
+    })
+    const result = compiled(tree, fixture({ getViewport: () => ({ columns: 20, rows: 4 }) }).options)
+    result.focusTarget!.focused = true
+
+    let frame = layout(result.component as Component, 20, 4)
+    let [scroll] = scrollViews(frame.root)
+    expect(scroll.scrollTop).toBe(0)
+    expect(frame.lines.join('\n')).toContain('Tab')
+
+    result.focusTarget!.handleInput?.('\x1b[B')
+    frame = layout(result.component as Component, 20, 4)
+    ;[scroll] = scrollViews(frame.root)
+    expect(scroll.scrollTop).toBeGreaterThan(0)
+    expect(frame.lines.join('\n')).toContain('Row')
+
+    result.focusTarget!.handleInput?.('\t')
+    frame = layout(result.component as Component, 20, 4)
+    ;[scroll] = scrollViews(frame.root)
+    expect(scroll.scrollTop).toBe(0)
+    expect(frame.lines.join('\n')).toContain('Tab')
+  })
+
+  it('leaves a nested scroll unchanged when focus belongs to a sibling control', () => {
+    const tree = ui.stack.column([
+      ui.child(ui.scroll(ui.stack.column(Array.from({ length: 8 }, (_, index) => ui.text(`line-${String(index)}`)))), { basis: 0, grow: 1, minSize: 1 }),
+      ui.child(ui.list({ id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }), { basis: 1, shrink: 0 }),
+    ])
+    const result = compiled(tree, fixture().options)
+    result.focusTarget!.focused = true
+    const frame = layout(result.component as Component, 20, 4)
+    const [scroll] = scrollViews(frame.root)
+    expect(scroll.scrollTop).toBe(0)
+    expect(frame.lines.join('\n')).toContain('Row')
+  })
+
+  it('reveals a restored deep focus inside a newly compiled nested scroll', () => {
+    const tree = ui.surface({
+      child: ui.scroll(ui.stack.column([
+        ui.tabs({ id: 'tabs', activeId: 'tab', items: [{ id: 'tab', label: 'Tab' }] }),
+        ...Array.from({ length: 8 }, (_, index) => ui.text(`line-${String(index)}`)),
+        ui.list({ id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      ]), { scrollbar: true }),
+    })
+    const options = fixture({ getViewport: () => ({ columns: 20, rows: 4 }) }).options
+    const first = compiled(tree, options)
+    first.focusTarget!.focused = true
+    first.focusTarget!.handleInput?.('\x1b[B')
+    const identity = first.focusTarget!.captureFocusIdentity?.()
+    expect(identity).toMatchObject({ controlId: 'rows', itemId: 'row' })
+
+    const second = compiled(tree, options)
+    expect(second.focusTarget!.restoreFocusIdentity?.(identity!)).toBe(true)
+    second.focusTarget!.focused = true
+    const frame = layout(second.component as Component, 20, 4)
+    const [scroll] = scrollViews(frame.root)
+    expect(scroll.scrollTop).toBeGreaterThan(0)
+    expect(frame.lines.join('\n')).toContain('Row')
+    expect(frame.lines.join('\n')).not.toContain('Tab')
+  })
+
   it('degrades row stacks into MainScreen document order', () => {
     const { options } = fixture({ screenMode: 'main' })
     const result = compiled(ui.stack.row([ui.text('first'), ui.text('second'), ui.text('third')]), options)
@@ -496,6 +563,7 @@ describe('compileBlueUiNode', () => {
     const focus = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), options).focusTarget!
     focus.focused = true
     focus.handleInput?.('\x1b[C')
+    expect(events).toEqual([{ kind: 'tab-change', controlId: 'tabs', tabId: 'b' }])
     focus.focused = false
     expect(focus.render(20).join('')).not.toContain(CURSOR_MARKER)
     focus.focused = true
@@ -748,7 +816,6 @@ describe('compileBlueUiNode', () => {
     ])
     const focus = compiled(tree, options).focusTarget!
     focus.handleInput?.('\x1b[C')
-    focus.handleInput?.('\r')
     focus.handleInput?.('\t')
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\x1b[Z')
@@ -814,12 +881,10 @@ describe('compileBlueUiNode', () => {
     expectFocused('Details')
     focus.handleInput?.('\x1b[C')
     expectFocused('Accounts')
-    focus.handleInput?.('\r')
     focus.handleInput?.('\t')
     expectFocused('Models')
     focus.handleInput?.('\x1b[C')
     expectFocused('Activity')
-    focus.handleInput?.('\r')
     focus.handleInput?.('\t')
     expectFocused('Details')
     focus.handleInput?.('\x1b[Z')
@@ -940,6 +1005,41 @@ describe('compileBlueUiNode', () => {
     expect(confirmedEvents).toEqual([{ kind: 'activate', controlId: 'confirmed-previous' }])
   })
 
+  it('routes a validated global page shortcut outside a specific control scope', () => {
+    const { options, events } = fixture()
+    const result = compiled(ui.stack.column([
+      ui.tabs({ id: 'tabs', activeId: 'one', items: [{ id: 'one', label: 'One' }] }),
+      ui.list({ id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      ui.actions({ id: 'pagination', items: [
+        { id: 'previous', label: 'Previous', shortcut: 'pageup', shortcutFor: '*', focusable: false },
+        { id: 'next', label: 'Next', shortcut: 'pagedown', shortcutFor: '*', focusable: false },
+      ] }),
+    ]), options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    focus.handleInput?.('\x1b[6~')
+    focus.handleInput?.('\x1b[5~')
+    expect(events).toEqual([
+      { kind: 'activate', controlId: 'next' },
+      { kind: 'activate', controlId: 'previous' },
+    ])
+  })
+
+  it('prefers a focused-scope page shortcut over the global fallback', () => {
+    const { options, events } = fixture()
+    const result = compiled(ui.stack.column([
+      ui.list({ id: 'rows', selectedIds: [], items: [{ id: 'row', label: 'Row' }] }),
+      ui.actions({ id: 'pagination', items: [
+        { id: 'scoped-next', label: 'Scoped next', shortcut: 'pagedown', shortcutFor: 'rows', focusable: false },
+        { id: 'global-next', label: 'Global next', shortcut: 'pagedown', shortcutFor: '*', focusable: false },
+      ] }),
+    ]), options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    focus.handleInput?.('\x1b[6~')
+    expect(events).toEqual([{ kind: 'activate', controlId: 'scoped-next' }])
+  })
+
   it('dispatches list-add, form toggle/submit/cancel, loader and empty actions', () => {
     const { options, events } = fixture()
     const tree = ui.stack.column([
@@ -974,7 +1074,7 @@ describe('compileBlueUiNode', () => {
   })
 
   it('handles empty controls/lists and alternate backward keys', () => {
-    const { options } = fixture()
+    const { options, events } = fixture()
     const passive = compiled(ui.stack.column([ui.list({ id: 'empty-list', selectedIds: [], items: [] }), ui.actions({ id: 'none', items: [] })]), options)
     expect(passive.focusTarget).toBeNull()
     expect(() => passive.component.handleInput?.('\r')).not.toThrow()
@@ -989,8 +1089,11 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('x')
 
     const tabsOnly = compiled(ui.tabs({ id: 'tabs-only', activeId: 'one', items: [{ id: 'one', label: 'One' }] }), options).focusTarget!
+    tabsOnly.handleInput?.('\x1b[D')
+    tabsOnly.handleInput?.('\x1b[C')
     tabsOnly.handleInput?.('\x1b[A')
     tabsOnly.handleInput?.('\x1b[B')
+    expect(events).toEqual([])
   })
 
   it('renders optional and disabled control variants', () => {
@@ -1019,22 +1122,28 @@ describe('compileBlueUiNode', () => {
   it('keeps active, selected, and focused pattern states visually distinct', () => {
     const selectedBg = vi.fn(identity)
     const trackedColors = new Proxy(colors, { get: (target, key, receiver) => key === 'selectedBg' ? selectedBg : Reflect.get(target, key, receiver) })
-    const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), fixture({ colors: trackedColors }).options)
+    const tabFixture = fixture({ colors: trackedColors })
+    const tabs = compiled(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'Active' }, { id: 'b', label: 'Focused' }] }), tabFixture.options)
     tabs.focusTarget!.focused = true
     tabs.focusTarget!.handleInput?.('\t')
     const activeTabRow = tabs.component.render(40).join('')
     expect(activeTabRow).toContain(`${CURSOR_MARKER}  ‹ ● Active ›`)
     expect(activeTabRow).not.toContain('→ ‹ ● Active ›')
     tabs.focusTarget!.handleInput?.('\x1b[C')
+    expect(tabFixture.events).toEqual([{ kind: 'tab-change', controlId: 'tabs', tabId: 'b' }])
     tabs.focusTarget!.handleInput?.('\t')
     tabs.focusTarget!.handleInput?.('\x1b[Z')
     const tabRow = tabs.component.render(40).join('')
     expect(tabRow).toContain('‹ ● Active ›')
-    expect(tabRow).toContain(`${CURSOR_MARKER} → ○ Focused`)
-    expect(tabRow.replaceAll(CURSOR_MARKER, '')).toContain('→ ○ Focused')
+    expect(tabRow).toContain(`${CURSOR_MARKER}  ○ Focused`)
+    expect(tabRow.replaceAll(CURSOR_MARKER, '')).toContain('○ Focused')
+    expect(tabRow).not.toContain('→')
     const tabLayoutRow = layout(tabs.component as Component, 40, 1).lines.join('')
-    expect(tabLayoutRow).toContain(`${CURSOR_MARKER} → ○ Focused`)
+    expect(tabLayoutRow).toContain(`${CURSOR_MARKER}  ○ Focused`)
+    expect(tabLayoutRow).not.toContain('→')
     expect(tabLayoutRow.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    expect(selectedBg).toHaveBeenCalled()
+    selectedBg.mockClear()
 
     const list = compiled(ui.list({ id: 'list', mode: 'multiple', selectedIds: ['selected'], items: [
       { id: 'plain', label: 'Plain' },

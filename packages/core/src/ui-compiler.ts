@@ -218,6 +218,30 @@ interface FocusState {
   setLayoutViewport(viewport: BlueUiViewport): void
 }
 
+class FocusFollowingScrollView extends ScrollView {
+  private contentWidth = 1
+
+  constructor(private readonly content: Component, private readonly focusState: FocusState, options: ConstructorParameters<typeof ScrollView>[1]) {
+    super(content, options)
+  }
+
+  override getContentWidth(width: number): number {
+    this.contentWidth = super.getContentWidth(width)
+    return this.contentWidth
+  }
+
+  override updateLayout(contentHeight: number, viewportHeight: number, requestRender: () => void): void {
+    super.updateLayout(contentHeight, viewportHeight, requestRender)
+    if (!this.focusState.focused || this.viewportHeight < 1) return
+    const focusRow = this.content.render(this.contentWidth).findIndex(row => row.includes(CURSOR_MARKER) || row.includes(FOCUS_SENTINEL))
+    if (focusRow < 0) return
+    if (focusRow < this.scrollTop) this.scrollTo(focusRow, { disableFollow: true })
+    else if (focusRow >= this.scrollTop + this.viewportHeight) {
+      this.scrollTo(focusRow - this.viewportHeight + 1, { disableFollow: true })
+    }
+  }
+}
+
 interface ControlGroup {
   readonly id: string
   readonly kind: 'tabs' | 'content'
@@ -668,7 +692,7 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
     case 'scroll': {
       const child = compileNode(node.child, state, options, `${path}.scroll`, mode)
       if (options.screenMode === 'main') return child
-      return new ScrollView(child, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
+      return new FocusFollowingScrollView(child, state, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
     }
     case 'tabs': {
       return staticComponent(width => renderTabs(node, width, patternFocus(state, `${path}:`), options.colors), options)
@@ -972,7 +996,8 @@ class CompiledSurface implements BlueEditorShellComponent {
     const shortcut = data === '\x1b[5~' ? 'pageup' : data === '\x1b[6~' ? 'pagedown' : undefined
     if (shortcut !== undefined) {
       const scope = controls[this.state.lastIndex]?.shortcutScope
-      const matched = scope === undefined ? undefined : inventory.shortcuts.find(candidate => candidate.shortcut === shortcut && candidate.scope === scope)
+      const matched = inventory.shortcuts.find(candidate => candidate.shortcut === shortcut && candidate.scope === scope)
+        ?? inventory.shortcuts.find(candidate => candidate.shortcut === shortcut && candidate.scope === '*')
       if (matched !== undefined) {
         if (matched.confirm !== undefined && this.state.pendingConfirmation !== matched.controlKey) {
           this.state.pendingConfirmation = matched.controlKey
@@ -1078,7 +1103,15 @@ class CompiledSurface implements BlueEditorShellComponent {
     if (matchingDirection) {
       const siblings = controls.map((control, index) => ({ control, index })).filter(entry => entry.control.group === active.group)
       const siblingIndex = siblings.findIndex(entry => entry.index === this.state.lastIndex)
-      moveTo(siblings[(siblingIndex + siblings.length + direction) % siblings.length]!.index)
+      const next = siblings[(siblingIndex + siblings.length + direction) % siblings.length]!
+      if (next.index === this.state.lastIndex) {
+        this.state.pendingConfirmation = undefined
+        return
+      }
+      moveTo(next.index)
+      if (activeGroup.kind === 'tabs' && next.control.kind === 'event' && next.control.event.kind === 'tab-change') {
+        this.state.emit(next.control.event)
+      }
       return
     }
     if (active.kind === 'text') {
@@ -1097,6 +1130,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.emit({ kind: 'value-change', controlId: active.field.id, value: this.state.fieldValue(active.field, active.key) })
       return
     }
+    if (active.kind === 'event' && active.event.kind === 'tab-change') return
     if (active.kind === 'submit') {
       const values = Object.fromEntries(active.form.fields.map(field => [field.id, this.state.fieldValue(field, `${active.formPath}:field:${field.id}`)]))
       this.state.emit({ kind: 'submit', controlId: active.form.id, values })

@@ -131,8 +131,9 @@ content domain. Tab/Shift-Tab cycle only tab groups; lists, action rows, and
 form fields never enter that cycle. Down enters the first content group from a
 tab, Up/Down moves through vertical entries and adjacent content groups, and Up
 from the first content entry returns to the remembered tab group. Pressing Tab
-from content also returns to that remembered group. Left/Right roves a tab or
-other horizontal group, and Enter/Space confirms the current candidate. A tree with
+from content also returns to that remembered group. Left/Right immediately
+emits the next enabled tab in a tab group, while it only roves other horizontal
+groups; Enter/Space is inert on tabs and confirms ordinary controls. A tree with
 no tabs retains ordered Tab/Shift-Tab traversal across all interactive groups,
 so standalone forms and dialogs keep their established keyboard path. Entering
 any group selects its active, selected, or primary control and otherwise its
@@ -143,16 +144,17 @@ keeps the active control when present and otherwise chooses the same ordered
 group slot. A compiled surface captures a canonical control/item identity plus
 its remembered tab-control id. Pane and overlay replacements restore that
 identity before their outer focus transition, preserving the current
-level/candidate across a successful semantic refresh without exposing renderer
+level/active item across a successful semantic refresh without exposing renderer
 paths publicly.
 
 An action's paired `shortcut` / `shortcutFor` metadata is admitted only for a
 unique `pageup` or `pagedown` claim whose target is a tabs, list, or form id in
-the same tree. The compiler dispatches its ordinary activate event only when
-the active control carries that target scope. `focusable: false` actions remain
-rendered and shortcut-addressable but never enter the control inventory.
+the same tree, or the explicit global target `*`. The compiler prefers a claim
+for the active control's scope and otherwise dispatches the global fallback.
+`focusable: false` actions remain rendered and shortcut-addressable but never
+enter the control inventory.
 
-`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Core owns all tab state chrome: active tabs render as `‹ ● label ›`, inactive tabs as `○ label`, and disabled tabs retain the same active/inactive glyph while using muted paint. `BlueTabItem.label` is pure business text and never carries those glyphs, focus arrows, or chip delimiters. A focused active tab receives the unique hardware cursor marker without a redundant arrow; a focused inactive candidate retains `→`, so navigation remains legible without color. Disabled tabs never receive either focus marker. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Badges precede truncatable detail so state such as `← current` survives a closed overlay's inner-width budget. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
+`src/ui-patterns.ts` is the private L2 presentation adapter used by the compiler and the editor-internal autocomplete adapter. It may paint canonical surface/tabs/list/form/actions/loader/empty/progress/divider rows with semantic palette tokens and must delegate visible-column measurement and slicing to `src/width.ts`; it is not a public subpath or an alternate admission/compiler seam. Active tabs, controlled list selection, and roving focus remain separate states. Core owns all tab state chrome: active tabs render as `‹ ● label ›`, inactive tabs as `○ label`, and disabled tabs retain the same active/inactive glyph while using muted paint. `BlueTabItem.label` is pure business text and never carries those glyphs, focus arrows, or chip delimiters. Tabs never paint a `→` candidate arrow: every enabled focused tab receives the unique hardware cursor marker plus `selectedBg`, so focus remains visible when a terminal does not render the hardware cursor distinctly. Immediate Left/Right activation plus semantic focus restore makes the new active bracket the visible state change. Disabled tabs never receive the focus marker. Every enabled focused list row receives the unique marker, `primary`, and a full-width `selectedBg`; semantic `detailSpans` retain their own tone/emphasis inside that focused background, while an unfocused controlled selection keeps only its persistent selection glyph/semantic foreground. Badges precede truncatable detail so state such as `← current` survives a closed overlay's inner-width budget. Disabled selected rows use one muted layer and can never focus. At narrow widths list detail disappears before tabs/actions collapse, and the render-exit width clamp remains the final backstop. Loader frames are deterministic and own no timer.
 
 The former `src/frontend-renderer.ts` conversion bridge and its `renderFrontendView`, `renderFrontendModel`, and `FrontendModelComponent` exports are physically deleted. Frontend, transcript, context, and tool producers now publish canonical `BlueUiNode` values; renderer adapters call `compileBlueUiNode` at the core boundary. Do not restore a frontend-specific converter or painter. Public `BlueView` remains the safe content-leaf subset of the canonical schema; its diff alignment, semantic paint, sanitation, and width containment still have one core owner through the canonical compiler.
 

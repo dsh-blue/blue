@@ -22,12 +22,13 @@ its single editor-control slot.
 `detailSpans` carries renderer-neutral tone/emphasis when a row needs semantic
 inline detail without exposing ANSI.
 `BlueActionItem.shortcut` is limited to the semantic `pageup | pagedown`
-vocabulary and must be paired with `shortcutFor`, the id of one tabs, list, or
-form control in the same admitted tree. The renderer emits the ordinary
-`activate` event only while focus is inside that control scope; no raw input is
-exposed. `focusable: false` keeps a paging affordance visible and
-shortcut-addressable without adding it to roving focus. One tree cannot claim
-the same shortcut twice for one scope.
+vocabulary and must be paired with `shortcutFor`, either the id of one tabs,
+list, or form control in the same admitted tree or the explicit global fallback
+`*`. The renderer prefers the ordinary `activate` event for the focused control
+scope and otherwise uses the global fallback; no raw input is exposed.
+`focusable: false` keeps a paging affordance visible and shortcut-addressable
+without adding it to roving focus. One tree cannot claim the same shortcut
+twice for one scope.
 
 Node/event/snapshot data is JSON-shaped. Render callbacks, event handlers,
 `AbortSignal`, opaque one-shot `BlueUserGesture`, and registration handles are

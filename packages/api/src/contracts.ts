@@ -83,9 +83,9 @@ export interface BlueActionItem {
   readonly disabled?: boolean
   readonly busy?: boolean
   readonly confirm?: string
-  /** Page key routed while focus is inside the group named by `shortcutFor`. */
+  /** Page key routed inside the named group, or anywhere when `shortcutFor` is `*`. */
   readonly shortcut?: 'pageup' | 'pagedown'
-  /** Stable tabs/list/form control id whose focused group owns `shortcut`. */
+  /** Stable tabs/list/form control id whose focused group owns `shortcut`, or `*`. */
   readonly shortcutFor?: string
   /** False keeps the action visible and shortcut-addressable but out of roving focus. */
   readonly focusable?: boolean

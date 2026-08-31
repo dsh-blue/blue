@@ -232,13 +232,17 @@ function actionItem(value: unknown, path: string, state: ValidationState): BlueA
     const shortcutForValue = own(object, 'shortcutFor', path)
     const focusableValue = own(object, 'focusable', path)
     const shortcut = shortcutValue === undefined ? undefined : enumeration(shortcutValue, ['pageup', 'pagedown'], `${path}.shortcut`)
-    const shortcutFor = shortcutForValue === undefined ? undefined : identifier(shortcutForValue, `${path}.shortcutFor`, state)
+    const shortcutFor = shortcutForValue === undefined
+      ? undefined
+      : shortcutForValue === '*'
+        ? '*'
+        : identifier(shortcutForValue, `${path}.shortcutFor`, state)
     if ((shortcut === undefined) !== (shortcutFor === undefined)) invalid(`${path}.shortcut and shortcutFor must be provided together`)
     if (shortcut !== undefined && shortcutFor !== undefined) {
       const pair = JSON.stringify([shortcutFor, shortcut])
       if (state.shortcutPairs.has(pair)) invalid(`${path} duplicates ${shortcut} for control "${shortcutFor}"`)
       state.shortcutPairs.add(pair)
-      state.shortcutTargets.push({ id: shortcutFor, path: `${path}.shortcutFor` })
+      if (shortcutFor !== '*') state.shortcutTargets.push({ id: shortcutFor, path: `${path}.shortcutFor` })
     }
     return {
       id: text(required(object, 'id', path), `${path}.id`, state),

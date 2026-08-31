@@ -466,7 +466,7 @@ describe('plugin surface bridge panes', () => {
     owner.scope.dispose()
   })
 
-  it('keeps the confirmed tab candidate and level focused across pane refreshes', async () => {
+  it('switches tabs immediately and keeps the active level focused across pane refreshes', async () => {
     const host = new BluePluginHostService(new Context())
     const runtime = createRuntime()
     const owner = mount(host, runtime.runtime)
@@ -490,21 +490,18 @@ describe('plugin surface bridge panes', () => {
     runtime.runtime.setFocus(target)
     target.handleInput?.('\t')
     target.handleInput?.('\x1b[C')
-    target.handleInput?.('\r')
     await flushMicrotasks()
 
     target = entry(runtime.surfaces, 'tab-refresh').focusTarget!
     expect(target.captureFocusIdentity?.()).toEqual({ controlId: 'range-tabs', itemId: 'month', tabControlId: 'range-tabs' })
     expect(target.render(80).join('')).toContain('‹ ● Month ›')
-    expect(target.render(80).join('')).not.toContain('→ ‹ ● Month ›')
+    expect(target.render(80).join('')).not.toContain('→')
     target.handleInput?.('\x1b[D')
-    target.handleInput?.(' ')
     await flushMicrotasks()
 
     target = entry(runtime.surfaces, 'tab-refresh').focusTarget!
     expect(target.captureFocusIdentity?.()).toEqual({ controlId: 'range-tabs', itemId: 'today', tabControlId: 'range-tabs' })
     target.handleInput?.('\x1b[C')
-    target.handleInput?.('\r')
     await flushMicrotasks()
     expect(events).toEqual([
       { kind: 'tab-change', controlId: 'range-tabs', tabId: 'month' },

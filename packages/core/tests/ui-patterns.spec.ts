@@ -61,7 +61,7 @@ describe('private UI pattern painters', () => {
     expect(wide).toContain('○ Beta 3')
     const forty = renderTabs(node, 40, { key: 'c', focused: true, marker: '|' }, colors)[0]!
     expect(forty).not.toContain('12')
-    expect(forty).toContain('|→ ○ Gamma')
+    expect(forty).toContain('| ○ Gamma')
     expect(renderTabs(node, 40, { key: 'a', focused: true, marker: '|' }, colors)[0]).toContain('| ‹ ● Alpha ›')
     const disabled = renderTabs(node, 40, { key: 'b', focused: true, marker: '|' }, colors)[0]!
     expect(disabled).toContain('○ Beta')
@@ -71,7 +71,7 @@ describe('private UI pattern painters', () => {
     expect(disabledActive).toContain('‹ ● Beta ›')
     const narrow = renderTabs(node, 11, { key: 'c', focused: true, marker: '|' }, colors)[0]!
     expect(visibleWidth(narrow)).toBeLessThanOrEqual(11)
-    expect(narrow).toContain('|→ ○ Gamma')
+    expect(narrow).toContain('| ○ Gamma')
     expect(renderTabs(node, 5, idle, colors)[0]).toHaveLength(5)
     expect(renderTabs(node, 1, { key: 'c', focused: true, marker: '|' }, colors)[0]).toHaveLength(1)
     const primary = vi.fn(identity)

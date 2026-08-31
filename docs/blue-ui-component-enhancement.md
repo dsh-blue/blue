@@ -642,9 +642,9 @@ editor.provider
 一个 pane 编译成一个 `BlueSurfaceComponent implements BlueFocusable`。pi-tui 只看见一个焦点对象；surface 内部维护 control graph：
 
 - 存在 tabs 时，Tab/Shift-Tab 只切换标签组，列表、按钮和表单不进入该循环；
-- 左右键移动当前标签/横向控件候选，向下键从标签进入内容，上下键浏览纵向条目和相邻内容组；
-- Enter/Space 确认后若原 control/item 仍存在，refresh 保持同一候选与标签层级；active 候选不重复显示 `→`；
-- 分页 action 以 `shortcut + shortcutFor` 把 PgUp/PgDn 限定到指定 tabs/list/form 焦点域，并可用 `focusable: false` 完全退出 Tab/方向键路径；
+- 左右键立即切换当前标签组的 active 标签；其他横向控件仍只移动候选，向下键从标签进入内容，上下键浏览纵向条目和相邻内容组；
+- tabs 不绘制 `→`，Enter/Space 不重复触发标签切换；若新的 active control/item 仍存在，refresh 保持该标签与标签层级；
+- 分页 action 以 `shortcut + shortcutFor` 把 PgUp/PgDn 限定到指定 tabs/list/form 焦点域，或以 `shortcutFor: '*'` 声明显式全局回退；当前焦点域的绑定优先，`focusable: false` 可使 action 完全退出 Tab/方向键路径；
 - 不存在 tabs 的普通表单与对话框仍用 Tab/Shift-Tab 遍历交互控件组；
 - Esc 先退出局部编辑，再释放 pane focus；capturing overlay 按 dismissible 关闭；
 - lane 切换走 Blue keymap action，不硬编码原始键；
