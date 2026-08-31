@@ -5,6 +5,7 @@
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#usage)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/en/)
+[![Marketplace](https://img.shields.io/badge/marketplace-plugins-0EA5E9)](https://dsh-blue.dev/en/marketplace/)
 
 English | [中文](README.zh.md)
 
@@ -99,6 +100,7 @@ The runtime flow is `Harness domain -> projection/action boundary -> renderer-ne
 ## Documentation
 
 - **User manual** — [quickstart](https://dsh-blue.dev/en/guide/) · [features](https://dsh-blue.dev/en/features/) · [key & command reference](https://dsh-blue.dev/en/reference/commands/) (中文: [指南](https://dsh-blue.dev/guide/) · [功能](https://dsh-blue.dev/features/) · [参考](https://dsh-blue.dev/reference/commands/))
+- **Plugin marketplace** — [browse & install plugins](https://dsh-blue.dev/en/marketplace/) · [submit yours](https://dsh-blue.dev/en/marketplace/submit) (中文: [插件市场](https://dsh-blue.dev/marketplace/) · [收录指南](https://dsh-blue.dev/marketplace/submit))
 - **Developer manual** — [writing a plugin](https://dsh-blue.dev/en/plugins/) · [seam reference](https://dsh-blue.dev/en/plugins/seams/) · [contributing](https://dsh-blue.dev/en/plugins/contributing/)
 - **Harness handbook** — [dsh concepts, profiles, tools, MCP](https://dsh-blue.dev/en/dsh/)
 - **Design documents** (Chinese, repo-internal) — the living/archived index is [docs/README.md](docs/README.md); repo-wide conventions live in [AGENTS.md](AGENTS.md) and each package's own `AGENTS.md`.
