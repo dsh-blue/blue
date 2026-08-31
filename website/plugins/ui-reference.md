@@ -326,7 +326,12 @@ Form field 是以下判别联合：
 
 文本输入过程中，Blue 保留当前 surface generation 内的编辑 draft，并持续发出
 `value-change`；插件仍应把接受的值写回自己的 view state。重新创建 surface 或
-外部 canonical value 改变时，以插件提供的值为准。
+外部 canonical value 改变时，以插件提供的值为准。文本字段第一次 Enter 进入
+编辑态，再次 Enter 确认并回到同一字段；textarea 用 Alt+Enter 插入换行。
+
+Select 第一次 Enter 进入以 `‹ value ›` 标识的调整态，Left/Right 只修改
+renderer-local 候选；再次 Enter 才发出一次 `value-change`。Escape 或 Tab
+取消并恢复进入调整态时的值；Up/Down 仅在调整态之外切换 form field。
 
 `submitActionId` 增加提交 control；当前 TUI 把该字符串作为按钮文案，激活后发出：
 

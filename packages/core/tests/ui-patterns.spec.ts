@@ -176,6 +176,7 @@ describe('private UI pattern painters', () => {
     expect(renderFormField({ kind: 'secret', id: 'secret', label: 'Secret', value: 'abc' }, 20, idle, colors)[0]).toContain('•••')
     expect(renderFormField({ kind: 'select', id: 'select', label: 'Select', value: null, options: [] }, 20, idle, colors)[0]).toContain('Choose…')
     expect(renderFormField({ kind: 'select', id: 'select', label: 'Select', value: 'a', options: [{ id: 'a', label: 'Alpha' }] }, 20, idle, colors)[0]).toContain('Alpha')
+    expect(renderFormField({ kind: 'select', id: 'select', label: 'Select', value: 'a', options: [{ id: 'a', label: 'Alpha' }] }, 20, { key: 'select', focused: true, marker: '|', adjustingKey: 'select' }, colors)[0]).toContain('‹ Alpha ›')
     expect(renderFormField({ kind: 'select', id: 'select', label: 'Select', value: 'missing', options: [] }, 20, idle, colors)[0]).toContain('missing')
     expect(renderFormField({ kind: 'toggle', id: 'toggle', label: 'Toggle', value: true }, 20, idle, colors)[0]).toContain('[on]')
     expect(renderFormField({ kind: 'toggle', id: 'toggle', label: 'Toggle', value: false, disabled: true }, 5, idle, colors)[0]).toHaveLength(5)

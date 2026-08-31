@@ -36,7 +36,7 @@ Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutra
 
 Blue 自有 interaction chrome 支持英文与简体中文。`/settings` 首行显示“语言”，通过 Harness 的 `locale.preference` 在“跟随系统”“中文”“English”之间循环；切换时会原地刷新已打开的 settings、help、approval、questionnaire、command model 与 slash completion，不替换 controller/editor、不丢选择，也不丢弃已打开 form 的草稿。用户/model/tool 内容、路径、id、命令名、provider/model 名与上游错误详情不翻译。
 
-Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Up/Down 在字段间移动；直接输入会开始编辑，未编辑字段第一次 Enter 进入编辑，编辑态 Enter 才前进或提交最后一个字段。Tab 先退出编辑，并保留给语义控件组切换；Escape 第一次返回导航态，第二次取消。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。
+Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Up/Down 只在导航态切换字段，编辑态仍由 editor 处理；直接输入会开始编辑，未编辑字段第一次 Enter 进入编辑，编辑态 Enter 才前进或提交最后一个字段。Tab 先退出编辑，并保留给语义控件组切换；Escape 第一次返回导航态，第二次取消。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。
 
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。
 

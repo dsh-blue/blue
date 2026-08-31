@@ -7,7 +7,7 @@
  */
 
 import type { BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
-import { CURSOR_MARKER, HStack, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
+import { CURSOR_MARKER, HStack, Key, matchesKey, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { ownDataErrorMessage } from './error-message.ts'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
@@ -224,6 +224,8 @@ interface FocusState {
   setTextValue(key: string, canonical: string, value: string): void
   textEditor(field: TextField, key: string): BlueEditor
   setSelectValue(key: string, canonical: string | null, value: string | null): void
+  beginSelectEditing(field: SelectField, key: string): void
+  finishSelectEditing(field: SelectField, key: string, cancel: boolean): string | null
   setToggleValue(key: string, canonical: boolean, value: boolean): void
   setEditing(key: string | undefined): void
   blurInactiveEditors(controls: readonly ControlDescriptor[]): void
@@ -377,13 +379,16 @@ function safePaint(colors: BlueSemanticColors, tone: BlueTone | undefined, value
 }
 
 function patternFocus(state: FocusState, prefix: string): PatternFocus {
-  const active = state.controls().find(control => control.group === prefix && control.key === state.activeKey)
-  const pending = state.controls().find(control => control.group === prefix && control.key === state.pendingConfirmation)
+  const controls = state.controls()
+  const active = controls.find(control => control.group === prefix && control.key === state.activeKey)
+  const pending = controls.find(control => control.group === prefix && control.key === state.pendingConfirmation)
+  const adjusting = controls.find(control => control.group === prefix && control.key === state.editingKey && control.kind === 'select')
   return {
     key: active?.renderKey ?? '',
     focused: state.focused,
     marker: state.layoutPass ? `${CURSOR_MARKER} ` : FOCUS_SENTINEL,
     ...(pending === undefined ? {} : { pendingKey: pending.renderKey }),
+    ...(adjusting === undefined ? {} : { adjustingKey: adjusting.renderKey }),
   }
 }
 
@@ -507,6 +512,12 @@ interface TextEditorLease {
   readonly editor: BlueEditor
   onChange: BlueEditor['onChange']
   onSubmit: BlueEditor['onSubmit']
+}
+
+interface SelectDraft {
+  readonly canonical: string | null
+  readonly value: string | null
+  readonly editingOrigin: string | null | undefined
 }
 
 function detachTextEditorCallbacks(lease: TextEditorLease): void {
@@ -768,7 +779,7 @@ export class BlueUiSurfaceRuntime {
   private generation = 0
   private live = true
   private readonly textBuffers = new Map<string, { canonical: string, value: string }>()
-  private readonly selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
+  private readonly selectDrafts = new Map<string, SelectDraft>()
   private readonly toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
   private readonly textEditors = new Map<string, TextEditorLease>()
   private readonly editorFocusCheckpoints: Map<BlueEditor, boolean>[] = []
@@ -789,7 +800,7 @@ export class BlueUiSurfaceRuntime {
       if (field.kind === 'select') {
         const current = this.selectDrafts.get(stateKey)
         if (current !== undefined && current.canonical === field.value) return current.value
-        this.selectDrafts.set(stateKey, { canonical: field.value, value: field.value })
+        this.selectDrafts.set(stateKey, { canonical: field.value, value: field.value, editingOrigin: undefined })
         return field.value
       }
       const current = this.textBuffers.get(stateKey)
@@ -818,10 +829,41 @@ export class BlueUiSurfaceRuntime {
       fieldValue,
       setTextValue: (key, canonical, value) => { this.textBuffers.set(key, { canonical, value }) },
       textEditor: (field, key) => this.textEditor(field, key),
-      setSelectValue: (key, canonical, value) => { this.selectDrafts.set(key, { canonical, value }) },
+      setSelectValue: (key, canonical, value) => {
+        const current = this.selectDrafts.get(key)
+        this.selectDrafts.set(key, {
+          canonical,
+          value,
+          editingOrigin: current?.editingOrigin,
+        })
+      },
+      beginSelectEditing: (field, key) => {
+        const stateKey = fieldStateKey(key, field.kind)
+        const value = fieldValue(field, key) as string | null
+        this.state.setEditing(key)
+        this.selectDrafts.set(stateKey, { canonical: field.value, value, editingOrigin: value })
+      },
+      finishSelectEditing: (field, key, cancel) => {
+        const stateKey = fieldStateKey(key, field.kind)
+        const current = this.selectDrafts.get(stateKey)
+        const candidate = current?.value ?? field.value
+        const value = cancel && current?.editingOrigin !== undefined
+          ? current.editingOrigin
+          : candidate
+        this.selectDrafts.set(stateKey, { canonical: field.value, value, editingOrigin: undefined })
+        this.state.setEditing(undefined)
+        return value
+      },
       setToggleValue: (key, canonical, value) => { this.toggleDrafts.set(key, { canonical, value }) },
       setEditing: key => {
         if (this.state.editingKey === key) return
+        if (this.state.editingKey !== undefined) {
+          const stateKey = fieldStateKey(this.state.editingKey, 'select')
+          const current = this.selectDrafts.get(stateKey)
+          if (current?.editingOrigin !== undefined) {
+            this.selectDrafts.set(stateKey, { canonical: current.canonical, value: current.editingOrigin, editingOrigin: undefined })
+          }
+        }
         this.state.editingKey = key
         for (const lease of this.textEditors.values()) lease.editor.focused = false
       },
@@ -838,6 +880,7 @@ export class BlueUiSurfaceRuntime {
   bind(node: CompilableNode, options: RuntimeCompilerOptions, refreshMode: 'internal' | 'external', setLayoutViewport: (viewport: BlueUiViewport) => void): number {
     if (!this.live) throw new Error('surface runtime is disposed')
     if (refreshMode === 'external') {
+      if (this.state.editingKey !== undefined && this.fieldKinds.get(this.state.editingKey) === 'select') this.state.setEditing(undefined)
       this.textBuffers.clear()
       this.selectDrafts.clear()
       this.toggleDrafts.clear()
@@ -1010,7 +1053,7 @@ export class BlueUiSurfaceRuntime {
       editor.onChange = undefined
       editor.setText(controlled)
     }
-    editor.disableSubmit = field.kind === 'textarea'
+    editor.disableSubmit = false
     const onChange = (): void => {
       if (!this.live || this.options !== options || editor.onChange !== onChange) return
       const value = editor!.getExpandedText()
@@ -1191,9 +1234,10 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.viewport = safeViewport(this.options.getViewport)
     const controls = reconcile(this.state)
     const active = controls[this.state.lastIndex]
-    if (data === '\x1b') {
-      if (active?.kind === 'text' && this.state.editingKey === active.key) {
-        this.state.setEditing(undefined)
+    if (matchesKey(data, Key.escape)) {
+      if (active !== undefined && this.state.editingKey === active.key && (active.kind === 'text' || active.kind === 'select')) {
+        if (active.kind === 'select') this.state.finishSelectEditing(active.field, active.key, true)
+        else this.state.setEditing(undefined)
         return
       }
       const consumed = this.state.pendingConfirmation !== undefined
@@ -1221,6 +1265,9 @@ class CompiledSurface implements BlueEditorShellComponent {
         return
       }
       const groups = groupOrder(controls)
+      if (active.kind === 'select' && this.state.editingKey === active.key) {
+        this.state.finishSelectEditing(active.field, active.key, true)
+      }
       if (groups.length === 1) {
         if (active.kind === 'text') this.state.setEditing(undefined)
         return
@@ -1238,20 +1285,35 @@ class CompiledSurface implements BlueEditorShellComponent {
     if (active.kind === 'text' && this.state.editingKey === active.key) {
       const editor = this.state.textEditor(active.field, active.key)
       editor.focused = this.state.focused
+      if (matchesKey(data, Key.alt('enter'))) {
+        if (active.field.kind === 'textarea') editor.insertText('\n')
+        return
+      }
+      if (matchesKey(data, Key.enter)) {
+        editor.onSubmit?.(editor.getExpandedText())
+        return
+      }
       editor.handleInput?.(data)
       return
     }
     const direction = data === '\x1b[A' || data === '\x1b[D' ? -1 : data === '\x1b[B' || data === '\x1b[C' ? 1 : 0
     const horizontal = data === '\x1b[D' || data === '\x1b[C'
-    if (active.kind === 'select' && horizontal) {
-      const enabled = active.field.options.filter(option => option.disabled !== true)
-      if (enabled.length === 0) return
-      const current = this.state.fieldValue(active.field, active.key)
-      const currentIndex = enabled.findIndex(option => option.id === current)
-      const nextIndex = currentIndex < 0
-        ? direction > 0 ? 0 : enabled.length - 1
-        : (currentIndex + enabled.length + direction) % enabled.length
-      this.state.setSelectValue(fieldStateKey(active.key, active.field.kind), active.field.value, enabled[nextIndex]!.id)
+    if (active.kind === 'select' && this.state.editingKey === active.key) {
+      if (horizontal) {
+        const enabled = active.field.options.filter(option => option.disabled !== true)
+        if (enabled.length === 0) return
+        const current = this.state.fieldValue(active.field, active.key)
+        const currentIndex = enabled.findIndex(option => option.id === current)
+        const nextIndex = currentIndex < 0
+          ? direction > 0 ? 0 : enabled.length - 1
+          : (currentIndex + enabled.length + direction) % enabled.length
+        this.state.setSelectValue(fieldStateKey(active.key, active.field.kind), active.field.value, enabled[nextIndex]!.id)
+        return
+      }
+      if (matchesKey(data, Key.enter)) {
+        const value = this.state.finishSelectEditing(active.field, active.key, false)
+        this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
+      }
       return
     }
     if (direction !== 0) {
@@ -1265,7 +1327,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       return
     }
     if (active.kind === 'text') {
-      if (data === '\r' || data === '\n') {
+      if (matchesKey(data, Key.enter)) {
         this.state.setEditing(active.key)
         return
       }
@@ -1276,15 +1338,15 @@ class CompiledSurface implements BlueEditorShellComponent {
       editor.handleInput?.(data)
       return
     }
-    if (data !== '\r' && data !== '\n' && data !== ' ') return
+    if (active.kind === 'select') {
+      if (matchesKey(data, Key.enter)) this.state.beginSelectEditing(active.field, active.key)
+      return
+    }
+    if (!matchesKey(data, Key.enter) && data !== ' ') return
     if (active.kind === 'toggle') {
       const value = !this.state.fieldValue(active.field, active.key)
       this.state.setToggleValue(fieldStateKey(active.key, active.field.kind), active.field.value, value)
       this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
-      return
-    }
-    if (active.kind === 'select') {
-      this.state.emit({ kind: 'value-change', controlId: active.field.id, value: this.state.fieldValue(active.field, active.key) })
       return
     }
     if (active.kind === 'submit') {

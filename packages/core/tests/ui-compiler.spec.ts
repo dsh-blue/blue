@@ -914,6 +914,7 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('X')
     focus.handleInput?.('\x1b')
     focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[B')
@@ -1262,8 +1263,9 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[C')
-    expect(focus.render(80).join('\n')).toContain('Choice: Alpha')
+    expect(focus.render(80).join('\n')).toContain('Choice: ‹ Alpha ›')
     focus.handleInput?.('\x1b[C')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[B')
@@ -1286,13 +1288,21 @@ describe('compileBlueUiNode', () => {
     expect(refreshed.component.render(40).join('')).not.toContain('AB')
 
     const selectDraft = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: null, options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
+    selectDraft.focusTarget!.focused = true
     selectDraft.focusTarget!.handleInput?.('\x1b[D')
-    expect(selectDraft.component.render(40).join('')).toContain('Beta')
+    expect(selectDraft.component.render(40).join('')).toContain('Choose…')
+    selectDraft.focusTarget!.handleInput?.('\r')
+    selectDraft.focusTarget!.handleInput?.('\x1b[D')
+    expect(selectDraft.component.render(40).join('')).toContain('‹ Beta ›')
+    selectDraft.focusTarget!.handleInput?.('\x1b')
+    expect(selectDraft.component.render(40).join('')).toContain('Choose…')
     const selectRefresh = compiled(ui.form({ id: 'select-form', fields: [{ kind: 'select', id: 'select', label: 'Select', value: 'b', options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }] }] }), fixture().options)
     expect(selectRefresh.component.render(40).join('')).toContain('Beta')
 
     const noOptionsEvents: unknown[] = []
     const noOptions = compiled(ui.form({ id: 'empty-select', fields: [{ kind: 'select', id: 'empty', label: 'Empty', value: null, options: [{ id: 'disabled', label: 'Disabled', disabled: true }] }] }), fixture({ emit: event => noOptionsEvents.push(event) }).options)
+    noOptions.focusTarget!.handleInput?.('\x1b[C')
+    noOptions.focusTarget!.handleInput?.('\r')
     noOptions.focusTarget!.handleInput?.('\x1b[C')
     noOptions.focusTarget!.handleInput?.('\r')
     expect(noOptionsEvents).toEqual([{ kind: 'value-change', controlId: 'empty', value: null }])
@@ -1318,6 +1328,146 @@ describe('compileBlueUiNode', () => {
     expect(enterEditor.focused).toBe(false)
     expect(submittedRows).toContain('→ Enter: value')
     expect(enterEvents).toEqual([{ kind: 'value-change', controlId: 'enter', value: 'value' }])
+
+    const textareaEvents: unknown[] = []
+    const textareaEditor = createTestEditor()
+    const textarea = compiled(ui.form({ id: 'notes-form', fields: [{ kind: 'textarea', id: 'notes', label: 'Notes', value: 'first' }] }), fixture({
+      emit: event => textareaEvents.push(event),
+      resolveTextEditor: () => textareaEditor,
+    }).options)
+    textarea.focusTarget!.focused = true
+    textarea.focusTarget!.handleInput?.('\r')
+    textarea.component.render(40)
+    expect(textareaEditor.focused).toBe(true)
+    textarea.focusTarget!.handleInput?.('\x1b[D')
+    textarea.focusTarget!.handleInput?.('\x1b\r')
+    textarea.focusTarget!.handleInput?.('\x1b[13;3u')
+    expect(textareaEditor.getExpandedText()).toBe('firs\n\nt')
+    textarea.focusTarget!.handleInput?.('\r')
+    textarea.component.render(40)
+    expect(textareaEditor.focused).toBe(false)
+    expect(textareaEditor.getExpandedText()).toBe('firs\n\nt')
+    expect(textareaEvents).toEqual([
+      { kind: 'value-change', controlId: 'notes', value: 'firs\nt' },
+      { kind: 'value-change', controlId: 'notes', value: 'firs\n\nt' },
+      { kind: 'value-change', controlId: 'notes', value: 'firs\n\nt' },
+    ])
+  })
+
+  it('treats select adjustment as an explicit confirmable transaction', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const form = (value: string) => ui.form({
+      id: 'profile',
+      fields: [{ kind: 'select', id: 'mode', label: 'Mode', value, options: [
+        { id: 'guided', label: 'Guided' },
+        { id: 'direct', label: 'Direct' },
+        { id: 'review', label: 'Review' },
+      ] }],
+      submitActionId: 'Save',
+    })
+    const first = compileBlueUiSurfaceNode(form('guided'), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const focus = first.value.focusTarget!
+    focus.focused = true
+
+    focus.handleInput?.(' ')
+    focus.handleInput?.('\x1b[C')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: Guided')
+    expect(f.events).toEqual([])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: ‹ Direct ›')
+    focus.handleInput?.('\x1b[B')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: ‹ Direct ›')
+    focus.handleInput?.('\t')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: Guided')
+    expect(f.events).toEqual([])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[D')
+    focus.handleInput?.('\x1b[27u')
+    expect(first.value.component.render(60).join('\n')).toContain('→ Mode: Guided')
+    expect(f.events).toEqual([])
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    const refreshed = compileBlueUiSurfaceNode(form('review'), {
+      ...f.options,
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(refreshed.ok).toBe(true)
+    if (!refreshed.ok) throw new Error(refreshed.message)
+    const refreshedFocus = refreshed.value.focusTarget!
+    refreshedFocus.focused = true
+    expect(refreshed.value.component.render(60).join('\n')).toContain('→ Mode: Review')
+
+    refreshedFocus.handleInput?.('\r')
+    refreshedFocus.handleInput?.('\x1b[C')
+    refreshedFocus.handleInput?.('\x1b[Z')
+    refreshedFocus.handleInput?.('\x1b[B')
+    refreshedFocus.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'submit', controlId: 'profile', values: { mode: 'review' } },
+    ])
+
+    refreshedFocus.handleInput?.('\x1b[A')
+    refreshedFocus.handleInput?.('\r')
+    refreshedFocus.handleInput?.('\x1b[C')
+    refreshedFocus.handleInput?.('\r')
+    refreshedFocus.handleInput?.('\x1b[B')
+    refreshedFocus.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'submit', controlId: 'profile', values: { mode: 'review' } },
+      { kind: 'value-change', controlId: 'mode', value: 'guided' },
+      { kind: 'submit', controlId: 'profile', values: { mode: 'guided' } },
+    ])
+  })
+
+  it('consumes Alt+Enter in single-line and secret fields', () => {
+    const editors = new Map<string, BlueEditor>()
+    const f = fixture({
+      resolveTextEditor: controlId => {
+        let editor = editors.get(controlId)
+        if (editor === undefined) {
+          editor = createTestEditor()
+          editors.set(controlId, editor)
+        }
+        return editor
+      },
+    })
+    const result = compiled(ui.form({ id: 'credentials', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Blue' },
+      { kind: 'secret', id: 'token', label: 'Token', value: 'secret' },
+    ] }), f.options)
+    const focus = result.focusTarget!
+    focus.focused = true
+
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b\r')
+    focus.handleInput?.('\x1b[13;3u')
+    expect(editors.get('name')?.getExpandedText()).toBe('Blue')
+    focus.handleInput?.('\x1b[13u')
+    expect(editors.get('name')?.focused).toBe(false)
+
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b\r')
+    focus.handleInput?.('\x1b[13;3u')
+    expect(editors.get('token')?.getExpandedText()).toBe('secret')
+    focus.handleInput?.('\n')
+    expect(editors.get('token')?.focused).toBe(false)
+    expect(f.events).toEqual([
+      { kind: 'value-change', controlId: 'name', value: 'Blue' },
+      { kind: 'value-change', controlId: 'token', value: 'secret' },
+    ])
   })
 
   it('does not leave the active field when another editor submits late', () => {
@@ -1539,6 +1689,7 @@ describe('compileBlueUiNode', () => {
     const focus = reordered.value.focusTarget!
     focus.handleInput?.('\x1b[Z')
     focus.handleInput?.('\r')
+    focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[Z')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[Z')
@@ -1631,7 +1782,16 @@ describe('compileBlueUiNode', () => {
 
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\x1b[C')
-    expect(result.component.render(60).join('\n')).toContain('→ Theme: Light')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: Dark')
+    focus.handleInput?.('\r')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: ‹ Dark ›')
+    focus.handleInput?.('\x1b[C')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: ‹ Light ›')
+    focus.handleInput?.('\x1b[A')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: ‹ Light ›')
+    focus.handleInput?.('\x1b')
+    expect(result.component.render(60).join('\n')).toContain('→ Theme: Dark')
+    expect(escapes).toEqual([])
     focus.handleInput?.('\x1b[A')
     expect(result.component.render(60).join('\n')).toContain('→ Name: Blue')
     focus.handleInput?.('\x1b[C')
@@ -1654,6 +1814,8 @@ describe('compileBlueUiNode', () => {
     expect(result.component.render(60).join('\n')).toContain('→ Name: Blue')
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')
+    focus.handleInput?.('\x1b[C')
+    focus.handleInput?.('\r')
     expect(f.events).toEqual([{ kind: 'value-change', controlId: 'theme', value: 'light' }])
   })
 
@@ -1670,6 +1832,7 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.('\t')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\r')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[B')
     focus.handleInput?.('\r')

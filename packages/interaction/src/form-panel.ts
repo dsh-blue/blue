@@ -86,8 +86,6 @@ export class CanonicalFormController implements BlueFocusable {
 
   handleInput(data: string): void {
     const { keymap } = this.options
-    if (keymap.matches(data, ACTION_MOVE_DOWN)) { this.move(1); return }
-    if (keymap.matches(data, ACTION_MOVE_UP)) { this.move(-1); return }
     if (data === '\t' || data === '\x1b[Z') { this.adapter.handleInput(data); this.editing = false; return }
     if (keymap.matches(data, ACTION_SUBMIT)) {
       const wasEditing = this.editing
@@ -97,6 +95,9 @@ export class CanonicalFormController implements BlueFocusable {
     }
     if (keymap.matches(data, ACTION_CANCEL)) { this.adapter.handleInput(data); this.editing = false; return }
     if (data === '\x04' && this.options.onDelete !== undefined) { this.options.onDelete(); return }
+    if (this.editing) { this.adapter.handleInput(data); return }
+    if (keymap.matches(data, ACTION_MOVE_DOWN)) { this.move(1); return }
+    if (keymap.matches(data, ACTION_MOVE_UP)) { this.move(-1); return }
     this.adapter.handleInput(data)
   }
 

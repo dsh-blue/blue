@@ -349,7 +349,15 @@ A form field is this discriminated union:
 While text is edited, Blue keeps a draft within the current surface generation
 and continuously emits `value-change`. The plugin must still write accepted
 values back to its view state. A recreated surface or an externally changed
-canonical value wins over the old draft.
+canonical value wins over the old draft. The first Enter enters a text field;
+the next Enter confirms and returns to that field's navigation state. Alt+Enter
+inserts a textarea newline.
+
+The first Enter on a select opens an adjustment state shown as
+`‹ value ›`. Left/Right changes only the renderer-local candidate; another
+Enter emits one confirmed `value-change`. Escape or Tab cancels and
+restores the value captured on entry. Up/Down changes form fields only outside
+the adjustment state.
 
 `submitActionId` adds a submit control. The current TUI uses the string as the
 button label, and activation emits:

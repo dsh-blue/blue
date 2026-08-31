@@ -38,7 +38,7 @@ describe('CanonicalFormController', () => {
       { id: 'key', label: 'Key', required: true },
     ])
     input(component).handleInput('gw')
-    input(component).handleInput(KEY.down)
+    input(component).handleInput(KEY.enter)
     input(component).handleInput('secret')
     input(component).handleInput(KEY.enter)
     expect(onSubmit).toHaveBeenCalledWith({ route: 'gw', key: 'secret' })
@@ -51,10 +51,13 @@ describe('CanonicalFormController', () => {
       { id: 'c', label: 'C' },
     ])
     input(component).handleInput('1')
+    input(component).handleInput(KEY.escape)
     input(component).handleInput(KEY.down)
     input(component).handleInput('2')
+    input(component).handleInput(KEY.escape)
     input(component).handleInput(KEY.up)
     input(component).handleInput('3')
+    input(component).handleInput(KEY.escape)
     input(component).handleInput(KEY.down)
     input(component).handleInput(KEY.down)
     // An untouched field enters editing before a second Enter submits.
@@ -71,10 +74,27 @@ describe('CanonicalFormController', () => {
     input(component).handleInput('1')
     input(component).handleInput(KEY.tab)
     input(component).handleInput('2')
-    input(component).handleInput(KEY.down)
+    input(component).handleInput(KEY.enter)
     input(component).handleInput('3')
     input(component).handleInput(KEY.enter)
     expect(onSubmit).toHaveBeenCalledWith({ a: '12', b: '3' })
+  })
+
+  it('keeps Up and Down inside the active editor while editing', () => {
+    const { component, onSubmit } = form([
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+    ])
+    input(component).handleInput('1')
+    input(component).handleInput(KEY.down)
+    input(component).handleInput(KEY.up)
+    input(component).handleInput('2')
+    input(component).handleInput(KEY.enter)
+    input(component).handleInput('3')
+    input(component).handleInput(KEY.enter)
+    // The structural fake editor records unimplemented cursor keys literally;
+    // their presence in A proves the controller did not navigate to B.
+    expect(onSubmit).toHaveBeenCalledWith({ a: `1${KEY.down}${KEY.up}2`, b: '3' })
   })
 
   it('submits a single-field form with one Enter', () => {

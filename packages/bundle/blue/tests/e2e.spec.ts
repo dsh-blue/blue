@@ -2900,9 +2900,9 @@ describe('blue whole-tree e2e', () => {
     // Form: route, baseURL, key.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
     tree.terminal.sendInput('blue-e2e-gw')
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput(`${server.url}/v1`)
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput('sk-test-key')
     tree.terminal.sendInput('\r')
     // Discovery feeds the adopt multi-select.
@@ -2966,9 +2966,9 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
     tree.terminal.sendInput('deadgw')
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput(`http://127.0.0.1:${port}/v1`)
-    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput('sk-probe')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Advertised models') })
