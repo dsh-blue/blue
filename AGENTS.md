@@ -40,8 +40,8 @@ packages/
 examples/
   blue-user-kit/                             — pure shared public-UI component kit
   header/ right-inspector/ bottom-log/ overlay/
-  status-provider/ editor-provider/          — six opt-in publish-shaped plugins
-  blue-ecosystem/                            — opt-in six-row example composition bundle
+  status-provider/ editor-provider/ ui-gallery/ — seven opt-in publish-shaped plugins
+  blue-ecosystem/                            — opt-in seven-row example composition bundle
 script/install-dev.sh  — one-shot local dev install into a dsh profile
 website/               — VitePress documentation site (@dsh-blue/website): zh source at the top
                          level, en mirror under website/en/; deployed to GitHub Pages (ADR D32)
@@ -72,7 +72,7 @@ Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/
 | lark | `@dsh-blue/blue-lark` | optional ecosystem interaction adapter | official command · loopback settings client · notifications | [AGENTS.md](packages/lark/AGENTS.md) |
 | bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (34 Blue-owned rows: 4 support/composition + 30 product rows) · private runtime realm · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
 | cli | `@dsh-blue/blue-cli` | the `blue` launcher shell — dependency-free global bin, outside the plugin tree | exact global `dsh` probe · profile calibration (`blue`, link-lane skip) · argv translation (`-V` self-answer, `plugin` subcommand, `--profile` swallow) · `BLUE_LAUNCHER` rebrand env | [AGENTS.md](packages/cli/AGENTS.md) |
-| examples | `@dsh-blue-example/*` | validation-only downstream ecosystem | pure user kit · six opt-in public-API plugins · composition bundle · packed-install evidence | [AGENTS.md](examples/blue-user-kit/AGENTS.md) |
+| examples | `@dsh-blue-example/*` | validation-only downstream ecosystem | pure user kit · seven opt-in public-API plugins · composition bundle · packed-install evidence | [AGENTS.md](examples/blue-user-kit/AGENTS.md) |
 
 The runtime direction is Harness domain → conversation/app projection/action boundaries → frontend models → transcript/interaction TUI adapters → core; only core crosses into pi-tui. Context/remote/OpenPencil/Lark exercise the same boundary as validation-only adapters. `@deepseek-ai/cordis` and dsh service packages are host-provided peers, mirrored as pinned dev dependencies for local builds and tests.
 
@@ -112,6 +112,8 @@ pnpm run test           # vitest run: unit suites + the bundle's whole-tree e2e
 pnpm run test:coverage  # vitest run --coverage — per-file 100% gate on src
 pnpm run typecheck      # tsc -b tsconfig.json (project references)
 pnpm run lint           # oxlint packages
+pnpm run shots:sync      # regenerate website/public/shots/*.svg component screenshots (needs a prior build)
+pnpm run shots:check     # byte-compare committed shots against a fresh headless render (CI gate)
 pnpm run website:dev     # VitePress dev server at 127.0.0.1:5173 (base '/')
 pnpm run website:build   # VitePress build; DOCS_BASE=/blue/ matches the Pages base
 pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
@@ -201,4 +203,4 @@ The `harness-drift` workflow (`.github/workflows/harness-drift.yml`) watches the
 
 ## Verification status
 
-As of 2026-08-31, `pnpm run test` (3141 passed, 31 skipped, 195 files), `pnpm run test:coverage` (per-file 100% statements/branches/functions/lines), `pnpm run typecheck`, `pnpm run lint` (existing warnings only), `pnpm run build`, `pnpm run check:lib` (90 claims), `pnpm run check:pack` (12 tarballs), `pnpm run check:examples` (8/8 scenarios; 48 Harness packages), `pnpm run diagrams:check`, `pnpm run check:plugin-authoring-docs`, `pnpm run fixture:plugin-tutorial`, `pnpm run website:build`, `pnpm run smoke:happy`, `pnpm run smoke:pty`, `pnpm run smoke:pty:mouse`, and `pnpm run smoke:pty:output` all pass on Node 22+/pnpm 11 against the exact `0.1.2-alpha.2` Harness line. The dedicated `blue-dsh-alpha` profile also passes pseudo-TTY boot/exit, terminal restoration, and width/fatal scans while preserving `dsh.profile.patchReload: live`; live human acceptance is still required before the Draft PR becomes Ready or merges.
+As of 2026-08-31, `pnpm run test` (3141 passed, 31 skipped, 195 files), `pnpm run test:coverage` (per-file 100% statements/branches/functions/lines), `pnpm run typecheck`, `pnpm run lint` (existing warnings only), `pnpm run build`, `pnpm run check:lib` (92 claims), `pnpm run check:pack` (12 tarballs), `pnpm run check:examples` (9/9 scenarios; 48 Harness packages), `pnpm run diagrams:check`, `pnpm run shots:check` (19 component shots), `pnpm run check:plugin-authoring-docs`, `pnpm run fixture:plugin-tutorial`, `pnpm run website:build`, `pnpm run smoke:happy`, `pnpm run smoke:pty`, `pnpm run smoke:pty:mouse`, and `pnpm run smoke:pty:output` all pass on Node 22+/pnpm 11 against the exact `0.1.2-alpha.2` Harness line. The dedicated `blue-dsh-alpha` profile also passes pseudo-TTY boot/exit, terminal restoration, and width/fatal scans while preserving `dsh.profile.patchReload: live`; live human acceptance is still required before the Draft PR becomes Ready or merges.

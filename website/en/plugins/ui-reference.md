@@ -50,6 +50,8 @@ key bindings.
 
 ### `text`
 
+![`text` node rendering](/shots/text.svg)
+
 ```ts
 ui.text(content: string, options?: { tone?: BlueTone })
 ```
@@ -62,6 +64,8 @@ ui.text('Connection lost', { tone: 'danger' })
 ```
 
 ### `richText`
+
+![`richText` node rendering](/shots/richText.svg)
 
 ```ts
 ui.richText(spans: readonly BlueInlineSpan[])
@@ -85,6 +89,8 @@ ui.richText([
 
 ### `fields`
 
+![`fields` node rendering](/shots/fields.svg)
+
 ```ts
 ui.fields(rows: readonly {
   label: string
@@ -104,6 +110,8 @@ ui.fields([
 
 ### `code`
 
+![`code` node rendering](/shots/code.svg)
+
 ```ts
 ui.code(value: string, options?: { language?: string })
 ```
@@ -113,6 +121,8 @@ not guarantee syntax highlighting.
 
 ### `diff`
 
+![`diff` node rendering](/shots/diff.svg)
+
 ```ts
 ui.diff(before: string, after: string)
 ```
@@ -121,6 +131,8 @@ Represents the semantic before/after states of the same content. Supply plain
 text rather than manually adding diff colors.
 
 ### `sections`
+
+![`sections` node rendering](/shots/sections.svg)
 
 ```ts
 ui.sections(sections: readonly {
@@ -140,6 +152,8 @@ static presentation state and does not produce an expand/collapse event.
 ## Layout nodes
 
 ### `child`
+
+![`child` node rendering](/shots/child.svg)
 
 ```ts
 ui.child(node: BlueUiNode, options?: {
@@ -173,6 +187,8 @@ ui.child(ui.text('Wide-only detail'), {
 
 ### `stack.row` / `stack.column`
 
+![`stack` node rendering](/shots/stack.svg)
+
 ```ts
 ui.stack.row(children, options?)
 ui.stack.column(children, options?)
@@ -189,6 +205,8 @@ renderer may safely degrade spatial layout on a surface without spatial
 layout, so do not depend on absolute child coordinates.
 
 ### `surface`
+
+![`surface` node rendering](/shots/surface.svg)
 
 ```ts
 ui.surface({
@@ -219,6 +237,8 @@ use `api.overlays.open()` for the actual surface.
 
 ### `scroll`
 
+![`scroll` node rendering](/shots/scroll.svg)
+
 ```ts
 ui.scroll(node: BlueUiNode, options?: {
   follow?: 'none' | 'start' | 'end'
@@ -241,6 +261,8 @@ returns success, Blue automatically calls `render()` again. Nodes do not
 permanently mutate plugin state on their own.
 
 ### `tabs`
+
+![`tabs` node rendering](/shots/tabs.svg)
 
 ```ts
 ui.tabs({
@@ -290,6 +312,8 @@ const onEvent = (event: BlueUiEvent) => {
 
 ### `list`
 
+![`list` node rendering](/shots/list.svg)
+
 ```ts
 ui.list({
   id: string
@@ -326,6 +350,8 @@ Event payloads:
 - multiple: `value` is the proposed complete `string[]` after toggling the item
 
 ### `form`
+
+![`form` node rendering](/shots/form.svg)
 
 ```ts
 ui.form({
@@ -368,6 +394,8 @@ focus navigation but remain present in submitted values.
 
 ### `actions`
 
+![`actions` node rendering](/shots/actions.svg)
+
 ```ts
 ui.actions({
   id: string
@@ -394,6 +422,8 @@ activated item's `id`.
 
 ### `loader`
 
+![`loader` node rendering](/shots/loader.svg)
+
 ```ts
 ui.loader({
   message: string
@@ -409,6 +439,8 @@ hint. The owning lifecycle manages animation timers; never start one in
 
 ### `empty`
 
+![`empty` node rendering](/shots/empty.svg)
+
 ```ts
 ui.empty({
   title: string
@@ -422,6 +454,8 @@ Represents an empty result or no-data state. `actions` must be the result of
 
 ### `progress`
 
+![`progress` node rendering](/shots/progress.svg)
+
 ```ts
 ui.progress({ label?: string, value: number, max: number })
 ```
@@ -432,6 +466,8 @@ the label or count while preserving the progress meaning.
 
 ### `spacer`
 
+![`spacer` node rendering](/shots/spacer.svg)
+
 ```ts
 ui.spacer(options?: { size?: 1 | 2 })
 ```
@@ -440,6 +476,8 @@ Inserts semantic spacing and defaults to size 1. Do not simulate layout with a
 text node full of spaces.
 
 ### `divider`
+
+![`divider` node rendering](/shots/divider.svg)
 
 ```ts
 ui.divider(options?: { label?: string })

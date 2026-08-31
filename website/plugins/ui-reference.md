@@ -44,6 +44,8 @@ import { ui } from '@dsh-blue/blue-ui'
 
 ### `text`
 
+![`text` 节点渲染效果](/shots/text.svg)
+
 ```ts
 ui.text(content: string, options?: { tone?: BlueTone })
 ```
@@ -55,6 +57,8 @@ ui.text('Connection lost', { tone: 'danger' })
 ```
 
 ### `richText`
+
+![`richText` 节点渲染效果](/shots/richText.svg)
 
 ```ts
 ui.richText(spans: readonly BlueInlineSpan[])
@@ -77,6 +81,8 @@ ui.richText([
 
 ### `fields`
 
+![`fields` 节点渲染效果](/shots/fields.svg)
+
 ```ts
 ui.fields(rows: readonly {
   label: string
@@ -95,6 +101,8 @@ ui.fields([
 
 ### `code`
 
+![`code` 节点渲染效果](/shots/code.svg)
+
 ```ts
 ui.code(value: string, options?: { language?: string })
 ```
@@ -103,6 +111,8 @@ ui.code(value: string, options?: { language?: string })
 
 ### `diff`
 
+![`diff` 节点渲染效果](/shots/diff.svg)
+
 ```ts
 ui.diff(before: string, after: string)
 ```
@@ -110,6 +120,8 @@ ui.diff(before: string, after: string)
 表达同一内容修改前后的语义对比。插件提供原始文本，不手工添加 diff 颜色。
 
 ### `sections`
+
+![`sections` 节点渲染效果](/shots/sections.svg)
 
 ```ts
 ui.sections(sections: readonly {
@@ -127,6 +139,8 @@ ui.sections(sections: readonly {
 ## 布局节点
 
 ### `child`
+
+![`child` 节点渲染效果](/shots/child.svg)
 
 ```ts
 ui.child(node: BlueUiNode, options?: {
@@ -158,6 +172,8 @@ ui.child(ui.text('Wide-only detail'), {
 
 ### `stack.row` / `stack.column`
 
+![`stack` 节点渲染效果](/shots/stack.svg)
+
 ```ts
 ui.stack.row(children, options?)
 ui.stack.column(children, options?)
@@ -173,6 +189,8 @@ type StackOptions = {
 安全降级，因此不要依赖某个子节点的绝对坐标。
 
 ### `surface`
+
+![`surface` 节点渲染效果](/shots/surface.svg)
 
 ```ts
 ui.surface({
@@ -203,6 +221,8 @@ ui.surface({
 
 ### `scroll`
 
+![`scroll` 节点渲染效果](/shots/scroll.svg)
+
 ```ts
 ui.scroll(node: BlueUiNode, options?: {
   follow?: 'none' | 'start' | 'end'
@@ -222,6 +242,8 @@ screen 由外层滚动容器接管。`scrollbar: true` 请求可见滚动条。�
 节点不会自行永久修改插件状态。
 
 ### `tabs`
+
+![`tabs` 节点渲染效果](/shots/tabs.svg)
 
 ```ts
 ui.tabs({
@@ -270,6 +292,8 @@ const onEvent = (event: BlueUiEvent) => {
 
 ### `list`
 
+![`list` 节点渲染效果](/shots/list.svg)
+
 ```ts
 ui.list({
   id: string
@@ -304,6 +328,8 @@ items 为空时渲染 `empty`，省略 `empty` 则输出空节点。
 - multiple：`value` 是切换该 item 后建议的完整 `string[]`
 
 ### `form`
+
+![`form` 节点渲染效果](/shots/form.svg)
 
 ```ts
 ui.form({
@@ -344,6 +370,8 @@ Form field 是以下判别联合：
 
 ### `actions`
 
+![`actions` 节点渲染效果](/shots/actions.svg)
+
 ```ts
 ui.actions({
   id: string
@@ -368,6 +396,8 @@ ui.actions({
 
 ### `loader`
 
+![`loader` 节点渲染效果](/shots/loader.svg)
+
 ```ts
 ui.loader({
   message: string
@@ -383,6 +413,8 @@ control，并发出 `activate` 事件。
 
 ### `empty`
 
+![`empty` 节点渲染效果](/shots/empty.svg)
+
 ```ts
 ui.empty({
   title: string
@@ -395,6 +427,8 @@ ui.empty({
 
 ### `progress`
 
+![`progress` 节点渲染效果](/shots/progress.svg)
+
 ```ts
 ui.progress({ label?: string, value: number, max: number })
 ```
@@ -404,6 +438,8 @@ ui.progress({ label?: string, value: number, max: number })
 
 ### `spacer`
 
+![`spacer` 节点渲染效果](/shots/spacer.svg)
+
 ```ts
 ui.spacer(options?: { size?: 1 | 2 })
 ```
@@ -411,6 +447,8 @@ ui.spacer(options?: { size?: 1 | 2 })
 插入语义留白，默认 size 为 1。不要用包含空格的 text 模拟布局。
 
 ### `divider`
+
+![`divider` 节点渲染效果](/shots/divider.svg)
 
 ```ts
 ui.divider(options?: { label?: string })

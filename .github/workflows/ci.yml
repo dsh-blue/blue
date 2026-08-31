@@ -51,6 +51,10 @@ jobs:
       # exports ↔ built lib/ output ↔ the files tarball whitelist. Runs
       # before the test minute so the cheap check fails first.
       - run: pnpm check:lib
+      # Component shots: script/shots renders the built core/ui libs into
+      # website/public/shots/*.svg; the committed files must match byte for
+      # byte. Runs after the build because the painter needs lib/index.js.
+      - run: pnpm shots:check
       - run: pnpm check:plugin-authoring-docs
       - run: pnpm fixture:plugin-tutorial
       # W5-C ecosystem contract: static package boundaries plus a one-project
