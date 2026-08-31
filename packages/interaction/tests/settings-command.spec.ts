@@ -343,10 +343,10 @@ describe('/settings level one', () => {
       'agent-presets',
       'Open settings.yaml in $EDITOR',
     ])
-    // The frame carries the title and the muted title hint.
+    // The focused panel carries title plus one contextual operation row.
     const frame = panel.render(80).join('\n')
     expect(frame).toContain('settings')
-    expect(frame).toContain('· esc close · ↵ open')
+    expect(frame).toContain('↑↓ options · Enter choose')
     expect(settingsPanels(bench)).toHaveLength(0)
   })
 
@@ -439,10 +439,10 @@ describe('/settings level two', () => {
     // The blank editor command displays through its emptyDisplay token.
     expect(byId.get('blue.editorCommand')?.currentValue).toBe('auto')
     expect(byId.get('blue.editorCommand')?.values).toEqual(['auto'])
-    // The frame carries the namespace title and the key-hint footer.
+    // The frame carries the namespace title and contextual operation row.
     const frame = frameText(bench)
     expect(frame).toContain('settings › blue')
-    expect(frame).toContain('↑↓ select · ↵ change · esc back')
+    expect(frame).toContain('↑↓ options · Enter/Space change · Esc back')
   })
 
   it('merges off-preset and unresolved current values into the cycle', async () => {

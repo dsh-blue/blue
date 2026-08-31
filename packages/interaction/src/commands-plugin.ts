@@ -219,7 +219,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       components: display.components,
       rows: buildRows(),
       title: 'Sessions',
-      titleHint: '· space toggle branch · esc cancel · ↵ resume',
+      contextHints: [{ id: 'toggle', keys: 'Space', label: 'toggle branch', priority: 95 }],
       ...(currentId === undefined ? {} : { initialValue: String(currentId) }),
       filter: true,
       onCursorChanged: cursor => {
@@ -285,7 +285,6 @@ export function apply(ctx: Context, config: Config = {}): void {
         filterText: `${candidate.prompt} ${candidate.response ?? ''} ${String(candidate.turn)}`,
       })),
       title: 'Rewind current session',
-      titleHint: '· esc cancel · ↵ create branch',
       footer: 'The original session stays available in /sessions.',
       initialValue: String(first.boundarySeq),
       filter: true,

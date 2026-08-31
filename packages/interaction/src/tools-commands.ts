@@ -250,7 +250,6 @@ export function registerToolsCommands(ctx: Context): () => void {
       components: display.components,
       rows: buildToolPickerRows(schemas),
       title: 'Tools',
-      titleHint: '· esc cancel · ↵ details',
       onSelect: row => {
         openDetail(byName.get(row.value)!)
       },

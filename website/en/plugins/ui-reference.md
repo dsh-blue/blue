@@ -398,6 +398,26 @@ current focus generation, and Escape first clears pending confirmation.
 outer `actions.id` identifies the group, while an event's `controlId` is the
 activated item's `id`.
 
+## Focus and contextual hints
+
+The TUI derives operations directly from canonical control roles. Plugins
+should not repeat generic keyboard teaching in a surface footer:
+
+- Tab/Shift-Tab switches semantic groups in tree order and remembers each
+  group's last focused item.
+- Left/Right moves inside tabs/actions; Up/Down moves inside lists/forms.
+- Tabs and single lists activate with Enter, multiple lists toggle with Space,
+  and actions accept Enter or Space.
+- Text/select editing changes the hint to finish, apply, newline, or cancel;
+  a pending action confirmation changes it to `Enter confirm · Esc cancel`.
+
+The row appears only while a plugin pane owns focus or a capturing overlay is
+open. Escape is advertised only for a surface that can actually close; passive
+panes and non-capturing overlays do not show a false operation. At most three
+semantic fragments are shown. Narrow layouts first use complete compact key
+tokens, then remove whole fragments rather than clipping half an instruction.
+Local counts, progress, risk, and business status still belong in the footer.
+
 ## Feedback and utility nodes
 
 ### `loader`

@@ -9,6 +9,7 @@
 import type { BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, Key, matchesKey, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
+import { hintRow } from './chrome.ts'
 import { ownDataErrorMessage } from './error-message.ts'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
 import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueSemanticColors } from './types.ts'
@@ -60,6 +61,20 @@ export interface BlueUiCompilerOptions {
   readonly resolveTextEditor?: (controlId: string, path: string) => BlueEditor
   /** Internal official-form submit bridge. */
   readonly onTextSubmit?: (controlId: string, value: string) => void
+  /** Renderer-private contextual key hints used by official panel adapters. */
+  readonly contextHints?: {
+    readonly enabled?: boolean
+    readonly suppressAuto?: boolean
+    readonly focusWithoutControls?: boolean
+    readonly translate?: (key: string) => string
+    readonly extra?: () => readonly {
+      readonly id: string
+      readonly keys: string
+      readonly label?: string
+      readonly compact?: string
+      readonly priority?: number
+    }[]
+  }
   readonly emit: (event: BlueUiEvent) => void
   /** Called only when Escape did not first cancel compiler-local state. */
   readonly onUnhandledEscape?: () => void
@@ -74,6 +89,7 @@ export interface BlueEditorShellCompilerOptions extends BlueUiCompilerOptions {
 interface BlueUiSurfaceCompilerOptions extends BlueUiCompilerOptions {
   readonly surfaceRuntime: BlueUiSurfaceRuntime
   readonly refreshMode: 'internal' | 'external'
+  readonly escapeHint?: 'close' | 'leave'
 }
 
 /** Passive dependencies and bounded height for one compact status tree. */
@@ -198,7 +214,13 @@ type ToggleField = Extract<BlueFormField, { readonly kind: 'toggle' }>
 type FormNode = Extract<BlueUiNode, { readonly kind: 'form' }>
 
 type ControlDescriptor =
-  | (ControlBase & { readonly kind: 'event', readonly event: BlueUiEvent, readonly confirm?: string })
+  | (ControlBase & {
+      readonly kind: 'event'
+      readonly role: 'tab' | 'list-single' | 'list-multiple' | 'action' | 'cancel'
+      readonly activation: 'enter' | 'space' | 'both'
+      readonly event: BlueUiEvent
+      readonly confirm?: string
+    })
   | (ControlBase & { readonly kind: 'text', readonly field: TextField })
   | (ControlBase & { readonly kind: 'select', readonly field: SelectField })
   | (ControlBase & { readonly kind: 'toggle', readonly field: ToggleField })
@@ -409,11 +431,12 @@ function pad(component: Component, amount: number, options: RuntimeCompilerOptio
   return padded
 }
 
-function overlaySurfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent & { [LAYOUT_NODE](): LayoutNode } {
+function overlaySurfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, contextHint: Component | undefined, options: RuntimeCompilerOptions): BlueComponent & { [LAYOUT_NODE](): LayoutNode } {
   const body = new VStack()
   body.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors).slice(1), options))
   body.addChild(child)
   if (footer !== undefined) body.addChild(footer)
+  if (contextHint !== undefined) body.addChild(contextHint)
 
   let layoutRows = 1
   const captureLayoutRows = (viewport: LayoutViewport): boolean => {
@@ -463,12 +486,13 @@ function overlaySurfaceComponent(node: Extract<CompilableNode, { readonly kind: 
   }
 }
 
-function surfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, options: RuntimeCompilerOptions): BlueComponent {
-  if (node.chrome === 'overlay') return overlaySurfaceComponent(node, child, footer, options)
+function surfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surface' }>, child: Component, footer: Component | undefined, contextHint: Component | undefined, options: RuntimeCompilerOptions): BlueComponent {
+  if (node.chrome === 'overlay') return overlaySurfaceComponent(node, child, footer, contextHint, options)
   const component = new VStack()
   component.addChild(staticComponent(width => renderSurfaceHead(node, width, options.colors), options))
   component.addChild(child)
   if (footer !== undefined) component.addChild(footer)
+  if (contextHint !== undefined) component.addChild(contextHint)
   component.addChild(staticComponent(width => renderSurfaceTail(node, width, options.colors), options))
   return pad(component, node.padding ?? 0, options)
 }
@@ -501,6 +525,152 @@ function groupTarget(controls: readonly ControlDescriptor[], group: string, reme
   const preferred = controls.findIndex(control => control.group === group && control.preferred)
   if (preferred >= 0) return preferred
   return controls.findIndex(control => control.group === group)
+}
+
+interface ContextKeyHint {
+  readonly id: string
+  readonly keys: string
+  readonly label: string | undefined
+  readonly compact: string
+  readonly priority: number
+}
+
+function keyHint(id: string, keys: string, label: string, priority: number, compact = keys): ContextKeyHint {
+  return { id, keys, label, compact, priority }
+}
+
+function automaticContextKeyHints(state: FocusState, options: RuntimeCompilerOptions, controls: readonly ControlDescriptor[], active: ControlDescriptor | undefined, escapeHint: 'close' | 'leave' | undefined): ContextKeyHint[] {
+  if (options.contextHints?.suppressAuto === true) return []
+  if (active === undefined || active.kind === 'editor') {
+    return escapeHint === undefined || options.contextHints?.focusWithoutControls !== true
+      ? []
+      : [keyHint('dismiss', 'Esc', escapeHint, 70)]
+  }
+  if (state.pendingConfirmation === active.key) {
+    return [keyHint('activate', 'Enter', 'confirm', 100), keyHint('dismiss', 'Esc', 'cancel', 95)]
+  }
+  if (active.kind === 'text' && state.editingKey === active.key) {
+    return [
+      ...(active.field.kind === 'textarea' ? [keyHint('newline', 'Alt+Enter', 'newline', 90)] : []),
+      keyHint('activate', 'Enter', 'finish', 100),
+      keyHint('dismiss', 'Esc', 'leave', 95),
+      ...(groupOrder(controls).length > 1 ? [keyHint('group', 'Tab/Shift-Tab', 'groups', 80, 'Tab')] : []),
+    ]
+  }
+  if (active.kind === 'select' && state.editingKey === active.key) {
+    const optionCount = active.field.options.filter(option => option.disabled !== true).length
+    return [
+      ...(optionCount > 1 ? [keyHint('navigate', '←→', 'options', 90)] : []),
+      keyHint('activate', 'Enter', 'apply', 100),
+      keyHint('dismiss', 'Esc', 'cancel', 95),
+      ...(groupOrder(controls).length > 1 ? [keyHint('group', 'Tab/Shift-Tab', 'groups', 80, 'Tab')] : []),
+    ]
+  }
+
+  const siblings = controls.filter(control => control.group === active.group)
+  const movement = siblings.length <= 1 || active.navigation === 'none'
+    ? []
+    : [keyHint(
+        'navigate',
+        active.navigation === 'horizontal' ? '←→' : '↑↓',
+        active.kind === 'event' && active.role === 'tab'
+          ? 'tabs'
+          : active.kind === 'event' && active.role === 'action'
+            ? 'actions'
+            : active.kind === 'text' || active.kind === 'select' || active.kind === 'toggle'
+              ? 'fields'
+              : 'options',
+        90,
+      )]
+  const primary = active.kind === 'text'
+    ? keyHint('activate', 'Enter', 'edit', 100)
+    : active.kind === 'select'
+      ? keyHint('activate', 'Enter', 'adjust', 100)
+      : active.kind === 'toggle'
+        ? keyHint('activate', 'Space/Enter', 'toggle', 100, 'Enter')
+        : active.kind === 'submit'
+          ? keyHint('activate', 'Enter', 'submit', 100)
+          : active.role === 'tab'
+            ? keyHint('activate', 'Enter', 'switch', 100)
+            : active.role === 'list-single'
+              ? keyHint('activate', 'Enter', 'choose', 100)
+              : active.role === 'list-multiple'
+                ? keyHint('activate', 'Space', 'toggle', 100)
+                : active.role === 'cancel'
+                  ? keyHint('activate', 'Enter', 'cancel', 100)
+                  : keyHint('activate', 'Enter', 'run', 100)
+  return [
+    ...movement,
+    primary,
+    ...(groupOrder(controls).length > 1 ? [keyHint('group', 'Tab/Shift-Tab', 'groups', 80, 'Tab')] : []),
+    ...(escapeHint === undefined ? [] : [keyHint('dismiss', 'Esc', escapeHint, 70)]),
+  ]
+}
+
+function contextualKeyHints(state: FocusState, options: RuntimeCompilerOptions, controls: readonly ControlDescriptor[], active: ControlDescriptor | undefined, escapeHint: 'close' | 'leave' | undefined): ContextKeyHint[] {
+  const merged = new Map(automaticContextKeyHints(state, options, controls, active, escapeHint).map(hint => [hint.id, hint]))
+  let extra: readonly { readonly id: string, readonly keys: string, readonly label?: string, readonly compact?: string, readonly priority?: number }[] = []
+  try { extra = options.contextHints?.extra?.() ?? [] } catch { /* official hint providers cannot break their panel */ }
+  for (const hint of extra) {
+    if (hint.id.length === 0 || hint.keys.length === 0) continue
+    merged.set(hint.id, {
+      id: hint.id,
+      keys: hint.keys,
+      label: hint.label,
+      compact: hint.compact ?? hint.keys,
+      priority: hint.priority ?? 75,
+    })
+  }
+  const indexed = [...merged.values()].map((hint, index) => ({ hint, index }))
+  const admitted = new Set(indexed
+    .toSorted((left, right) => right.hint.priority - left.hint.priority || left.index - right.index)
+    .slice(0, 3)
+    .map(entry => entry.hint.id))
+  const displayOrder = (id: string): number => {
+    if (id === 'navigate') return 10
+    if (id === 'activate') return 20
+    if (id === 'confirm') return 30
+    if (id === 'group') return 40
+    if (id === 'dismiss') return 50
+    return 25
+  }
+  return indexed
+    .filter(entry => admitted.has(entry.hint.id))
+    .toSorted((left, right) => displayOrder(left.hint.id) - displayOrder(right.hint.id) || left.index - right.index)
+    .map(entry => entry.hint)
+}
+
+function contextKeyHintRows(state: FocusState, options: RuntimeCompilerOptions, width: number, escapeHint: 'close' | 'leave' | undefined): string[] {
+  if (!state.focused) return []
+  const controls = reconcile(state)
+  const parts = contextualKeyHints(state, options, controls, controls[state.lastIndex], escapeHint)
+  if (parts.length === 0) return []
+  const translate = (key: string): string => {
+    try { return options.contextHints?.translate?.(key) ?? key } catch { return key }
+  }
+  const candidates: string[][] = []
+  for (let count = parts.length; count > 0; count -= 1) {
+    const retained = new Set(parts
+      .map((part, index) => ({ part, index }))
+      .toSorted((left, right) => right.part.priority - left.part.priority || left.index - right.index)
+      .slice(0, count)
+      .map(entry => entry.part.id))
+    const candidate = parts.filter(part => retained.has(part.id))
+    candidates.push(
+      candidate.map(part => part.label === undefined ? part.keys : `${part.keys} ${translate(part.label)}`),
+      candidate.map(part => part.compact),
+    )
+  }
+  const safeWidth = Math.max(1, Math.floor(width))
+  for (const candidate of candidates) {
+    const row = hintRow(candidate, options.colors.textMuted)
+    if (visibleWidth(row) <= safeWidth) return [row]
+  }
+  return []
+}
+
+function contextKeyHintComponent(state: FocusState, options: RuntimeCompilerOptions, escapeHint: 'close' | 'leave' | undefined): Component {
+  return staticComponent(width => contextKeyHintRows(state, options, width, escapeHint), options)
 }
 
 function beginsTextEditing(data: string): boolean {
@@ -550,14 +720,14 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
         break
       case 'scroll': visit(current.child, `${currentPath}.scroll`); break
       case 'tabs':
-        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', key: controlKey('tabs', current.id, item.id), renderKey: item.id, preferred: item.id === current.activeId, group: controlGroup('tabs', current.id), navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
+        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', role: 'tab', activation: 'enter', key: controlKey('tabs', current.id, item.id), renderKey: item.id, preferred: item.id === current.activeId, group: controlGroup('tabs', current.id), navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
         break
       case 'list':
         for (const item of current.items) if (item.disabled !== true) {
           const value = current.mode === 'multiple'
             ? current.selectedIds.includes(item.id) ? current.selectedIds.filter(id => id !== item.id) : [...current.selectedIds, item.id]
             : item.id
-          controls.push({ kind: 'event', key: controlKey('list', current.id, item.id), renderKey: item.id, preferred: current.selectedIds.includes(item.id), group: controlGroup('list', current.id), navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
+          controls.push({ kind: 'event', role: current.mode === 'multiple' ? 'list-multiple' : 'list-single', activation: current.mode === 'multiple' ? 'space' : 'enter', key: controlKey('list', current.id, item.id), renderKey: item.id, preferred: current.selectedIds.includes(item.id), group: controlGroup('list', current.id), navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
         }
         if (current.items.length === 0 && current.empty !== undefined) visit(current.empty, `${currentPath}.empty`)
         break
@@ -569,13 +739,13 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
           else controls.push({ ...base, kind: 'text', field })
         }
         if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: controlKey('form-submit', current.id), renderKey: 'submit', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', form: current })
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: controlKey('form-cancel', current.id), renderKey: 'cancel', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', role: 'cancel', activation: 'both', key: controlKey('form-cancel', current.id), renderKey: 'cancel', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'actions':
-        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', key: controlKey('action', current.id, item.id), renderKey: item.id, preferred: item.intent === 'primary', group: actionGroup(current), navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
+        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', role: 'action', activation: 'both', key: controlKey('action', current.id, item.id), renderKey: item.id, preferred: item.intent === 'primary', group: actionGroup(current), navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
         break
       case 'loader':
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: controlKey('loader-cancel', current.cancelActionId), renderKey: 'cancel', preferred: false, group: controlGroup('loader', current.cancelActionId!), navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', role: 'cancel', activation: 'both', key: controlKey('loader-cancel', current.cancelActionId), renderKey: 'cancel', preferred: false, group: controlGroup('loader', current.cancelActionId!), navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'empty': if (current.actions !== undefined) visit(current.actions, `${currentPath}.actions`); break
       default: break
@@ -585,7 +755,7 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
   return controls
 }
 
-function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui'): Component {
+function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui', contextHint?: Component): Component {
   switch (node.kind) {
     case 'editor-control': {
       const editor = options.editor
@@ -661,7 +831,7 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
       }
       return stack
     }
-    case 'surface': return surfaceComponent(node, compileNode(node.child, state, options, `${path}.child`, mode), node.footer === undefined ? undefined : compileNode(node.footer, state, options, `${path}.footer`, mode), options)
+    case 'surface': return surfaceComponent(node, compileNode(node.child, state, options, `${path}.child`, mode), node.footer === undefined ? undefined : compileNode(node.footer, state, options, `${path}.footer`, mode), contextHint, options)
     case 'scroll': {
       const child = compileNode(node.child, state, options, `${path}.scroll`, mode)
       if (options.screenMode === 'main') return child
@@ -1090,6 +1260,8 @@ class CompiledSurface implements BlueEditorShellComponent {
     private readonly editor?: BlueEditor,
     surfaceRuntime?: BlueUiSurfaceRuntime,
     refreshMode: 'internal' | 'external' = 'external',
+    contextKeyHints = false,
+    contextEscapeHint?: 'close' | 'leave',
   ) {
     this.viewport = safeViewport(options.getViewport)
     const runtimeOptions: RuntimeCompilerOptions = {
@@ -1101,7 +1273,15 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.surfaceRuntime = surfaceRuntime ?? new BlueUiSurfaceRuntime()
     this.generation = this.surfaceRuntime.bind(node, runtimeOptions, refreshMode, viewport => { this.viewport = viewport })
     this.state = this.surfaceRuntime.state
-    this.root = compileNode(node, this.state, runtimeOptions, '$', mode)
+    const contextHint = contextKeyHints ? contextKeyHintComponent(this.state, runtimeOptions, contextEscapeHint) : undefined
+    const compiledRoot = compileNode(node, this.state, runtimeOptions, '$', mode, node.kind === 'surface' ? contextHint : undefined)
+    if (contextHint === undefined || node.kind === 'surface') this.root = compiledRoot
+    else {
+      const root = new VStack()
+      root.addChild(compiledRoot)
+      root.addChild(contextHint)
+      this.root = root
+    }
     this.surfaceRuntime.admit(node)
     reconcile(this.state)
   }
@@ -1342,22 +1522,30 @@ class CompiledSurface implements BlueEditorShellComponent {
       if (matchesKey(data, Key.enter)) this.state.beginSelectEditing(active.field, active.key)
       return
     }
-    if (!matchesKey(data, Key.enter) && data !== ' ') return
+    const enter = matchesKey(data, Key.enter)
+    const space = data === ' '
     if (active.kind === 'toggle') {
+      if (!enter && !space) return
       const value = !this.state.fieldValue(active.field, active.key)
       this.state.setToggleValue(fieldStateKey(active.key, active.field.kind), active.field.value, value)
       this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
       return
     }
     if (active.kind === 'submit') {
+      if (!enter && !space) return
       const values = Object.fromEntries(active.form.fields.map(field => [field.id, this.state.fieldValue(field, controlKey('form-field', active.form.id, field.id))]))
       this.state.emit({ kind: 'submit', controlId: active.form.id, values })
       return
     }
+    const activates = active.activation === 'both'
+      ? enter || space
+      : active.activation === 'enter' ? enter : space
+    if (!activates) return
     if (active.confirm !== undefined && this.state.pendingConfirmation !== active.key) {
       this.state.pendingConfirmation = active.key
       return
     }
+    if (active.confirm !== undefined && !enter) return
     this.state.pendingConfirmation = undefined
     this.state.emit(active.event)
   }
@@ -1387,9 +1575,9 @@ class StatusErrorComponent implements BlueStatusComponent {
   invalidate(): void { this.error.invalidate() }
 }
 
-function admittedSurface(node: CompilableNode, options: BlueUiCompilerOptions, mode: CompilerMode, editor?: BlueEditor, surfaceRuntime?: BlueUiSurfaceRuntime, refreshMode?: 'internal' | 'external'): CompiledSurface {
+function admittedSurface(node: CompilableNode, options: BlueUiCompilerOptions, mode: CompilerMode, editor?: BlueEditor, surfaceRuntime?: BlueUiSurfaceRuntime, refreshMode?: 'internal' | 'external', contextKeyHints = false, contextEscapeHint?: 'close' | 'leave'): CompiledSurface {
   const rollback = surfaceRuntime?.checkpoint()
-  try { return new CompiledSurface(node, options, mode, editor, surfaceRuntime, refreshMode) }
+  try { return new CompiledSurface(node, options, mode, editor, surfaceRuntime, refreshMode, contextKeyHints, contextEscapeHint) }
   catch (error) { rollback?.(); throw error }
 }
 
@@ -1404,8 +1592,11 @@ export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions
     return { ok: false, code: admitted.code, message: admitted.message, errorComponent: new ErrorComponent(admitted.message, options.colors) }
   }
   try {
-    const surface = admittedSurface(admitted.value, options, 'ui')
-    const focusTarget = controlsForNode(admitted.value, options, '$', true).length === 0 ? null : surface
+    const contextKeyHints = options.contextHints?.enabled === true
+    const contextEscapeHint = options.onUnhandledEscape === undefined ? undefined : 'close'
+    const surface = admittedSurface(admitted.value, options, 'ui', undefined, undefined, undefined, contextKeyHints, contextEscapeHint)
+    const hasControls = controlsForNode(admitted.value, options, '$', true).length > 0
+    const focusTarget = hasControls || (contextKeyHints && options.contextHints?.focusWithoutControls === true) ? surface : null
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
     const message = 'Blue UI compilation failed safely'
@@ -1420,8 +1611,10 @@ export function compileBlueUiSurfaceNode(value: unknown, options: BlueUiSurfaceC
     return { ok: false, code: admitted.code, message: admitted.message, errorComponent: new ErrorComponent(admitted.message, options.colors) }
   }
   try {
-    const surface = admittedSurface(admitted.value, options, 'ui', undefined, options.surfaceRuntime, options.refreshMode)
-    const focusTarget = controlsForNode(admitted.value, options, '$', true).length === 0 ? null : surface
+    const contextEscapeHint = options.onUnhandledEscape === undefined ? undefined : options.escapeHint ?? 'close'
+    const surface = admittedSurface(admitted.value, options, 'ui', undefined, options.surfaceRuntime, options.refreshMode, true, contextEscapeHint)
+    const hasControls = controlsForNode(admitted.value, options, '$', true).length > 0
+    const focusTarget = hasControls || options.contextHints?.focusWithoutControls === true ? surface : null
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
     const message = 'Blue UI compilation failed safely'

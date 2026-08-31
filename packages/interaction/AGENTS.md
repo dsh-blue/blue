@@ -102,6 +102,8 @@ The command-model service projects canonical commands into `CommandModel` values
 
 Dialogs mount through `EditorHostService.mountReplacement()`. The migrated list, multi-select, form, settings, and document controllers own only business state, key interpretation, and canonical event mapping; `CanonicalPanelAdapter` is the sole interaction-side bridge into core's canonical compiler. They do not assemble terminal rows, borders, ANSI, or local width math. Async panels capture a generation/session identity, abort on unload where possible, and reject stale completion before mutating UI or session actions.
 
+`CanonicalPanelAdapter` also enables core's focus-derived contextual key hints for every official panel. Canonical control roles supply ordinary navigation/activation copy; controllers contribute only operations core cannot infer (digits, filtering, paging, question switching, revision feedback, session-only actions), keyed by semantic id so a domain operation replaces rather than duplicates a generic fragment. Help/info and other controller-only surfaces explicitly opt into focus without canonical controls. Complex historical key maps such as plan review suppress automatic list hints. Generic shortcut footers are forbidden; surface footers retain only business state, counts, progress, selected variants, risk, or validation copy. Core limits the focused hint row to three priority fragments and owns localization, narrow-width degradation, and overlay-frame placement.
+
 `CanonicalFormController` emits a public `form` inside an overlay `surface`.
 `CanonicalPanelAdapter` alone caches core-created editor engines by canonical
 field path/control id across compiler rebuilds. On invalidation it blurs those
@@ -196,8 +198,9 @@ canonical single-select, multi-select, form, settings, document select/loading,
 and migrated dialog paths. Approval coverage must enter through the actual
 plugin request and mounted prompt, not a separately constructed private class.
 Plan-review scroll tails use the compact `showing <start>-<end>/<total>` form so
-the complete range survives a closed overlay's inner-width budget; its footer
-keeps the compact `←→ 1-3 choose · ↑↓ scroll · Esc` command vocabulary.
+the complete range survives a closed overlay's inner-width budget; its
+controller hint keeps the real two-axis vocabulary: Left/Right or 1-3 chooses,
+Up/Down or PageUp/PageDown scrolls, and Escape cancels.
 `editor-provider-runtime.spec.ts` directly proves that provider swaps retain
 one editor's draft, history, cursor, mode, attachment snapshot, focus, and
 exact renderer IME marker byte pass-through, plus fallback/breaker behavior

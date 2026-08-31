@@ -98,7 +98,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   throw new Error('condition did not settle')
 }
 
-async function fixture(columns = 80, rows = 24, compilerComponents: BlueComponents = components): Promise<Fixture> {
+async function fixture(columns = 80, rows = 24, compilerComponents: BlueComponents = components, translateHint?: (key: string) => string): Promise<Fixture> {
   const root = new Context()
   const host = new BluePluginHostService(root)
   const terminal = new FakeTerminal(columns, rows)
@@ -117,7 +117,7 @@ async function fixture(columns = 80, rows = 24, compilerComponents: BlueComponen
       dispatch: () => false,
     },
   })
-  mountPluginSurfaceBridge(owner as never, runtime)
+  mountPluginSurfaceBridge(owner as never, runtime, translateHint)
 
   const openApi = (id: string) => {
     const consumer = effectOwner()
@@ -238,21 +238,39 @@ describe('plugin surface bridge overlays', () => {
       expect(confirmed.ok).toBe(true)
       await flush()
       const component = f.stack()[0]!.component
+      expect(component.render(80).at(-1)).toBe('  Enter run · Esc close')
       await settleInput(component, '\r')
+      expect(component.render(80).at(-1)).toBe('  Enter confirm · Esc cancel')
       await settleInput(component, '\x1b')
       expect(confirmed.ok && confirmed.value.closed).toBe(false)
       await settleInput(component, '\x1b')
       expect(confirmed.ok && confirmed.value.closed).toBe(true)
 
-      const fixed = await f.openCapturing({ id: 'fixed', capturing: true, dismissible: false, render: () => ui.text('fixed') })
+      const fixed = await f.openCapturing({ id: 'fixed', capturing: true, dismissible: false, render: () => actionNode('fixed') })
       expect(fixed.ok).toBe(true)
       await flush()
+      expect(f.stack()[0]!.component.render(80).at(-1)).toBe('  Enter run')
       await settleInput(f.stack()[0]!.component, '\x1b')
       expect(fixed.ok && fixed.value.closed).toBe(false)
       expect(fixed.ok && fixed.value.refresh()).toMatchObject({ ok: true })
       await flush()
       await settleInput(f.stack()[0]!.component, '\x1b')
       expect(fixed.ok && fixed.value.closed).toBe(false)
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('translates contextual hints on initial open and refresh', async () => {
+    const f = await fixture(80, 24, components, key => `translated:${key}`)
+    try {
+      const opened = await f.openCapturing({ id: 'translated', capturing: true, render: () => actionNode() })
+      expect(opened.ok).toBe(true)
+      await flush()
+      expect(f.stack()[0]!.component.render(80).at(-1)).toBe('  Enter translated:run · Esc translated:close')
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(f.stack()[0]!.component.render(80).at(-1)).toBe('  Enter translated:run · Esc translated:close')
     } finally {
       await f.dispose()
     }

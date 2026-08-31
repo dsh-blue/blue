@@ -85,6 +85,19 @@ class ApprovalPrompt implements BlueFocusable {
       onEvent: event => this.onEvent(event),
       onTextSubmit: (_controlId, value) => this.submitFeedback(value),
       startEditing: () => this.feedback,
+      t: options.t,
+      suppressAutomaticContextHints: true,
+      contextHints: () => this.feedback
+        ? [
+            { id: 'feedback', keys: 'Type', label: 'feedback', priority: 90 },
+            { id: 'activate', keys: 'Enter', label: 'submit', priority: 100 },
+            { id: 'dismiss', keys: 'Esc', label: 'reject', priority: 95 },
+          ]
+        : [
+            { id: 'navigate', keys: '↑↓/1-4', label: 'choose', priority: 90 },
+            { id: 'activate', keys: 'Enter', label: 'confirm', priority: 100 },
+            { id: 'dismiss', keys: 'Esc', label: 'reject', priority: 95 },
+          ],
     })
   }
 
@@ -189,13 +202,6 @@ class ApprovalPrompt implements BlueFocusable {
       kind: 'surface', chrome: 'overlay', title: this.options.t('Approve {tool}?', { tool: this.options.toolName }),
       ...(this.options.reason === undefined ? {} : { subtitle: this.options.reason }),
       child,
-      footer: {
-        kind: 'text',
-        content: this.options.t(this.feedback
-          ? 'Type feedback · Enter submit · Esc reject'
-          : '↑↓ select · 1-4 choose · Enter confirm · Esc reject'),
-        tone: 'muted',
-      },
     }
   }
 

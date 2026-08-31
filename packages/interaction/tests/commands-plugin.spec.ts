@@ -379,7 +379,7 @@ describe('blue-commands plugin', () => {
     // and cwd-less rows never render.
     const rows = screen.overlays[0]?.component.render(72) ?? []
     expect(rows.some(row => row.includes('Sessions'))).toBe(true)
-    expect(rows.some(row => row.includes('type to search') && row.includes('space toggle branch'))).toBe(true)
+    expect(rows.some(row => row.includes('Enter choose') && row.includes('Space toggle branch'))).toBe(true)
     expect(rows.some(row => row.includes(`${agent.id} · 1970-01-01 00:00`) && row.includes('← current'))).toBe(true)
     expect(rows.some(row => row.includes('s-mid · 1970-01-01 00:00'))).toBe(true)
     expect(rows.some(row => row.includes('s-old · 1970-01-01 00:00'))).toBe(true)
@@ -429,7 +429,7 @@ describe('blue-commands plugin', () => {
     })
     await ctx.commands.execute(agent, '/sessions', [], signal())
     const collapsed = screen.overlays[0]?.component.render(90) ?? []
-    expect(collapsed.some(row => row.includes('space toggle branch'))).toBe(true)
+    expect(collapsed.some(row => row.includes('Space toggle branch'))).toBe(true)
     expect(collapsed.some(row => row.includes('▸ root · 1970-01-01 00:00'))).toBe(true)
     expect(collapsed.some(row => row.includes('child-a'))).toBe(false)
     overlay(screen).handleInput(KEY.space)

@@ -459,7 +459,10 @@ export function registerPluginCommand(ctx: Context): () => void {
               theme: display.theme,
               components: display.components,
               model: () => catalogDetailModel(entry, installed, t),
-              hint: installed || entry.installSpec === undefined ? t('Esc close') : t('Enter install · Esc close'),
+              t,
+              contextHints: () => installed || entry.installSpec === undefined
+                ? []
+                : [{ id: 'activate', keys: 'Enter', label: 'install', priority: 100 }],
               onAction: actionValue => {
                 const selected = actionValue as Extract<PluginPanelAction, { readonly kind: 'plugin.catalog.install' }>
                 closeDetail()
@@ -475,7 +478,11 @@ export function registerPluginCommand(ctx: Context): () => void {
             theme: display.theme,
             components: display.components,
             model: () => pluginPanelModel(rows, state, t),
-            hint: t('Tab pages · ↑↓ rows · ←→ action · Enter run · Alt+S remove · Esc close'),
+            t,
+            contextHints: () => [
+              { id: 'navigate', keys: '↑↓/←→/Tab', label: 'navigate', priority: 95 },
+              { id: 'variant', keys: 'Alt+S', label: 'remove', priority: 92 },
+            ],
             showSelectedVariantInFooter: true,
             onAction: actionValue => {
               const selected = actionValue as PluginPanelAction

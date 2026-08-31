@@ -52,7 +52,7 @@ describe('HelpOverlay', () => {
     expect(rows.join('\n')).toContain('Commands')
     expect(rows.join('\n')).toContain('/cmd-0')
     expect(rows.join('\n')).toContain('does thing 2')
-    expect(rows.join('\n')).toContain('Esc / Enter / q to cancel')
+    expect(rows.join('\n')).toContain('Esc/Enter/q close')
     overlay.invalidate()
   })
 

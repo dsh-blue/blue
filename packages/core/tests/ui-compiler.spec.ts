@@ -119,6 +119,13 @@ function compiled(value: unknown, options: BlueUiCompilerOptions) {
   return result.value
 }
 
+function compiledSurface(value: unknown, options: BlueUiCompilerOptions, surfaceRuntime = new BlueUiSurfaceRuntime()) {
+  const result = compileBlueUiSurfaceNode(value, { ...options, surfaceRuntime, refreshMode: 'external' })
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.message)
+  return { ...result.value, surfaceRuntime }
+}
+
 function statusOptions(overrides: Partial<BlueStatusCompilerOptions> = {}): BlueStatusCompilerOptions {
   return {
     components,
@@ -1212,9 +1219,22 @@ describe('compileBlueUiNode', () => {
   it('keeps controlled list/form values while emitting proposed changes', () => {
     const { options, events } = fixture()
     const list = compiled(ui.list({ id: 'list', mode: 'multiple', selectedIds: ['a'], items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), options)
-    list.focusTarget!.handleInput?.('\r')
+    list.focusTarget!.handleInput?.(' ')
     expect(events).toEqual([{ kind: 'selection-change', controlId: 'list', value: [] }])
     expect(list.node).toMatchObject({ selectedIds: ['a'] })
+  })
+
+  it('ignores unrelated keys on toggle and submit controls', () => {
+    const f = fixture()
+    const focus = compiled(ui.form({
+      id: 'form',
+      fields: [{ kind: 'toggle', id: 'enabled', label: 'Enabled', value: false }],
+      submitActionId: 'Save',
+    }), f.options).focusTarget!
+    focus.handleInput?.('x')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('x')
+    expect(f.events).toEqual([])
   })
 
   it('keeps form edit buffers local while emitting text, toggle, select, and submit proposals', () => {
@@ -1561,9 +1581,11 @@ describe('compileBlueUiNode', () => {
     focus.handleInput?.(' ')
     expect(events).toEqual([])
     focus.handleInput?.(' ')
+    expect(events).toEqual([])
+    focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'activate', controlId: 'delete' }])
     focus.handleInput?.('\x1b[C')
-    focus.handleInput?.('\r')
+    focus.handleInput?.(' ')
     expect(events.at(-1)).toEqual({ kind: 'activate', controlId: 'keep' })
   })
 
@@ -1828,7 +1850,7 @@ describe('compileBlueUiNode', () => {
       ui.empty({ title: 'Empty', actions: ui.actions({ id: 'empty-actions', items: [{ id: 'empty-go', label: 'Go' }] }) }),
     ])
     const focus = compiled(tree, options).focusTarget!
-    focus.handleInput?.('\r')
+    focus.handleInput?.(' ')
     focus.handleInput?.('\t')
     focus.handleInput?.('\r')
     focus.handleInput?.('\x1b[B')
@@ -2076,6 +2098,269 @@ describe('compileBlueUiNode', () => {
       return Reflect.get(target, key, receiver)
     } })
     expect(compileBlueUiNode(ui.text('x'), options)).toMatchObject({ ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue UI compilation failed safely' })
+  })
+})
+
+describe('compileBlueUiSurfaceNode contextual hints', () => {
+  function focusedHint(value: unknown, inputs: readonly string[] = [], overrides: Partial<BlueUiCompilerOptions> = {}, width = 120): string {
+    const result = compiledSurface(value, fixture(overrides).options)
+    const focus = result.focusTarget!
+    focus.focused = true
+    for (const input of inputs) focus.handleInput?.(input)
+    return focus.render(width).at(-1) ?? ''
+  }
+
+  it('keeps hints on focused persistent plugin surfaces only', () => {
+    const action = ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })
+    const f = fixture()
+    const persistent = compiledSurface(action, f.options)
+    expect(persistent.component.render(80)).toHaveLength(1)
+    persistent.focusTarget!.focused = true
+    expect(persistent.component.render(80).at(-1)).toBe('  Enter run')
+
+    const lane = compiledSurface(ui.surface({ chrome: 'lane', child: action }), fixture().options)
+    lane.focusTarget!.focused = true
+    expect(lane.component.render(80).at(-1)).toBe('  Enter run')
+
+    const ordinary = compiled(action, f.options)
+    ordinary.focusTarget!.focused = true
+    expect(ordinary.component.render(80)).toHaveLength(1)
+    expect(ordinary.component.render(80).join('')).not.toContain('Enter run')
+
+    const passive = compiledSurface(ui.text('passive'), f.options)
+    expect(passive.focusTarget).toBeNull()
+    expect(passive.component.render(80)).toEqual(['passive'])
+
+    const editor = createTestEditor()
+    editor.setText('draft')
+    const shell = compiledEditorShell({ kind: 'editor-control' }, editor).result
+    shell.focusTarget.focused = true
+    expect(shell.component.render(80).join('\n')).not.toContain('Enter finish')
+
+    expect(compiledStatus(ui.text('status')).component.render(80)).toEqual(['status'])
+
+    const replacement = compileBlueUiSurfaceNode(ui.text('replacement'), {
+      ...f.options,
+      surfaceRuntime: persistent.surfaceRuntime,
+      refreshMode: 'external',
+    })
+    expect(replacement.ok).toBe(true)
+    expect(persistent.component.render(80)).toEqual([])
+  })
+
+  it('derives every navigation and activation hint from the active control state', () => {
+    expect(focusedHint(ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), [], { onUnhandledEscape: () => {} }))
+      .toBe('  ←→ tabs · Enter switch · Esc close')
+    expect(focusedHint(ui.list({ id: 'list', selectedIds: [], items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] })))
+      .toBe('  ↑↓ options · Enter choose')
+    expect(focusedHint(ui.loader({ message: 'Working', cancelActionId: 'cancel' })))
+      .toBe('  Enter cancel')
+    expect(focusedHint(ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] })))
+      .toBe('  Enter edit')
+    expect(focusedHint(ui.form({ id: 'form', fields: [{ kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [{ id: 'dark', label: 'Dark' }] }] })))
+      .toBe('  Enter adjust')
+    expect(focusedHint(ui.form({ id: 'form', fields: [{ kind: 'toggle', id: 'enabled', label: 'Enabled', value: false }] })))
+      .toBe('  Space/Enter toggle')
+    expect(focusedHint(ui.form({ id: 'form', fields: [], submitActionId: 'Save' })))
+      .toBe('  Enter submit')
+    expect(focusedHint(ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })))
+      .toBe('  Enter run')
+
+    const groups = ui.stack.column([
+      ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }, { id: 'stop', label: 'Stop' }] }),
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }] }),
+    ])
+    expect(focusedHint(groups)).toBe('  ←→ actions · Enter run · Tab/Shift-Tab groups')
+  })
+
+  it('keeps tab and multiple-list activation aligned with their hints', () => {
+    const f = fixture()
+    const result = compiledSurface(ui.stack.column([
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }),
+      ui.list({ id: 'list', mode: 'multiple', selectedIds: [], items: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }),
+    ]), f.options)
+    const focus = result.focusTarget!
+    focus.focused = true
+
+    expect(focus.render(120).at(-1)).toBe('  ←→ tabs · Enter switch · Tab/Shift-Tab groups')
+    focus.handleInput?.(' ')
+    expect(f.events).toEqual([])
+    focus.handleInput?.('\r')
+    expect(f.events).toEqual([{ kind: 'tab-change', controlId: 'tabs', tabId: 'a' }])
+
+    focus.handleInput?.('\t')
+    expect(focus.render(120).at(-1)).toBe('  ↑↓ options · Space toggle · Tab/Shift-Tab groups')
+    focus.handleInput?.('\r')
+    expect(f.events).toHaveLength(1)
+    focus.handleInput?.(' ')
+    expect(f.events.at(-1)).toEqual({ kind: 'selection-change', controlId: 'list', value: ['a'] })
+  })
+
+  it('switches hints for text editing, select adjustment, and confirmation', () => {
+    const input = ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] })
+    expect(focusedHint(input, ['\r'])).toBe('  Enter finish · Esc leave')
+    const editingLayout = compiledSurface(input, fixture().options)
+    editingLayout.focusTarget!.focused = true
+    editingLayout.focusTarget!.handleInput?.('\r')
+    expect(layout(editingLayout.component as Component, 40, 3).lines.join('')).toContain(CURSOR_MARKER)
+
+    const textareaGroups = ui.stack.column([
+      ui.form({ id: 'form', fields: [{ kind: 'textarea', id: 'notes', label: 'Notes', value: '' }] }),
+      ui.actions({ id: 'commands', items: [{ id: 'save', label: 'Save' }] }),
+    ])
+    expect(focusedHint(textareaGroups, ['\r']))
+      .toBe('  Enter finish · Alt+Enter newline · Esc leave')
+
+    const select = ui.form({ id: 'form', fields: [{ kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+      { id: 'dark', label: 'Dark' },
+      { id: 'disabled', label: 'Disabled', disabled: true },
+      { id: 'light', label: 'Light' },
+    ] }] })
+    expect(focusedHint(select, ['\r'])).toBe('  ←→ options · Enter apply · Esc cancel')
+
+    const fixedSelect = ui.form({ id: 'form', fields: [{ kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [
+      { id: 'dark', label: 'Dark' },
+      { id: 'disabled', label: 'Disabled', disabled: true },
+    ] }] })
+    expect(focusedHint(fixedSelect, ['\r'])).toBe('  Enter apply · Esc cancel')
+
+    const selectGroups = ui.stack.column([
+      select,
+      ui.actions({ id: 'commands', items: [{ id: 'save', label: 'Save' }] }),
+    ])
+    expect(focusedHint(selectGroups, ['\r']))
+      .toBe('  ←→ options · Enter apply · Esc cancel')
+
+    const confirm = ui.actions({ id: 'commands', items: [{ id: 'delete', label: 'Delete', confirm: 'Delete?' }] })
+    expect(focusedHint(confirm, ['\r'])).toBe('  Enter confirm · Esc cancel')
+  })
+
+  it('filters unavailable controls and degrades through complete width-safe tokens', () => {
+    const f = fixture({ onUnhandledEscape: () => {} })
+    const tree = ui.stack.column([
+      ui.actions({ id: 'commands', items: [
+        { id: 'run', label: 'Run' },
+        { id: 'disabled', label: 'Disabled', disabled: true },
+        { id: 'busy', label: 'Busy', busy: true },
+      ] }),
+      ui.child(ui.list({ id: 'hidden', selectedIds: [], items: [{ id: 'item', label: 'Item' }] }), { when: { minWidth: 100 } }),
+    ])
+    const result = compiledSurface(tree, f.options)
+    result.focusTarget!.focused = true
+    expect(result.component.render(80).at(-1)).toBe('  Enter run · Esc close')
+    f.viewport.columns = 120
+    expect(result.component.render(120).at(-1)).toBe('  Enter run · Tab/Shift-Tab groups · Esc close')
+
+    const wideTree = ui.stack.column([
+      ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }, { id: 'stop', label: 'Stop' }] }),
+      ui.tabs({ id: 'tabs', activeId: 'a', items: [{ id: 'a', label: 'A' }] }),
+    ])
+    const widths = compiledSurface(wideTree, fixture({ onUnhandledEscape: () => {} }).options)
+    widths.focusTarget!.focused = true
+    expect(widths.component.render(80).at(-1)).toBe('  ←→ actions · Enter run · Tab/Shift-Tab groups')
+    expect(widths.component.render(40).at(-1)).toBe('  ←→ · Enter · Tab')
+    expect(widths.component.render(18).at(-1)).toBe('  ←→ · Enter · Tab')
+    expect(widths.component.render(8).at(-1)).toBe('  Enter')
+    expect(widths.component.render(6).join('\n')).not.toContain('Ent')
+
+    const ansiColors = new Proxy({ logoGradient: [identity] }, {
+      get: (target, key) => key === 'logoGradient'
+        ? target.logoGradient
+        : key === 'textMuted' ? (value: string) => `\u001b[2m${value}\u001b[22m` : identity,
+    }) as BlueSemanticColors
+    const ansi = compiledSurface(wideTree, fixture({ colors: ansiColors, onUnhandledEscape: () => {} }).options)
+    ansi.focusTarget!.focused = true
+    const ansiHint = ansi.component.render(40).at(-1)!
+    expect(ansiHint).toContain('\u001b[2m')
+    expect(visibleWidth(ansiHint)).toBeLessThanOrEqual(40)
+  })
+
+  it('merges semantic extras by id and contains hint provider and translator failures', () => {
+    const action = ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })
+    expect(focusedHint(action, [], {
+      contextHints: {
+        translate: key => {
+          if (key === 'fallback') throw new Error('translator unavailable')
+          return `translated:${key}`
+        },
+        extra: () => [
+          { id: '', keys: 'ignored' },
+          { id: 'ignored', keys: '' },
+          { id: 'activate', keys: 'Ctrl+R', label: 'refresh', compact: 'R', priority: 110 },
+          { id: 'activate', keys: 'Ctrl+L', label: 'launch', priority: 105 },
+          { id: 'fallback', keys: 'F', label: 'fallback' },
+        ],
+      },
+    })).toBe('  Ctrl+L translated:launch · F fallback')
+
+    expect(focusedHint(action, [], {
+      contextHints: { extra: () => { throw new Error('hint provider unavailable') } },
+    })).toBe('  Enter run')
+
+    expect(focusedHint(action, [], {
+      contextHints: {
+        suppressAuto: true,
+        extra: () => [
+          { id: 'confirm', keys: 'C', label: 'confirm', priority: 90 },
+          { id: 'first', keys: 'F', priority: 80 },
+          { id: 'second', keys: 'S', priority: 80 },
+        ],
+      },
+    })).toBe('  F · S · C confirm')
+  })
+
+  it('supports automatic-hint suppression and focusable controller-only surfaces', () => {
+    const action = ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] })
+    expect(focusedHint(action, [], {
+      contextHints: {
+        suppressAuto: true,
+        extra: () => [{ id: 'custom', keys: 'R', label: 'run' }],
+      },
+    })).toBe('  R run')
+    const suppressed = compiledSurface(action, fixture({ contextHints: { suppressAuto: true } }).options)
+    suppressed.focusTarget!.focused = true
+    expect(suppressed.component.render(40)).toHaveLength(1)
+    expect(suppressed.component.render(40).join('')).not.toContain('Enter run')
+
+    const official = compiled(ui.text('Details'), fixture({
+      contextHints: { enabled: true, focusWithoutControls: true },
+      onUnhandledEscape: () => {},
+    }).options)
+    expect(official.focusTarget).not.toBeNull()
+    official.focusTarget!.focused = true
+    expect(official.component.render(40)).toEqual(['Details', '  Esc close'])
+
+    const passive = compiledSurface(ui.text('Details'), fixture({
+      contextHints: { focusWithoutControls: true },
+      onUnhandledEscape: () => {},
+    }).options)
+    expect(passive.focusTarget).not.toBeNull()
+    passive.focusTarget!.focused = true
+    expect(passive.component.render(40)).toEqual(['Details', '  Esc close'])
+  })
+
+  it('keeps the hint inside overlay chrome in direct and height-bounded layout renders', () => {
+    const overlay = compiledSurface(ui.surface({
+      chrome: 'overlay',
+      title: 'Details',
+      padding: 1,
+      child: ui.actions({ id: 'commands', items: [{ id: 'run', label: 'Run' }] }),
+    }), fixture({ getViewport: () => ({ columns: 20, rows: 4 }), onUnhandledEscape: () => {} }).options)
+    overlay.focusTarget!.focused = true
+
+    const direct = overlay.component.render(20).map(stripTerminalSequences)
+    expect(direct).toHaveLength(4)
+    expect(direct.at(-2)).toMatch(/^│\s+Enter · Esc\s+│$/u)
+    expect(direct.at(-1)).toBe('╰──────────────────╯')
+
+    const frame = layout(overlay.component as Component, 20, 4).lines.map(stripTerminalSequences)
+    expect(frame).toHaveLength(4)
+    expect(frame.at(-2)).toMatch(/^│\s+Enter · Esc\s+│$/u)
+    expect(frame.at(-1)).toBe('╰──────────────────╯')
+    for (const width of SCAN_WIDTHS) {
+      expectLinesFit('context hints direct', overlay.component.render(width), width)
+      expectLinesFit('context hints layout', layout(overlay.component as Component, width, 4).lines, width)
+    }
   })
 })
 

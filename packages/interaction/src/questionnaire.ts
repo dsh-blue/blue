@@ -68,6 +68,9 @@ export class Questionnaire implements BlueFocusable {
       onTextSubmit: (_controlId, value) => this.submitCustom(this.current(), this.state(), value),
       onUnhandledEscape: options.onCancel,
       startEditing: () => this.editing,
+      ...(options.t === undefined ? {} : { t: options.t }),
+      suppressAutomaticContextHints: true,
+      contextHints: () => this.contextHints(),
     })
   }
 
@@ -237,17 +240,23 @@ export class Questionnaire implements BlueFocusable {
       chrome: 'overlay',
       title: t('Question {current} of {total}', { current: this.tab + 1, total: this.options.questions.length }),
       child: { kind: 'stack', direction: 'column', gap: 1, children: body.map(node => ({ node })) },
-      footer: { kind: 'text', content: this.footer(), tone: 'muted' },
     }
   }
 
-  private footer(): string {
-    const source = this.editing
-      ? this.isOptionless(this.current()) ? 'Enter save · Tab next · Esc cancel' : 'Enter save · Tab next · Esc back'
-      : this.current().multiSelect === true
-      ? '↑↓ select · 1-9 choose · Space toggle · Enter choose · Tab next · Esc cancel'
-      : '↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel'
-    return this.options.t?.(source) ?? source
+  private contextHints() {
+    if (this.editing) return [
+      { id: 'activate', keys: 'Enter', label: 'save', priority: 100 },
+      { id: 'group', keys: 'Tab/Shift-Tab', label: 'questions', compact: 'Tab', priority: 90 },
+      { id: 'dismiss', keys: 'Esc', label: this.isOptionless(this.current()) ? 'cancel' : 'back', priority: 95 },
+    ]
+    return [
+      { id: 'navigate', keys: '↑↓/1-9', label: 'options', priority: 90 },
+      ...(this.current().multiSelect === true
+        ? [{ id: 'activate', keys: 'Space/Enter', label: 'toggle / choose', priority: 100 }]
+        : [{ id: 'activate', keys: 'Enter', label: 'choose', priority: 100 }]),
+      { id: 'group', keys: 'Tab/Shift-Tab', label: 'questions', compact: 'Tab', priority: 95 },
+      { id: 'dismiss', keys: 'Esc', label: 'cancel', priority: 85 },
+    ]
   }
 
   private onEvent(event: BlueUiEvent): void {

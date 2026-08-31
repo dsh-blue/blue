@@ -63,6 +63,16 @@ export class HelpOverlay implements BlueFocusable {
       node: () => this.currentNode(),
       onEvent: PASSIVE_EVENT_SINK,
       onUnhandledEscape: options.onClose,
+      ...(options.t === undefined ? {} : { t: options.t }),
+      suppressAutomaticContextHints: true,
+      focusWithoutControls: true,
+      contextHints: () => [
+        ...(this.contentRows > this.contentLimit ? [
+          { id: 'navigate', keys: '↑↓', label: 'scroll', priority: 90 },
+          { id: 'page', keys: 'PgUp/PgDn', label: 'page', priority: 85 },
+        ] : []),
+        { id: 'dismiss', keys: 'Esc/Enter/q', label: 'close', priority: 100 },
+      ],
       maxLeafRows: this.contentLimit,
       leafRowWindowPath: HELP_LEAF_PATH,
       leafRowOffset: () => this.scrollTop,
@@ -124,7 +134,7 @@ export class HelpOverlay implements BlueFocusable {
         kind: 'rich-text',
         spans,
       },
-      footer: { kind: 'divider', label: `${showing}${t('Esc / Enter / q to cancel')}` },
+      ...(showing === '' ? {} : { footer: { kind: 'divider', label: showing.slice(0, -3) } as const }),
     }
   }
 

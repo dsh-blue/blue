@@ -91,6 +91,18 @@ export class PlanReviewPanel implements BlueFocusable {
       onTextSubmit: (_controlId, value) => this.submitRevision(value),
       focusIndex: () => this.cursor === 2 ? 1 : 0,
       startEditing: () => this.cursor === 2,
+      suppressAutomaticContextHints: true,
+      contextHints: () => this.cursor === 2
+        ? [
+            { id: 'feedback', keys: 'Type', label: 'feedback', priority: 90 },
+            { id: 'activate', keys: 'Enter', label: 'submit', priority: 100 },
+            { id: 'dismiss', keys: 'Esc', label: 'cancel', priority: 95 },
+          ]
+        : [
+            { id: 'activate', keys: '←→/1-3/Enter', label: 'choose', compact: '1-3/Enter', priority: 100 },
+            { id: 'scroll', keys: '↑↓/PgUp/PgDn', label: 'scroll', compact: 'PgUp/PgDn', priority: 90 },
+            { id: 'dismiss', keys: 'Esc', label: 'cancel', priority: 95 },
+          ],
     })
   }
 
@@ -152,7 +164,6 @@ export class PlanReviewPanel implements BlueFocusable {
       chrome: 'overlay',
       title: this.options.question.header ?? 'Plan review',
       child: { kind: 'stack', direction: 'column', gap: 1, children: children.map(node => ({ node })) },
-      footer: { kind: 'text', content: this.cursor === 2 ? 'Type feedback · Enter submit · Esc' : '←→ 1-3 choose · ↑↓ scroll · Esc', tone: 'muted' },
     }
   }
 

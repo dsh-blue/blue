@@ -66,7 +66,6 @@ function rows(count: number): SelectRow[] {
 function mount(options: {
   rows?: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   title?: string
-  titleHint?: string
   initialValue?: string
   filter?: boolean
   onSelect?: (row: SelectRow) => void
@@ -88,7 +87,6 @@ function mount(options: {
     components: new FakeBlueComponents(),
     rows: options.rows ?? rows(3),
     title: options.title,
-    titleHint: options.titleHint,
     initialValue: options.initialValue,
     filter: options.filter === true ? true : undefined,
     onSelect: options.onSelect ?? onSelect,
@@ -96,6 +94,7 @@ function mount(options: {
     ...(options.onToggle === undefined ? {} : { onToggle: options.onToggle }),
     onCancel: options.onCancel ?? onCancel,
   })
+  panel.focused = true
   return { panel, onSelect, onBlockedSelect, onCancel }
 }
 
@@ -203,6 +202,22 @@ describe('CanonicalSelectController navigation', () => {
     expect(panel.render(40).some(row => row.includes('Child'))).toBe(true)
   })
 
+  it('uses the canonical Space label when the keymap has no toggle binding', () => {
+    const keymap = new FakeKeymap()
+    vi.spyOn(keymap, 'getKeys').mockReturnValue([])
+    const panel = new CanonicalSelectController({
+      keymap,
+      theme: new FakeTheme(),
+      components: new FakeBlueComponents(),
+      rows: [{ value: 'root', label: 'Root' }],
+      onSelect: () => {},
+      onToggle: () => {},
+      onCancel: () => {},
+    })
+    panel.focused = true
+    expect(panel.render(60).join('\n')).toContain('Space toggle')
+  })
+
   it('swallows a tree toggle on an empty view and falls back when a toggle removes the row', () => {
     const emptyToggle = vi.fn()
     const empty = mount({ rows: [], onToggle: emptyToggle })
@@ -221,20 +236,18 @@ describe('CanonicalSelectController navigation', () => {
 })
 
 describe('CanonicalSelectController rendering', () => {
-  it('frames the dialog with the title hint, badge, and muted description', () => {
+  it('frames the dialog with contextual operations, badge, and muted description', () => {
     const { panel } = mount({
       rows: [
         { value: 'a', label: 'Alpha', description: 'first\nchoice', badge: '← current' },
         { value: 'b', label: 'Beta' },
       ],
-      titleHint: '· esc cancel · ↵ switch',
     })
     expect(panel.currentNode()).toMatchObject({
       kind: 'surface', title: 'Select', chrome: 'overlay',
       child: { kind: 'list', selectedIds: ['a'], items: [{ id: 'a', detail: 'first choice', badge: '← current' }, { id: 'b' }] },
-      footer: { content: expect.stringContaining('esc cancel') },
     })
-    expect(panel.render(60).join('\n')).toContain('Alpha')
+    expect(panel.render(60).join('\n')).toContain('↑↓ options · Enter choose · Esc close')
   })
 
   it('defaults the title and omits the hint row', () => {
@@ -282,14 +295,13 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
     const { panel } = mount({
       filter: true,
       rows: [...rows(2), { value: 'xy', label: 'Xylophone' }],
-      titleHint: '· esc cancel',
     })
     // The fake matcher is a case-sensitive subsequence (the real one folds
     // case; ordering semantics are pinned by the core spec) — so the
     // queries here use the labels' own casing.
     for (const char of 'Item') panel.handleInput(char)
     const lines = panel.render(40)
-    expect(panel.currentNode()).toMatchObject({ child: { filter: 'Item' }, footer: { content: '· esc cancel' } })
+    expect(panel.currentNode()).toMatchObject({ child: { filter: 'Item' } })
     expect(lines.some(line => line.includes('Item 0'))).toBe(true)
     expect(lines.some(line => line.includes('Xylophone'))).toBe(false)
   })
@@ -307,11 +319,10 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
   })
 
   it('carries the type-to-search hint fragment only while the query is empty', () => {
-    const withHint = mount({ filter: true, titleHint: '· esc cancel' })
-    expect(withHint.panel.currentNode()).toMatchObject({ footer: { content: expect.stringContaining('type to search') } })
-    // The fragment stands alone when the caller has no hint of its own.
-    const bare = mount({ filter: true })
-    expect(bare.panel.currentNode()).toMatchObject({ footer: { content: 'type to search' } })
+    const withHint = mount({ filter: true })
+    expect(withHint.panel.render(80).join('\n')).toContain('Type to search')
+    withHint.panel.handleInput('i')
+    expect(withHint.panel.render(80).join('\n')).not.toContain('Type to search')
   })
 
   it('shrinks the query on Backspace and clamps at empty', () => {
@@ -328,7 +339,7 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
     panel.handleInput('\x7f')
     expect(panel.render(40).some(line => line.includes('Xylophone'))).toBe(true)
     panel.handleInput('\x7f')
-    expect(panel.currentNode()).toMatchObject({ footer: { content: expect.stringContaining('type to search') } })
+    expect(panel.render(80).join('\n')).toContain('Type to search')
   })
 
   it('clears the query on Escape before cancelling (the kimi rule)', () => {
@@ -337,7 +348,7 @@ describe('CanonicalSelectController type-to-filter (S30②)', () => {
     panel.handleInput(KEY.escape)
     expect(onCancel).not.toHaveBeenCalled()
     // The query is gone: the full list renders with the empty-query hint.
-    expect(panel.currentNode()).toMatchObject({ footer: { content: expect.stringContaining('type to search') } })
+    expect(panel.render(80).join('\n')).toContain('Type to search')
     panel.handleInput(KEY.escape)
     expect(onCancel).toHaveBeenCalledOnce()
   })

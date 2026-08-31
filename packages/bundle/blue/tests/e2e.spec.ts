@@ -2583,11 +2583,11 @@ describe('blue whole-tree e2e', () => {
     await tree.ctx.sessions.flush(forked.session)
     tree.terminal.resize(300, 40)
     await expect(executeCommand(tree, forked, '/sessions')).resolves.toEqual({ kind: 'success' })
-    // The framed picker: the `Sessions` title with the key hint, rows
-    // carrying the `❯ ` pointer and the `← current` badge on the live one.
+    // The framed picker: the `Sessions` title, focus-derived operation hint,
+    // and rows carrying the `❯ ` pointer plus the `← current` badge.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
     const picker = tree.terminal.output
-    expect(picker).toContain('esc cancel · ↵ resume')
+    expect(picker).toContain('↑↓ options · Enter choose · Space toggle branch')
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))

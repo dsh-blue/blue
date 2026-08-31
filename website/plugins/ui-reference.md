@@ -369,6 +369,23 @@ ui.actions({
 语义优先级，具体样式由主题决定。外层 `actions.id` 标识这组 action；事件的
 `controlId` 使用被激活 item 的 `id`。
 
+## 焦点与上下文提示
+
+TUI 会直接从 canonical control 角色推导操作，插件不应在
+surface footer 里重复写通用按键教学：
+
+- `Tab` / `Shift-Tab` 按树序切换语义组，并记住每组上次聚焦项。
+- `←` / `→` 在 tabs/actions 内移动；`↑` / `↓` 在 list/form 内移动。
+- tabs 与 single list 用 `Enter` 激活，multiple list 用 `Space`，action 用
+  `Enter` 或 `Space`。
+- text/select 进入编辑或调整态后，提示会切换为完成、应用、换行或取消；
+  待确认 action 则切换为 `Enter confirm · Esc cancel`。
+
+该行只在当前 plugin pane 获得焦点或 capturing overlay 打开时显示。
+可关闭 surface 才会提示 Escape；被动 pane 和 non-capturing overlay 不会显示伪操作。
+最多显示三个语义片段，窄屏先缩成完整按键 token，再整段隐藏，不会截断半条指令。
+局部计数、进度、风险和业务状态仍可放在 footer。
+
 ## 反馈与辅助节点
 
 ### `loader`

@@ -173,7 +173,9 @@ function compile(
     readonly viewport: () => BlueUiViewport
     readonly mode: 'main' | 'alternate'
     readonly emit: (event: BlueUiEvent) => void
-    readonly onEscape: () => void
+    readonly onEscape?: () => void
+    readonly escapeHint?: 'close' | 'leave'
+    readonly translateHint?: (key: string) => string
     readonly interactive: boolean
     readonly runtime: BlueUiSurfaceRuntime
     readonly refreshMode: 'internal' | 'external'
@@ -197,7 +199,7 @@ function compile(
       getViewport: options.viewport,
       screenMode: options.mode,
       emit: options.emit,
-      onUnhandledEscape: options.onEscape,
+      ...(options.onEscape === undefined ? {} : { onUnhandledEscape: options.onEscape }),
     })
     /* v8 ignore next -- the admitted constant fallback text cannot fail compilation. */
     return fallback.ok ? fallback.value : { node: fallbackNode, component: fallback.errorComponent, focusTarget: null }
@@ -212,7 +214,7 @@ function compile(
       getViewport: options.viewport,
       screenMode: options.mode,
       emit: options.emit,
-      onUnhandledEscape: options.onEscape,
+      ...(options.onEscape === undefined ? {} : { onUnhandledEscape: options.onEscape }),
     })
     /* v8 ignore next -- the admitted constant fallback text cannot fail compilation. */
     return fallback.ok ? fallback.value : { node: fallbackNode, component: fallback.errorComponent, focusTarget: null }
@@ -223,7 +225,11 @@ function compile(
     getViewport: options.viewport,
     screenMode: options.mode,
     emit: options.emit,
-    onUnhandledEscape: options.onEscape,
+    contextHints: {
+      focusWithoutControls: kind === 'overlay' && options.interactive && options.onEscape !== undefined,
+      ...(options.translateHint === undefined ? {} : { translate: options.translateHint }),
+    },
+    ...(options.onEscape === undefined ? {} : { onUnhandledEscape: options.onEscape }),
   }
   if (!options.interactive) {
     const candidate = compileBlueUiNode(framed(node), compilerOptions)
@@ -239,6 +245,7 @@ function compile(
     ...compilerOptions,
     surfaceRuntime: options.runtime,
     refreshMode: options.refreshMode,
+    ...(options.escapeHint === undefined ? {} : { escapeHint: options.escapeHint }),
   })
   if (!result.ok) {
     options.runtime.deactivate()
@@ -367,7 +374,7 @@ function focusTarget(entry: SurfaceLaneEntry): BlueFocusable | null {
 }
 
 /** Mount the core-private owner bridge after theme/components become available. */
-export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTerminalRuntime): void {
+export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTerminalRuntime, translateHint?: (key: string) => string): void {
   const control = ctx.bluePluginControl
   const lease = control.attachCapabilities(ctx, ['panes', 'overlays'])
   const panes = new Map<string, PaneRecord>()
@@ -402,6 +409,8 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       mode: runtime.mode,
       emit: event => record.events.emit(event),
       onEscape: () => runtime.releaseSurfaceFocus(entry.id),
+      escapeHint: 'leave',
+      ...(translateHint === undefined ? {} : { translateHint }),
       interactive: true,
       runtime: record.runtime,
       refreshMode,
@@ -463,7 +472,8 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       viewport: () => overlayViewport(entry),
       mode: runtime.mode,
       emit: event => events.emit(event),
-      onEscape: () => { if (entry.request.capturing && entry.request.dismissible) events.emit({ kind: 'dismiss' }) },
+      ...(entry.request.capturing && entry.request.dismissible ? { onEscape: () => events.emit({ kind: 'dismiss' as const }), escapeHint: 'close' as const } : {}),
+      ...(translateHint === undefined ? {} : { translateHint }),
       interactive: entry.request.capturing,
       runtime: surfaceRuntime,
       refreshMode: 'external',
@@ -490,7 +500,8 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       viewport: () => overlayViewport(entry),
       mode: runtime.mode,
       emit: event => record.events.emit(event),
-      onEscape: () => { if (entry.request.capturing && entry.request.dismissible) record.events.emit({ kind: 'dismiss' }) },
+      ...(entry.request.capturing && entry.request.dismissible ? { onEscape: () => record.events.emit({ kind: 'dismiss' as const }), escapeHint: 'close' as const } : {}),
+      ...(translateHint === undefined ? {} : { translateHint }),
       interactive: entry.request.capturing,
       runtime: record.runtime,
       refreshMode,

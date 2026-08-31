@@ -16,6 +16,7 @@ function form(fields: readonly FormField[], options: { subtitle?: string } = {})
     onSubmit,
     onCancel,
   })
+  component.focused = true
   return { component, onSubmit, onCancel }
 }
 
@@ -199,7 +200,7 @@ describe('CanonicalFormController', () => {
     expect(onCancel).not.toHaveBeenCalled()
     input(component).handleInput(KEY.escape)
     expect(onCancel).toHaveBeenCalledOnce()
-    expect(component.render(60).join('\n')).toContain('Esc back/cancel')
+    expect(component.render(60).join('\n')).toContain('Enter edit · Esc cancel')
   })
 
   it('shows hints when the value column has room and hides them when it does not', () => {

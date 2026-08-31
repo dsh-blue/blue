@@ -128,7 +128,6 @@ export function registerPresetCommands(ctx: Context): () => void {
       components: display.components,
       rows: buildPresetRows(presets, current),
       title: 'Presets',
-      titleHint: '· esc cancel · ↵ switch',
       ...(current === undefined ? {} : { initialValue: current }),
       onSelect: row => {
         restoreList()

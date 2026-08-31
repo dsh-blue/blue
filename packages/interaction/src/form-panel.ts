@@ -57,6 +57,14 @@ export class CanonicalFormController implements BlueFocusable {
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
+      ...(options.t === undefined ? {} : { t: options.t }),
+      contextHints: () => [
+        ...(!this.editing ? [{ id: 'dismiss', keys: 'Esc', label: this.options.cancelLabel ?? 'cancel', priority: 95 }] : []),
+        ...(this.editing && this.active === this.options.fields.length - 1
+          ? [{ id: 'activate', keys: 'Enter', label: 'submit', priority: 100 }]
+          : []),
+        ...(this.options.onDelete === undefined ? [] : [{ id: 'delete', keys: 'Ctrl+D', label: 'delete', priority: 85 }]),
+      ],
       onTextSubmit: () => {
         this.editing = false
         if (this.active === this.options.fields.length - 1) this.submit()
@@ -107,8 +115,6 @@ export class CanonicalFormController implements BlueFocusable {
   /** Current canonical form overlay. */
   currentNode(): BlueUiNode {
     const t: BlueTranslate = this.options.t ?? interpolateLocaleMessage
-    const cancel = t(this.options.cancelLabel ?? 'cancel')
-    const deleteHint = this.options.onDelete === undefined ? '' : t(' · Ctrl+D delete')
     return {
       kind: 'surface', chrome: 'overlay', title: t(this.options.title),
       ...(this.error === undefined && this.options.subtitle !== undefined ? { subtitle: t(this.options.subtitle) } : {}),
@@ -121,7 +127,6 @@ export class CanonicalFormController implements BlueFocusable {
           ...(this.error !== undefined && this.errorField === index ? { error: this.error } : {}),
         })),
       },
-      footer: { kind: 'text', content: `${t('↑↓ fields · Enter edit/submit · Esc back/{cancel}', { cancel })}${deleteHint}`, tone: 'muted' },
     }
   }
 

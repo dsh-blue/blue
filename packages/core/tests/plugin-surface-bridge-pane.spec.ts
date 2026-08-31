@@ -891,6 +891,7 @@ describe('plugin surface bridge panes', () => {
 
     owner.keymap.invoke('blue.surface.previous')
     expect(runtime.surfaces.focusedId).toBe('bottom-c')
+    expect(entry(runtime.surfaces, 'bottom-c').component.render(80).at(-1)).toBe('  Enter run · Esc leave')
     entry(runtime.surfaces, 'bottom-c').focusTarget?.handleInput?.('\x1b')
     expect(runtime.surfaces.focusedId).toBeUndefined()
     expect(runtime.focused()).toBe(runtime.editor)

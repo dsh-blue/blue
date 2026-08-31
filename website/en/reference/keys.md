@@ -13,13 +13,18 @@ In effect regardless of focus:
 
 ## Shared interaction keys
 
-One batch shared by overlays (lists, menus) and the editor:
+A focused surface uses two navigation levels: Tab/Shift-Tab switches semantic
+control groups, while arrows move only inside the active group. The contextual
+hint at the bottom appears only while that surface owns focus and changes with
+editing, adjustment, and confirmation state:
 
 | Key | Action | Description |
 | --- | --- | --- |
+| `Tab` / `Shift-Tab` | Switch control groups | For example tabs → form → actions; returning restores that group's last focus |
+| `←` / `→` | Navigate a horizontal group | Tabs, actions, and a select's adjustment state |
 | `Enter` | Submit / confirm | Submit input or confirm the focused choice |
 | `Escape` | Cancel / retract / dismiss | Close the active surface (completion popup → side pane → clear draft, yielding step by step); while the agent runs, retract a tool-free current message back into the editor, otherwise interrupt normally |
-| `↑` / `↓` | Move list cursor | Overlay list navigation (wraps) |
+| `↑` / `↓` | Navigate a vertical group | Lists and forms in navigation state (wraps) |
 | `Space` | Toggle selection | Toggle the focused entry in a multi-select |
 
 ## Editor context
@@ -45,6 +50,7 @@ Text-editing keys (cursor movement, multi-line, undo, kill-ring) belong to the u
 | Approval panel | ↑↓ + `Enter`, or number keys `1`–`4` directly; `Escape` rejects |
 | Questionnaire | `Tab` / `Shift-Tab` between questions; single-choice ↑↓ + `Enter`; multi-choice `Space` + `Enter`; `Esc` inside the Other editor returns to the list |
 | Form panel | `Up` / `Down` changes fields in navigation; first `Enter` enters text editing and the next confirms, with `Alt+Enter` inserting a textarea newline; a select uses `Enter` to enter, `←` / `→` to adjust, and `Enter` to confirm; `Tab` switches semantic groups; `Escape` first leaves or cancels control editing, then cancels the surface |
+| Plan review | `←` / `→` or `1`–`3` choose a decision; `↑` / `↓` / `PageUp` / `PageDown` scroll the plan; `Enter` confirms |
 | `/model` · `/effort` panels | `←` `→` step the segment control; `Enter` confirms and persists the new default; `Alt+S` confirms **session-only** (the persisted default stays untouched) |
 | `/btw` pane | `Esc` close; mouse wheel / `PageUp` / `PageDown` scroll; `Enter` follow-up |
 

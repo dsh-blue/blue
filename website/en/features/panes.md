@@ -34,9 +34,9 @@ The session's todo list (whole-list snapshots, last-write-wins) renders under a 
 
 `/btw <question>` forks the current session into a throwaway side agent — seeded with the full event stream, inheriting the parent's provider/model — to ask an "by the way" question without disturbing the main line:
 
-- pane title ` BTW ` + key hints (`Esc close`, plus `↑↓ scroll` when the body overflows);
+- pane title ` BTW ` + key hints (`Esc close`, plus `PgUp/PgDn or wheel` when the body overflows);
 - a `› question` row + streaming Markdown reply + a thinking line; the line budget adapts to terminal height (re-flowing on resize);
-- while open, the editor's top corner joins the pane with `├┤`; **Esc** closes (draft survives), **↑↓** scroll, **Enter** asks a follow-up on the same side agent;
+- while open, the editor's top corner joins the pane with `├┤`; **Esc** closes (draft survives), mouse wheel / **PageUp** / **PageDown** scroll, and **Enter** asks a follow-up on the same side agent;
 - one slot at a time: a new `/btw` disposes the previous side agent first; a bare `/btw` closes the pane.
 
 ## Subagent-group pane (agents)
