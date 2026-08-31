@@ -43,8 +43,8 @@ const evals = JSON.parse(readFileSync(join(skillRoot, 'evals.json'), 'utf8'))
 for (const command of ['catalog --json', 'create', 'validate', 'conformance']) {
   if (!skill.includes(command)) problems.push(`author skill does not use ${command}`)
 }
-if (!Array.isArray(evals.cases) || evals.cases.length < 4) problems.push('author skill has fewer than four realistic eval cases')
-for (const id of ['accepted-new-local-plugin', 'existing-harness-plugin-entry', 'missing-capability', 'accepted-does-not-authorize-publish']) {
+if (!Array.isArray(evals.cases) || evals.cases.length < 5) problems.push('author skill has fewer than five realistic eval cases')
+for (const id of ['accepted-new-local-plugin', 'existing-harness-plugin-entry', 'missing-capability', 'accepted-does-not-authorize-publish', 'legacy-plugin-migration']) {
   if (!evals.cases?.some(value => value.id === id)) problems.push(`author skill eval is missing ${id}`)
 }
 

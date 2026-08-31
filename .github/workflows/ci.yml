@@ -40,6 +40,8 @@ jobs:
       # so a type error doesn't burn a full test run.
       - run: pnpm typecheck
       - run: pnpm lint
+      - run: pnpm test:repo-workflow
+      - run: pnpm check:agent-docs
       # Docs diagrams: docs/diagrams/*.mmd are the single sources; the
       # embedded copies in README/README.zh/blue-architecture must match.
       - run: pnpm diagrams:check

@@ -36,7 +36,7 @@
 
       Blue plugin packages carry their own discipline: return renderer-neutral BlueUiNodes and let Blue's owner adapter enforce width, theme, row budgets, and terminal safety; never import pi-tui, assemble ANSI rows, or reach into owner services; every registration is effect-bound so unloading reverts it; develop against a scratch profile (`dsh plugin --profile blue-dev add` a `file:` spec), reinstall the file snapshot after source changes, never use dependency-blind `link:` for an independent plugin, and never mutate the production `blue` profile; work on Blue's own packages (the dsh-blue repository) follows that repo's complete-link worktree gates and its AGENTS.md.
 
-      Load the `cordis-plugin-development` skill before any dynamic-plugin work (probing, prototyping, hot-mounting), the `blue-plugin-development` skill before packaging a feature or changing Blue code, and `editing-cordis-compositions` before writing or changing a composition.
+      Load only the skill that owns the current task: `cordis-plugin-development` for dynamic-plugin probing, prototyping, hot-mounting, iteration, or rollback; `blue-plugin-development` only after the user requests a durable external package, chooses persistence after accepting a prototype, or asks to migrate an existing external plugin; and `editing-cordis-compositions` before writing or changing a user-owned composition. Do not load either plugin-development skill for ordinary questions, non-plugin work, or changes to the Blue repository itself. Blue source and its bundled `blue-cordis` preset follow the checkout's root and owning-package AGENTS.md instead.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

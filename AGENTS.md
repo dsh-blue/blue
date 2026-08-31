@@ -1,204 +1,183 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in this repository. Repo-wide conventions live here; each package's implementation detail lives in its own `packages/*/AGENTS.md` (see the convention below).
+Repository-wide guidance for AI coding agents. Read the owning package's
+`AGENTS.md` before changing that package. Current architecture is indexed in
+[docs/README.md](docs/README.md); use the Harness
+<https://deepseek-harness.github.io/deepseek-harness/reference/> and pi-tui
+<https://pi.dev/docs/latest/tui> references instead of guessing APIs.
 
-## Project overview
+## Project And Packages
 
-**Blue** is the interactive terminal UI for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It is a renderer over the harness's [Cordis](https://github.com/deepseek-ai/cordis) plugin architecture, built on `@earendil-works/pi-tui`. Twelve packages, including the renderer-neutral `@dsh-blue/blue-ui` and no-checkout `@dsh-blue/blue-plugin-kit`, form the `0.1.2-alpha.1` release set; context, remote, OpenPencil, and Lark are validation-only packages outside the release/bundle closure. The repository builds and tests against published Harness packages. Blue is **not** part of a default `dsh` installation — it is added to a profile as an out-of-tree plugin bundle.
+Blue is the ESM-only TypeScript terminal UI bundle for DeepSeek Harness. It is
+an out-of-tree Cordis bundle, not part of a default `dsh` installation. The
+workspace requires Node `^22.19.0 || >=24.0.0` and pinned pnpm 11. Runtime
+entries come from built `lib/`; source changes do not affect an installed
+profile until the relevant package is rebuilt.
 
-- Language: TypeScript (ESM only, `"type": "module"` everywhere).
-- Runtime: Node `^22.19.0 || >=24.0.0`; package manager pnpm 11 (pinned, `pnpm@11.7.0`).
-- Repository type: pnpm workspace + TypeScript project references; website CI via GitHub Actions (`.github/workflows/website-pages.yml`), no formatter (only oxlint).
+| Area | Responsibility | Instructions |
+| --- | --- | --- |
+| `packages/api` | Beta renderer-neutral public contracts and plugin host | [AGENTS.md](packages/api/AGENTS.md) |
+| `packages/ui` | Pure public wire-node builders | [AGENTS.md](packages/ui/AGENTS.md) |
+| `packages/plugin-kit` | Published create/validate/conformance author CLI | [AGENTS.md](packages/plugin-kit/AGENTS.md) |
+| `packages/frontend` | Renderer-neutral models, locale, and provider lifecycle | [AGENTS.md](packages/frontend/AGENTS.md) |
+| `packages/harness-adapter` | Narrow removable Harness adapters | [AGENTS.md](packages/harness-adapter/AGENTS.md) |
+| `packages/conversation` | Official append-origin conversation projection | [AGENTS.md](packages/conversation/AGENTS.md) |
+| `packages/app` | Startup, Agent ownership, session readers/projections/actions | [AGENTS.md](packages/app/AGENTS.md) |
+| `packages/core` | The only pi-tui and raw-terminal adapter | [AGENTS.md](packages/core/AGENTS.md) |
+| `packages/transcript` | Transcript, status, bottom panes, tool presentation | [AGENTS.md](packages/transcript/AGENTS.md) |
+| `packages/interaction` | Editor, commands, dialogs, and interaction state | [AGENTS.md](packages/interaction/AGENTS.md) |
+| `packages/context` | Validation-only context slice | [AGENTS.md](packages/context/AGENTS.md) |
+| `packages/remote` | Validation-only remote transport adapter | [AGENTS.md](packages/remote/AGENTS.md) |
+| `packages/openpencil` | Validation-only tool-presentation adapter | [AGENTS.md](packages/openpencil/AGENTS.md) |
+| `packages/lark` | Validation-only command/notification adapter | [AGENTS.md](packages/lark/AGENTS.md) |
+| `packages/bundle/blue` | Installable composition and `blue-cordis` preset | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
+| `packages/cli` | Dependency-free global `blue` launcher | [AGENTS.md](packages/cli/AGENTS.md) |
+| `examples` | Publish-shaped external consumers and composition | [AGENTS.md](examples/blue-ecosystem/AGENTS.md) |
 
-## External documentation
+`script/package-contract.mjs` is the source of truth for release,
+validation-only, and example package sets. `docs/blue-architecture.md` describes
+the current runtime; `docs/blue-plugin-contract-v1.md` describes the target
+public contract; roadmaps and history do not prove an implementation exists.
 
-Consult these while developing instead of guessing API shapes:
+## Architecture Rules
 
-- pi-tui component/rendering model (the L0 renderer behind `packages/core`): <https://pi.dev/docs/latest/tui>
-- DeepSeek Harness service and API reference (the host services Blue plugins consume): <https://deepseek-harness.github.io/deepseek-harness/reference/>
-- In-repo design docs, indexed (living vs archived): [docs/README.md](docs/README.md)
+- Dependency direction is Harness domain -> projection/action boundary ->
+  renderer-neutral frontend model -> renderer adapter. Domain packages do not
+  depend on Blue. Only `packages/core` imports pi-tui or handles ANSI, raw
+  terminal state, focus, layout, and visible-width truth.
+- Events are facts, projections are current readonly state, and actions are
+  structured writes. Renderers do not fold Harness session events or retain
+  Agent/Session objects as a second source of truth.
+- Host, agent, session, frontend-tree, and provider-Fiber state have explicit
+  owners. Product mutable state must not be a module singleton. Every
+  registration, listener, timer, provider, and asynchronous continuation has
+  unload and stale-generation behavior.
+- Renderer-neutral models contain readonly data and structured actions only:
+  no pi-tui, React/DOM, ANSI, terminal width, focus handle, renderer key
+  binding, Promise, Agent, Session, or renderer object.
+- Compatibility adapters consume documented APIs, centralize capability and
+  version differences, expose only a narrow renderer-neutral seam, and record
+  a deletion condition. Missing optional capability uses an absent/plain
+  fallback and must not block the Agent loop.
+- Provider replacement follows `capture -> abort -> dispose -> activate ->
+  restore`; activation failure restores the defined plain fallback.
+- New public surfaces need a real consumer, headless lifecycle evidence,
+  relevant replay/abort/late-result tests, renderer width coverage, bundle
+  composition coverage, and dedicated-profile acceptance.
+- Cordis entries export `name`, optional `inject`, and `apply(ctx)`. Effects are
+  Fiber-owned. Requests to the app owner use narrow services/events rather
+  than carrying Agent or Session objects.
 
-## Repository layout
+Package `AGENTS.md` files hold only non-obvious implementation boundaries,
+ownership, change rules, and verification triggers. Update one when a change
+alters those facts, a public/subpath surface, lifecycle, composition, or the
+required verification. Ordinary refactors and added tests do not require
+documentation churn. Keep user-facing `README.md` and `README.zh.md` in sync.
 
-```
-packages/
-  api/          @dsh-blue/blue-api         — Beta renderer-independent contracts
-  ui/           @dsh-blue/blue-ui          — pure public wire-node builders and component factories
-  plugin-kit/   @dsh-blue/blue-plugin-kit  — published create/validate/conformance author CLI
-  frontend/     @dsh-blue/blue-frontend    — renderer-neutral models/provider host
-  harness-adapter/ @dsh-blue/blue-harness-adapter — capability-scoped host adapters
-  context/      @dsh-blue/blue-context     — official context projection slice
-  conversation/ @dsh-blue/blue-conversation — append-origin Harness projection
-  remote/       @dsh-blue/blue-remote      — remote session transport adapter
-  core/         @dsh-blue/blue-core        — the tree's ONLY pi-tui adapter
-  transcript/   @dsh-blue/blue-transcript  — session events → transcript rendering
-  interaction/  @dsh-blue/blue-interaction — input editor, slash commands, dialogs, /yolo mode cycle
-  openpencil/   @dsh-blue/blue-openpencil  — optional tool-presentation adapter
-  lark/         @dsh-blue/blue-lark        — optional command/notification adapter
-  app/          @dsh-blue/blue-app         — CLI startup + Agent driver
-  bundle/blue/  @dsh-blue/blue             — installable bundle (cordis.patch.yml)
-examples/
-  blue-user-kit/                             — pure shared public-UI component kit
-  header/ right-inspector/ bottom-log/ overlay/
-  status-provider/ editor-provider/          — six opt-in publish-shaped plugins
-  blue-ecosystem/                            — opt-in six-row example composition bundle
-script/install-dev.sh  — one-shot local dev install into a dsh profile
-website/               — VitePress documentation site (@dsh-blue/website): zh source at the top
-                         level, en mirror under website/en/; deployed to GitHub Pages (ADR D32)
-.github/workflows/website-pages.yml — website Pages build-check-deploy CI
-docs/                  — design docs, indexed by docs/README.md (living docs at the top level,
-                         completed phase designs and surveys under docs/history/)
-```
+## Local Verification
 
-Each package has the same shape: `src/` (source), `tests/` (vitest specs), `lib/` (build output, git-ignored here but the runtime entry), its own `tsconfig.json` extending `tsconfig.base.json`, `README.md` + `README.zh.md` (bilingual user-facing docs — keep both in sync), and `AGENTS.md` (implementation detail for agents).
-
-## Package quick reference
-
-| Package | Import name | Role | Owns (key surfaces) | Detail |
-|---|---|---|---|---|
-| api | `@dsh-blue/blue-api` | Beta renderer-independent public contracts and manifest validation | `BlueView` · readonly session lifecycle · `BlueResult` · capabilities | [AGENTS.md](packages/api/AGENTS.md) |
-| ui | `@dsh-blue/blue-ui` | pure public UI construction layer | wire-node builders · deep freeze · component factories | [AGENTS.md](packages/ui/AGENTS.md) |
-| plugin-kit | `@dsh-blue/blue-plugin-kit` | published author toolchain | machine catalog · local generator · static validator · packed conformance | [AGENTS.md](packages/plugin-kit/AGENTS.md) |
-| frontend | `@dsh-blue/blue-frontend` | renderer-neutral runtime models and provider host | readonly models · notifications/themes/locale · provider swap/fallback | [AGENTS.md](packages/frontend/AGENTS.md) |
-| harness-adapter | `@dsh-blue/blue-harness-adapter` | narrow official Harness compatibility adapters | capability probes · projection/action/session/question/locale bridges | [AGENTS.md](packages/harness-adapter/AGENTS.md) |
-| context | `@dsh-blue/blue-context` | official context projection consumer | context projection/model/action · `/context` frontend slice | [AGENTS.md](packages/context/AGENTS.md) |
-| conversation | `@dsh-blue/blue-conversation` | Harness-domain conversation projection | append-origin replay/live/tool/thinking/image/interruption facts · readiness capability | [AGENTS.md](packages/conversation/AGENTS.md) |
-| remote | `@dsh-blue/blue-remote` | renderer-neutral remote session adapter | seq resume · actions · lease · question/approval bridge | [AGENTS.md](packages/remote/AGENTS.md) |
-| core | `@dsh-blue/blue-core` | the tree's ONLY pi-tui adapter; terminal lifecycle, L1 services, component factory, themes, private chrome | `blueScreen` · `blueKeymap` · `blueTerminalInfo` · `blueComponents` · 6 theme subpath plugins | [AGENTS.md](packages/core/AGENTS.md) |
-| transcript | `@dsh-blue/blue-transcript` | projection/model-backed TUI renderer | official conversation model · semantic tool cards · `StatusModel` footer · `DockModel` panes · tree-scoped presentation policy · `./banner` | [AGENTS.md](packages/transcript/AGENTS.md) |
-| interaction | `@dsh-blue/blue-interaction` | input editor, slash commands, dialogs | commands + alias registry · dialog panels · completions (slash/`@`/`#`) · tree-scoped editor/state services · model/session-info/export/tools/preset/permission/plan-review families · optional editor/attachment rows | [AGENTS.md](packages/interaction/AGENTS.md) |
-| app | `@dsh-blue/blue-app` | CLI startup + Agent/domain boundary | startup (`[task]`, `--resume`) · readonly session reader/projections · structured actions · switch queue · preset mount | [AGENTS.md](packages/app/AGENTS.md) |
-| openpencil | `@dsh-blue/blue-openpencil` | optional ecosystem interaction adapter | official tool-result presentation · signed-meta elision · bounded lifecycle | [AGENTS.md](packages/openpencil/AGENTS.md) |
-| lark | `@dsh-blue/blue-lark` | optional ecosystem interaction adapter | official command · loopback settings client · notifications | [AGENTS.md](packages/lark/AGENTS.md) |
-| bundle/blue | `@dsh-blue/blue` | installable unit | `cordis.patch.yml` (34 Blue-owned rows: 4 support/composition + 30 product rows) · private runtime realm · thin-host roster/disables · `presets/` · drift guard | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
-| cli | `@dsh-blue/blue-cli` | the `blue` launcher shell — dependency-free global bin, outside the plugin tree | exact global `dsh` probe · profile calibration (`blue`, link-lane skip) · argv translation (`-V` self-answer, `plugin` subcommand, `--profile` swallow) · `BLUE_LAUNCHER` rebrand env | [AGENTS.md](packages/cli/AGENTS.md) |
-| examples | `@dsh-blue-example/*` | validation-only downstream ecosystem | pure user kit · six opt-in public-API plugins · composition bundle · packed-install evidence | [AGENTS.md](examples/blue-user-kit/AGENTS.md) |
-
-The runtime direction is Harness domain → conversation/app projection/action boundaries → frontend models → transcript/interaction TUI adapters → core; only core crosses into pi-tui. Context/remote/OpenPencil/Lark exercise the same boundary as validation-only adapters. `@deepseek-ai/cordis` and dsh service packages are host-provided peers, mirrored as pinned dev dependencies for local builds and tests.
-
-## Per-package documentation convention
-
-Each package's implementation detail — services and seams, subpath plugin inventory, behaviors, constants, boundaries, D-number citations — lives in that package's `AGENTS.md`, not here. **When changing a package, update its `AGENTS.md` in the same change** (this replaces the old convention of appending to root bullets). Package `README.md`/`README.zh.md` stay user-facing and bilingual; the package `AGENTS.md` must not duplicate them. When a dogfood or docs change alters documented behavior, sync the owning package's `AGENTS.md` too.
-
-### Cordis plugin conventions
-
-Every package entry is a Cordis plugin: it exports `name`, optionally `inject`, and `apply(ctx)`. Cross-plugin communication uses services such as `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions`; request events such as `blue/request-resume` address the app owner without carrying Agent/Session objects. All registrations are effect-bound so Fiber unload reverts every contribution.
-
-## Frontend Runtime 重构契约
-
-当前实现事实与包边界见 `docs/blue-architecture.md`、`docs/blue-seams.md` 和各包 `AGENTS.md`；插件 v1 的规范性目标见 `docs/blue-plugin-contract-v1.md`；PR #79 发布边界、PR #77 合并 runbook 与后续独立 PR 队列见 `docs/blue-pr77-convergence-matrix.md`，阶段出口见 `docs/blue-plugin-api-v1-roadmap.md`。PR #79 是 docs-only 设计基线，不发布 runtime、npm package、Website v1 可用性或作者 skill。以下纪律适用于当前主线及后续变更：
-
-- **依赖方向**：Harness domain -> Blue frontend runtime -> renderer adapter；Domain 插件不得依赖 Blue，只有 core 接触 pi-tui/raw terminal。
-- **架构职责**：Domain、Interaction、Renderer、Composition 分开；官方包可暂时同仓，但契约、scope 和 Fiber ownership 不混合。它们不等于 manifest 的 `integrated | adapter | pure-ui` 三种 form。
-- **兼容 adapter**：必须是独立、窄化、按能力拆分的 Cordis 插件；只转换官方 API、集中 capability probing 和版本差异；不得暴露 Agent/Session、复制业务状态或 import package-internal；每个 adapter 必须记录删除条件。
-- **状态边界**：事件表示已发生事实，projection 表示当前状态，action 表示带结果的写请求；UI 不直接折叠 Harness session events，也不保存第二套 Agent 真相。
-- **作用域**：host、agent、session、frontend tree 和 provider Fiber 的状态不能越界；产品级可变状态禁止 module singleton；renderer object 不得进入 domain/session service。
-- **Renderer-neutral model**：共享 frontend model 只能包含 readonly 数据和结构化 action，不得包含 pi-tui、React/DOM、ANSI、terminal width、focus handle、renderer-specific key binding 或 Promise。
-- **热插拔**：host 持续存活，provider 按 capture -> abort -> dispose -> activate -> restore 替换；激活失败回退 plain provider，不得影响 Agent loop。
-- **新功能接入**：Harness 新能力以 adapter + feature plugin + bundle row + fixture additive 接入；不得把旧架构 UI 直接搬回主线。
-- **验证门禁**：新 surface 必须有官方 consumer、headless fixture、unload/swap、replay/late-result、width-scan、bundle composition 和真实 profile dogfood。
-- **真相分层**：当前代码描述现状，v1 contract 描述目标，matrix/roadmap 描述尚未完成的收敛工作；未通过门禁的 surface 不得写成已发布 Stable。
-
-现有实现文档描述的是当前代码；当新 runtime 尚未迁移某个 surface 时，不得把目标契约写成已落地服务。
-
-## Build and test commands
-
-All commands run from the repo root:
+Start with the change-aware gate:
 
 ```sh
-pnpm install            # resolves all deps from the npm registry
-pnpm run build          # tsc -b emits lib/types (+ d.ts), then tsdown bundles lib/
-pnpm run test           # vitest run: unit suites + the bundle's whole-tree e2e
-pnpm run test:coverage  # vitest run --coverage — per-file 100% gate on src
-pnpm run typecheck      # tsc -b tsconfig.json (project references)
-pnpm run lint           # oxlint packages
-pnpm run website:dev     # VitePress dev server at 127.0.0.1:5173 (base '/')
-pnpm run website:build   # VitePress build; DOCS_BASE=/blue/ matches the Pages base
-pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
+pnpm run verify:changed -- --plan  # inspect the selected checks
+pnpm run verify:changed            # execute them
+pnpm run verify:full               # complete CI code gate plus happy smoke
 ```
 
-- `website:dev` / `website:build` run `script/marketplace-fetch.mjs` first to sync
-  the marketplace registry from the `dsh-blue/marketplace` repo (`website:dev`
-  adds `--allow-missing` so offline local dev degrades instead of failing;
-  `website:build` and CI are strict). `website-pages.yml` rebuilds daily via cron
-  and is also dispatch-triggered from the marketplace repo on every merge
-  (cross-repo PAT, see `website/marketplace/submit.md`). The fetcher's `--paused`
-  flag remains available as a kill switch that strips generated marketplace data
-  and detail routes.
+`verify:changed` compares `origin/master...HEAD` by default and also includes
+staged, unstaged, and untracked files; use `--base <ref>` when needed. It fails
+closed:
 
-- Build is two-stage: `tsc -b` owns type emission (`lib/types/*.d.ts` + intermediate JS), `tsdown` owns runtime bundling into the published `lib/` layout (`lib/index.js`, `lib/invariant.js`, `lib/startup.js`). Package deps and peer deps stay external.
-- **Subpath exports travel in threes.** Adding, renaming, or removing a package subpath moves three independent manifests together: the package's `package.json` `exports`, its `files` tarball whitelist, and the root `tsdown.config.ts` entry enumeration. Nothing ties them together — tsc emits types for subpaths tsdown never bundles, the specs run source-plane (`../src/*.ts` relative imports) so no test walks `lib/`, and a dev profile links the source checkout so the `files` list stays invisible until the first publish. `pnpm check:lib` (a CI gate right after `pnpm build`) verifies the triangle mechanically; each arm shipped once as the S30 incident (`./status-title` missing from the tsdown list boot-crashed every real install, and missing from `files` would have shipped a tarball without it). A plugin mounted through the package index (no subpath of its own) needs none of the three.
-- **Iteration loop for local runs:** edit `src` → `pnpm run build` → re-run `dsh --profile blue-dev`. Profile lanes (D51 aftermath): `blue` is production, npm installs only — never link into it (a later npm upgrade half-overwrites the links and boots a Frankenstein tree); `blue-dev` links this checkout; `blue-<tag>` is a worktree's acceptance profile, deleted with the branch. The runtime entry of every package is `lib/`, so a rebuild is required; source edits alone have no effect on a running install.
-- `script/install-dev.sh` builds and link-installs the bundle plus twelve library packages into a `dsh` profile (overrides: `DSH_BIN`, `PROFILE`, `DSH_HOME`).
+| Change | Local gate |
+| --- | --- |
+| Agent docs or shipped skills | AGENTS/skill drift and author-doc checks only |
+| Ordinary package source | changed-file lint, incremental type/build, related Vitest, exact changed-file 100% coverage |
+| Renderer source | ordinary gate plus the owning width scan |
+| Lifecycle-sensitive source | the owning package test suite with changed-file coverage |
+| Package/build manifests | build, `check:lib`, and package validation |
+| Public API/UI, global config, shared test infrastructure, deleted TypeScript, or unknown repository scripts | full gate |
+| Website source | strict website build in addition to applicable checks |
 
-**Every feature must be developed in a worktree and dogfooded (mandatory workflow).** A feature — any user-visible behavior change (new command, rendering change, new seam) — is NOT done when the code passes the gate:
+The planner is an iteration aid, not the merge authority. CI always runs the
+full deterministic code gate. Use `pnpm run verify:full` before handing off a
+broad, release, architecture, composition, or workflow change. It runs full
+coverage once; do not precede it with a redundant plain `pnpm run test`.
 
-1. **Open a worktree** for the feature from `master` (branch tag pattern `p2/<slug>` or `worktree-<tag>`; the EnterWorktree name doubles as the profile tag), carrying the work — including its docs and AGENTS.md updates — in the worktree only.
-2. Pass the full gate in the worktree (`pnpm run test` / coverage / typecheck / lint) and commit.
-3. **Dogfood on a real terminal** against the worktree's own profile: `PROFILE=blue-<tag> script/install-dev.sh` run from the worktree (it builds and link-installs from its own checkout, so the production `blue` profile stays npm-only and untouched); exercise the feature headless via the pseudo-TTY smoke pattern in the Testing section AND **explicitly prompt the user to live-test** `dsh --profile blue-<tag>`, iterating on `pnpm --dir <worktree> run build` between looks (the link install needs re-running only when the dependency graph changes; plain rebuilds flow into the same profile). Fix findings in the worktree and re-run the gate.
-4. **Human acceptance gates the merge — nothing else does.** After prompting, WAIT: the branch merges only when the user has actually live-tested `dsh --profile blue-<tag>` and accepted (验收通过). Do not merge, do not delete the dev profile, and do not point the user at the shared `blue` profile for acceptance before that acceptance lands in the conversation.
-5. **Merge to master** (`ExitWorktree` keep → merge the branch → **rebuild in the main checkout — the merged `lib/` output is stale until `pnpm run build` runs there**) and clean up: `rm -rf ~/.dsh/profiles/blue-<tag>` — profile deletion comes after the accepted merge, never before it (a profile is a self-contained pnpm workspace under `~/.dsh/profiles/`; example: branch `p2/s11-editor-chrome` → profile `blue-s11`). A dogfood log with the exercised scenarios and their outcomes is part of the merge summary.
+Useful direct commands remain `pnpm run test`, `pnpm run test:coverage`,
+`pnpm run typecheck`, `pnpm run lint`, `pnpm run build`,
+`pnpm run check:lib`, `pnpm run check:pack`, `pnpm run check:examples`,
+`pnpm run website:build`, and the smoke scripts. `pnpm run build:changed`
+performs incremental project-reference emission and bundles only changed
+runtime packages; structural build changes use the full clean build.
 
-## Testing instructions
+The build contract is derived from package manifests: concrete `exports` and
+`bin` targets determine tsdown entries through `script/package-contract.mjs`.
+The package `files` whitelist remains independent. Any subpath change must
+update its export, source entry, types target, and files inclusion;
+`pnpm run check:lib` verifies the built/published closure.
 
-- Framework: **vitest 4**, configured in `vitest.config.ts`. Specs live in `packages/*/tests/**/*.spec.ts` (and `packages/bundle/*/tests/`). Worker pool is `forks` (avoids Node 24 worker-thread CJS lexer crashes).
-- **Source-plane tests:** specs import the package under test through relative `../src/*.ts` paths — not through the built `lib/` and not through package names. Cross-package imports in tests also use relative paths (e.g. `../../../core/src/index.ts` in the bundle e2e). Every `@deepseek-ai/*` runtime dependency resolves from `node_modules`.
-- **Coverage gate:** `pnpm run test:coverage` enforces **per-file 100%** statements/branches/functions/lines on every `packages/*/src/**/*.ts` file (`src/types.ts` files excluded — they carry no executable code). A change that adds uncovered lines will fail CI-equivalent checks; write specs accordingly.
-- Fakes/fixtures live next to specs (`packages/core/tests/fake-terminal.ts`, `packages/interaction/tests/fakes.ts`, `packages/transcript/tests/helpers.ts`, `packages/bundle/blue/tests/mock-adapter.ts`). **Width fakes are forbidden** (D48): every `visibleWidth`/`wrapText`/`truncateToWidth` in a fake delegates to pi-tui through `packages/core/src/width.ts` (relative import) — the codepoint counters this replaced were exact only for ASCII and let CJK mis-budgets stay green while tripping the real width guard (the D39/#15 lesson).
-- **Width-scan contract (D48):** `BlueComponent.render(width)` returning rows whose visible width exceeds `width` is a hard contract violation (`packages/core/src/types.ts`), mechanically enforced by the `width-scan` specs — every content-rendering component renders each fixture of `ADVERSARIAL` at each of `SCAN_WIDTHS` (from `packages/core/tests/width-scan.ts`, shared by relative import) and every row must fit. A new content-rendering component adds itself to its package's `width-scan.spec.ts`. The render-exit clamp (`packages/core/src/frame-clamp.ts`, D48) is the frame backstop — a clamped row still shows up in `blue-overflow.log` and is still a component bug.
-- **Temp dirs are tracked and cleaned** (the 2026-08-20 /tmp inode exhaustion): specs create roots with `mkdtempTracked(prefix)` from `packages/core/tests/temp-dir.ts` (imported relatively from the other packages) and call `registerTempDirCleanup()` once at module top — an afterAll removes the file's roots (permission-stripped `locked` fixtures included) and a process-exit hook sweeps whatever a run abandoned. Raw `mkdtempSync` in a spec leaks every boot's session store and profile to the tmpfs; the harness-side `dsh-*` leftovers still in `/tmp` come from the harness monorepo's own suites, not this repo.
-- The bundle's `tests/e2e.spec.ts` is a whole-tree e2e: the active Blue composition boots through the real Cordis Loader with a scripted mock LLM adapter (`dsh-agent-loop-testkit`) and core's recording FakeTerminal — only the model and the process terminal are substituted.
-- Independent plugin compatibility uses `node script/blue-plugin-fixture.mjs <package> --install`. This release supports exactly Harness `0.1.2-alpha.2`; `--harness-line <exact-version>` is a diagnostic override, not a compatibility claim. The override applies only in the throwaway npm project, and the JSON report's `harnessPackages` must all equal the requested line.
-- Headless smoke check against a real install (pseudo-TTY via `script(1)`):
-  ```sh
-  (sleep 10; printf '/quit\r'; sleep 3) \
-    | timeout 90 script -qec "dsh --profile blue-dev" /tmp/blue-smoke.typescript
-  # Assert: bracketed-paste on (\x1b[?2004h) at boot, off (\x1b[?2004l) at exit, exit code 0.
-  ```
-- **Real-process smoke (D48, the width gate's e2e tier):** `pnpm smoke:happy` (CI) boots the built plugin tree through the real `dsh` CLI in a throwaway profile against a local mock LLM streaming width-hostile content at `COLUMNS=40` — green means exit 0, no `exceeds terminal width`, and `blue-overflow.log` empty. `pnpm smoke:pty` (manual) drives the same boot through node-pty's raw-mode key path; `pnpm smoke:pty:output` writes large out-of-band Host JSON into the PTY and verifies the editor/footer repaint plus Up-history isolation. Both share `script/smoke-lib.mjs` (dsh discovery + `HARNESS_LINE` version assertion + the throwaway-profile install; the CLI comes from PATH/`DSH_BIN`/CI's global install, never a devDependency — its subtree reshapes hoisting and breaks the S34 /mcp e2e). The smoke's temp-HOME build can dirty the worktree's pnpm deps-status; smoke-lib self-heals with an ambient `pnpm install --config.confirmModulesPurge=false` — same command if your own pnpm runs ever hit the no-TTY purge prompt after a smoke.
+## Test Contracts
 
-## Code style guidelines
+- Vitest 4 uses fork workers. Specs import the package under test through
+  relative `src/*.ts`; runtime package-name imports inside that source still
+  resolve workspace `lib/`, so a fresh worktree needs one full build baseline.
+  Coverage is per-file 100% for executable source in packages and examples;
+  type-only `src/types.ts` files are excluded.
+- A component must never return a row wider than `render(width)`. Add new
+  content renderers to the owning `width-scan.spec.ts`; all width helpers in
+  runtime code flow through `blueComponents`, and tests use
+  `packages/core/src/width.ts`. The frame clamp is only a diagnostic backstop.
+- Tests create temporary roots with `mkdtempTracked()` and register
+  `registerTempDirCleanup()` from `packages/core/tests/temp-dir.ts`. Do not use
+  raw `mkdtempSync` for profile/session fixtures.
+- `packages/bundle/blue/tests/e2e.spec.ts` is the whole-tree Cordis test.
+  Independent plugin compatibility uses
+  `node script/blue-plugin-fixture.mjs <package> --install` on the sole Harness
+  line declared by the machine catalog; an override is diagnostic evidence,
+  not a new compatibility claim.
 
-Enforced mechanically: `oxlint` (`.oxlintrc.json`) and strict `tsc` (`tsconfig.base.json`). There is no Prettier/ESLint-format setup; match the surrounding code.
+## Worktree And Acceptance
 
-Observed conventions:
+Develop every user-visible behavior or public seam in a dedicated worktree and
+branch. Never link a checkout into the production `blue` profile. Use
+`blue-dev` for the main development checkout and `blue-<tag>` for a worktree.
 
-- **Row width is a hard contract (D48).** Every hand-assembled row — bullet plus wrapped text, indent plus content, badge plus label — is measured with pi-tui's own helpers through the components service and must not exceed the width `render(width)` was given. Fixed furniture (indents, bullets, minimum frame widths) can out-wide a degenerate viewport crossed mid-resize-drag; components cut only in that degenerate regime (generic renderer rows map through `BlueComponents.truncateToWidth`; core-private framePanel/gutter/model rows remain conditional on their furniture floor, so normal widths emit untouched and marker-paint test goldens stay honest). The render-exit clamp in `terminal.ts` is the backstop, not a license: a clamped row lands in `blue-overflow.log` and the width-scan turns it red.
-- **pi-tui's width truth enters through one seam.** Cross-package runtime code touches `visibleWidth`/`truncateToWidth` only through the components service; core-internal modules and every test import `packages/core/src/width.ts` (the re-export). `packages/core/src/chrome.ts` is core-private, with its connected-pane top rule exposed only through the narrow `BlueComponents.topRule` operation. No other package declares `@earendil-works/pi-tui` (D4: version resolution stays unique), and no test re-implements width math.
-- **No semicolons**, single quotes, 2-space indent, ESM imports.
-- **Relative imports carry the `.ts` extension** (`import { X } from './keymap.ts'`) — enabled by `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`.
-- Type-only imports use `import type`. Empty type imports (`import type {} from '...'`) are used deliberately to pull in Cordis `Context`/`Events` declaration merges — do not delete them; add a comment when you introduce one, as existing code does.
-- Every module starts with a JSDoc `@module` header block explaining the package/file's role; exported symbols carry JSDoc with `@param`/`@returns`. Keep comment style factual and architectural (why, not what).
-- Strict TS flags include `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noUnusedLocals`, `noUnusedParameters` — handle `undefined` from index access and don't leave unused bindings.
-- Only `packages/core` touches pi-tui or raw terminal state; other packages program against the `Blue*` L1 contracts. Preserve this boundary.
-- oxlint rules `no-control-regex` and `no-useless-escape` are intentionally off: terminal code matches raw ANSI escape sequences on purpose.
-- Target is `es2024`, bundler module resolution, `fixedExtension: false` ESM output.
+1. Implement code, tests, docs, and any required package `AGENTS.md` update in
+   the worktree. Iterate with `verify:changed`; close the full gate before
+   acceptance.
+2. Install from that worktree with
+   `PROFILE=blue-<tag> script/install-dev.sh`. Rebuild after source edits;
+   reinstall only when the dependency graph changes.
+3. Run the relevant headless/PTY smoke and explicitly ask the user to exercise
+   `dsh --profile blue-<tag>` in a real terminal.
+4. Wait for explicit human acceptance. Do not merge, remove the profile, or
+   redirect acceptance to the shared `blue` profile beforehand.
+5. After acceptance, merge, rebuild the main checkout, then remove the
+   worktree profile and record exercised scenarios in the merge summary.
 
-## Dependency and workspace notes
+## Style, Dependencies, And Security
 
-- `pnpm-workspace.yaml` denies the `koffi` build script (`allowBuilds: koffi: false`) — it is a Windows-only native boundary of dsh JSONL persistence and unnecessary on Linux/macOS; install still succeeds. It also pins `minimumReleaseAgeExclude` entries for the `@deepseek-ai/dsh-*@0.1.2-alpha.2` line; add new harness deps there in the same format. The temporary `use-sync-external-store: 1.6.0` override is required because alpha.2's web closure otherwise selects React-18-only metadata beside React 19; delete it once upstream resolves a React-19-compatible version itself.
-- **pnpm 11's default 24h `minimumReleaseAge` policy interacts with the rc line** (learned in R1): the exclude table exempts the pinned dsh line from the age check (both fresh resolution and the stored-lockfile verification every `pnpm run` performs), but nothing else — a freshly-published transitive (e.g. `jose@6.2.10`) is rejected until 24h pass, and a half-bumped lockfile (old line entries no longer excluded) hard-fails. Bumping the line: edit the pins, then evolve the lockfile with `pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0`; transitive dsh packages the old lock satisfies at the old version do NOT move by themselves — force them with a temporary `overrides:` block pinned to the new line, reinstall, then delete the block (12 packages needed this in R1); keep non-dsh transitive resolutions at their previous versions where the policy objects (the `^` ranges still match). A full `pnpm clean --lockfile` re-resolution also drags the whole dev toolchain (vitest/vite/rolldown) forward — avoid it for line bumps.
-- There are TWO version lines under global control (`packages/transcript/tests/version.spec.ts` fails on any drift). **Blue's release line**: the twelve release package manifests (including `packages/ui` and `packages/plugin-kit`) plus `website/`, both `BLUE_VERSION` constants, and website copy equal `0.1.2-alpha.1`. Validation-only package versions are outside this lockstep set; in particular `packages/context/package.json` remains `0.1.0-rc.2`, while every validation-only Blue peer uses `>=0.1.2-alpha.1 <0.1.2` so its packed fixture accepts this alpha product line. **The harness line**: exact dsh runtime/dev pins, `^` peers, workspace release-age excludes, `/version`'s `HARNESS_LINE`, launcher runtime, and the author fixture default all agree on exact `0.1.2-alpha.2`. RC Harness lines are not supported by this release.
-- **Release documentation hygiene**: internal acceptance versions matching `*-test.*` and their temporary test dist-tag are registry/CI details only. Never put them in tracked documentation, README files, website pages, release notes, or user-facing command examples. Before a formal release, search all tracked docs for the version pattern and replace it with the formal release version/tag; public `rc`/`latest` install examples must always resolve to the release being shipped.
-- `packages/bundle/blue` depends on the product libraries and author kit via `workspace:*`; pnpm rewrites these to exact versions in the published tarball, preventing prerelease test versions from entering a registry install. The workspace protocol is unresolvable outside this workspace — relevant when installing into a `dsh` profile (link the complete closure, as `script/install-dev.sh` does; the validation-only context/remote packages stay outside the bundle closure and are exercised through independent fixtures).
+- Match surrounding code: no semicolons, single quotes, 2-space indentation,
+  `.ts` relative import extensions, `import type`, strict TypeScript, and a
+  factual module-level `@module` JSDoc. Empty type imports may intentionally
+  activate declaration merges.
+- There is no formatter. Oxlint covers `packages` and `examples`. Do not
+  reimplement width math or add pi-tui outside core.
+- pnpm's minimum-release-age exclusions and disabled `koffi` build are
+  intentional. Harness line changes must update the complete pin/exclusion
+  set and pass `packages/transcript/tests/version.spec.ts`; evolve the lockfile
+  without broad dependency refreshes.
+- Do not commit secrets. Treat `cordis.patch.yml` `!!js` values as executable
+  code. Do not enable dependency build scripts without review.
 
-## Harness drift monitoring
+## Skills
 
-The `harness-drift` workflow (`.github/workflows/harness-drift.yml`) watches the npm dist-tag matching the pinned phase for every `@deepseek-ai/dsh-*` package this tree pins: alpha uses `alpha`, rc uses `next`, and stable uses `latest`. Division of labour: `version.spec.ts` owns internal consistency (every pin agrees with `HARNESS_LINE`); `script/harness-drift.mjs` owns external freshness (that line vs the registry) and never edits a file. Adding a new harness dependency anywhere automatically adds it to the watched set (the script unions the manifests with the `minimumReleaseAgeExclude` table).
-
-- **Daily at 01:23 UTC** (plus manual `workflow_dispatch`): detect classifies `SYNC` / `BUMP_READY` (whole set on one newer same-minor version — rc steps, stable graduation, patch steps) / `MINOR_JUMP` (past the minor or rolled back — R1 ruling: never automatic) / `PARTIAL` (tags disagree — wait; upstream ships in lockstep, and `version.spec` forbids a split tree) / `ERROR` (registry unreachable — deliberately red: a dead monitor must be visible, and scheduled failures are not pushed anywhere, so glance at the Actions tab occasionally).
-- On `BUMP_READY`: a `dsh --profile headless` agent edits files ONLY (prompt from `script/harness-drift-task.mjs`; hard rules: no git, never `.github/`, `version.spec` is the completeness proof). The workflow then runs the full gate set deterministically — **all green is the only path to a PR**: force-push `automation/harness-bump`, upsert one PR per line. The gates run inside the drift run because GITHUB_TOKEN-produced events never trigger new workflows — the PR's checks tab stays empty by design, and the human merge push re-triggers master's `ci.yml` as the final check. This is also why the agent may never touch a workflow file: GitHub rejects GITHUB_TOKEN pushes that modify them (and `ci.yml`'s CLI pin is derived via `script/harness-line.mjs`, so a bump has no reason to).
-- The bump job needs the `DEEPSEEK_API_KEY` secret (the headless agent's model); without it the job fails loudly rather than skipping.
-- Rehearsal path: on any branch, pin the tree back to an old line, `workflow_dispatch` with `apply: true` — the input is an explicit human intent and may run off-master; the schedule never can.
-- If branch-protection required checks ever appear, switch the push to a PAT secret so the PR gains native runs; until then the built-in gates are the check.
-
-## Security considerations
-
-- Never commit secrets; nothing in this repo should require credentials at rest (all deps resolve from the public npm registry).
-- Terminal code intentionally emits/matches raw ANSI control sequences — keep that confined to `packages/core`, and do not "sanitize" escape handling elsewhere.
-- The pnpm `allowBuilds` deny-list for `koffi` is deliberate hardening against unreviewed dependency build scripts; do not enable build scripts for new dependencies without review.
-- `cordis.patch.yml` uses `!!js` YAML tags evaluated by the harness loader — treat patch edits as code execution surface and keep them minimal.
-
-## Verification status
-
-As of 2026-08-31, `pnpm run test` (3141 passed, 31 skipped, 195 files), `pnpm run test:coverage` (per-file 100% statements/branches/functions/lines), `pnpm run typecheck`, `pnpm run lint` (existing warnings only), `pnpm run build`, `pnpm run check:lib` (90 claims), `pnpm run check:pack` (12 tarballs), `pnpm run check:examples` (8/8 scenarios; 48 Harness packages), `pnpm run diagrams:check`, `pnpm run check:plugin-authoring-docs`, `pnpm run fixture:plugin-tutorial`, `pnpm run website:build`, `pnpm run smoke:happy`, `pnpm run smoke:pty`, `pnpm run smoke:pty:mouse`, and `pnpm run smoke:pty:output` all pass on Node 22+/pnpm 11 against the exact `0.1.2-alpha.2` Harness line. The dedicated `blue-dsh-alpha` profile also passes pseudo-TTY boot/exit, terminal restoration, and width/fatal scans while preserving `dsh.profile.patchReload: live`; live human acceptance is still required before the Draft PR becomes Ready or merges.
+Blue repository maintenance has no `.agents/skills` layer: durable maintainer
+guidance lives here, in package `AGENTS.md`, and in deterministic commands.
+The three skills under
+`packages/bundle/blue/presets/blue-cordis/skills/` are shipped to preset users:
+dynamic runtime prototyping, durable external Blue plugin creation/migration,
+and user-owned composition editing. They are not required for ordinary Blue
+source development. Run `pnpm run check:agent-docs` after changing these
+instructions and `pnpm run check:plugin-authoring-docs` after changing the
+shipped author skill.

@@ -86,7 +86,7 @@ describe('Blue preset roster', () => {
     }
   })
 
-  it('ships the machine-driven author skill and its four authority evals', () => {
+  it('ships the machine-driven author skill and its five authority evals', () => {
     const skillRoot = new URL('../presets/blue-cordis/skills/blue-plugin-development/', import.meta.url)
     const source = readFileSync(new URL('SKILL.md', skillRoot), 'utf8')
     const evals = JSON.parse(readFileSync(new URL('evals.json', skillRoot), 'utf8')) as AuthorSkillEvals
@@ -104,7 +104,20 @@ describe('Blue preset roster', () => {
       'existing-harness-plugin-entry',
       'missing-capability',
       'accepted-does-not-authorize-publish',
+      'legacy-plugin-migration',
     ])
+    expect(source).toContain('Audit before migrating an existing plugin')
+  })
+
+  it('routes preset skills by task and excludes Blue repository maintenance', () => {
+    const presetRoot = new URL('../presets/blue-cordis/', import.meta.url)
+    const composition = readFileSync(new URL('agent.cordis.yml', presetRoot), 'utf8')
+    const editing = readFileSync(new URL('skills/editing-cordis-compositions/SKILL.md', presetRoot), 'utf8')
+
+    expect(composition).toContain('only after the user requests a durable external package')
+    expect(composition).toContain('Do not load either plugin-development skill')
+    expect(composition).not.toMatch(/blue-plugin-development[^\n]*changing Blue code/u)
+    expect(editing).toContain('outside every preset author skill')
   })
 
   it('carries the published author bin in the installable bundle closure', () => {

@@ -20,9 +20,9 @@ removes every contribution.
 The whole-suite fixture packs the complete Blue host runtime dependency
 closure and resolves this package's exact `@dsh-blue/blue` peer from a resolver
 rooted at the installed composition. It recursively pins and scans every
-Harness dependency, peer, and optional dependency at the requested current or
-previous exact line. `--legacy-peer-deps` is installation plumbing for the
-previous line, not peer-closure evidence.
+Harness dependency, peer, and optional dependency on the sole exact line
+declared by the plugin catalog. A diagnostic override does not expand the
+supported compatibility set.
 
 The six packed plugin manifests must retain the fixed capability map and match
 their runtime `open()` requests. Every plugin exercises both capability-absent
