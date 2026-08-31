@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CanonicalDocumentController, type FrontendPanelDocument } from '../src/frontend-panel.ts'
 import { fakeBlueContext, KEY } from './fakes.ts'
 
-function fixture(initial?: FrontendPanelDocument, options: { hint?: string, showSelectedVariantInFooter?: boolean, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
+function fixture(initial?: FrontendPanelDocument, options: { focused?: boolean, hint?: string, showSelectedVariantInFooter?: boolean, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
   const display = fakeBlueContext()
   let model: FrontendPanelDocument = initial ?? { mode: 'info', title: 'Fixture', view: { kind: 'text', content: 'body' }, submit: { kind: 'refresh' } }
   const onAction = vi.fn()
@@ -15,7 +15,7 @@ function fixture(initial?: FrontendPanelDocument, options: { hint?: string, show
     ...(options.showSelectedVariantInFooter === undefined ? {} : { showSelectedVariantInFooter: options.showSelectedVariantInFooter }),
     ...(options.onUnhandledInput === undefined ? {} : { onUnhandledInput: options.onUnhandledInput }),
   })
-  panel.focused = true
+  if (options.focused !== false) panel.focused = true
   return { panel, onAction, onClose, setModel(next: FrontendPanelDocument) { model = next; panel.invalidate() } }
 }
 
@@ -173,6 +173,25 @@ describe('CanonicalDocumentController', () => {
     expect(empty.onAction).not.toHaveBeenCalled()
     expect(plain.onAction).not.toHaveBeenCalled()
     expect(single.onAction).not.toHaveBeenCalled()
+  })
+
+  it('bounds inline variants before compiler focus exists', () => {
+    const row = { id: 'a', label: 'Alpha', selectedVariantId: 'low', variants: [
+      { id: 'low', label: 'Low' },
+      { id: 'high', label: 'High' },
+    ] }
+    const ungrouped = fixture({ mode: 'select', title: 'Ungrouped', variantNavigation: 'inline', items: [row] }, { focused: false })
+    ungrouped.panel.handleInput(KEY.right)
+    expect(extractList(ungrouped.panel.currentNode()).items[0]!.detailSpans)
+      .toContainEqual({ text: ' [High]', tone: 'accent', emphasis: 'strong' })
+
+    const grouped = fixture({
+      mode: 'select', title: 'Grouped', grouped: true, variantNavigation: 'inline',
+      items: [{ ...row, group: 'One' }, { id: 'b', label: 'Beta', group: 'Two' }],
+    }, { focused: false })
+    grouped.panel.handleInput(KEY.left)
+    expect(extractList(grouped.panel.currentNode()).items[0]!.detailSpans)
+      .toContainEqual({ text: '[Low]', tone: 'accent', emphasis: 'strong' })
   })
 
   it('renders named counted tabs, group empty states, badges, and disabled variants', () => {

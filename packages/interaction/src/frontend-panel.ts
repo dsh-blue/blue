@@ -88,7 +88,6 @@ export class CanonicalDocumentController implements BlueFocusable {
   private filterEditing = false
   private group = 0
   private groupId: string | undefined
-  private focusedControlId: string | undefined
   private readonly selectedVariants = new Map<string, string>()
 
   constructor(private readonly options: FrontendPanelOptions) {
@@ -310,7 +309,6 @@ export class CanonicalDocumentController implements BlueFocusable {
   private listIsActive(model: FrontendPanelDocument): boolean {
     const identity = this.adapter.currentFocusIdentity()
     if (identity !== undefined) return identity.controlId === 'frontend-panel-list'
-    if (this.focusedControlId !== undefined) return this.focusedControlId === 'frontend-panel-list'
     return !(model.grouped === true && this.groups(model).length > 1)
   }
 
@@ -412,7 +410,6 @@ export class CanonicalDocumentController implements BlueFocusable {
   }
 
   private onFocusChange(controlId: string, itemId: string | undefined): void {
-    this.focusedControlId = controlId
     if (controlId !== 'frontend-panel-list' || itemId === undefined || itemId === this.selectedId) return
     this.selectedId = itemId
     this.adapter.invalidate()
