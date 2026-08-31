@@ -8,8 +8,8 @@
 
 import type { BlueInlineSpan, BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
-import type { Action } from '@dsh-blue/blue-frontend'
-import { CanonicalPanelAdapter } from './canonical-panel.ts'
+import type { Action, BlueTranslate } from '@dsh-blue/blue-frontend'
+import { CanonicalPanelAdapter, type CanonicalContextHint } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_SEGMENT_LEFT, ACTION_SEGMENT_RIGHT, ACTION_SESSION_ONLY, ACTION_SUBMIT } from './keys.ts'
 
 const KEY_UP = '\x1b[A'
@@ -68,7 +68,8 @@ export interface FrontendPanelOptions {
   readonly onClose: () => void
   readonly onUnhandledInput?: (data: string, selectedId: string | undefined) => Action | undefined
   readonly maxVisible?: number
-  readonly hint?: string
+  readonly t?: BlueTranslate
+  readonly contextHints?: () => readonly CanonicalContextHint[]
   readonly showSelectedVariantInFooter?: boolean
 }
 
@@ -90,6 +91,10 @@ export class CanonicalDocumentController implements BlueFocusable {
       onEvent: event => this.onEvent(event),
       onUnhandledEscape: () => this.cancel(),
       maxLeafRows: Math.max(5, options.maxVisible ?? DEFAULT_MAX_VISIBLE),
+      ...(options.t === undefined ? {} : { t: options.t }),
+      suppressAutomaticContextHints: true,
+      focusWithoutControls: true,
+      contextHints: () => this.contextHints(),
     })
   }
 
@@ -169,20 +174,38 @@ export class CanonicalDocumentController implements BlueFocusable {
       })
     } else if (model.view !== undefined) children.push(model.view)
     else children.push({ kind: 'empty', title: model.mode === 'error' ? 'unavailable' : 'no content' })
-    const hasAction = model.mode === 'select'
-      ? this.selectedAction(model, false) !== undefined || model.submit !== undefined
-      : model.submit !== undefined
     const selectedVariant = model.mode === 'select' && this.options.showSelectedVariantInFooter === true
       ? this.selectedVariant(this.selectedItem(model))
       : undefined
-    const closeHint = model.filterable === true ? 'Esc close' : 'Esc / q close'
-    const defaultHint = model.dismissible === false ? 'updating - do not close' : model.mode === 'loading' ? 'Esc / q to cancel' : hasAction ? `Enter choose · ${closeHint}` : closeHint
     const variantHint = selectedVariant === undefined ? undefined : `${selectedVariant.label} selected`
+    const status = model.dismissible === false ? 'updating - do not close' : undefined
+    const footer = [variantHint, status].filter(Boolean).join(' · ')
     return {
       kind: 'surface', chrome: 'overlay', title: model.title,
       child: { kind: 'stack', direction: 'column', gap: 1, children: children.map(node => ({ node })) },
-      footer: { kind: 'text', content: [variantHint, defaultHint, this.options.hint].filter(Boolean).join(' · '), tone: model.mode === 'error' ? 'danger' : 'muted' },
+      ...(footer === '' ? {} : { footer: { kind: 'text', content: footer, tone: model.mode === 'error' ? 'danger' as const : 'muted' as const } }),
     }
+  }
+
+  private contextHints(): readonly CanonicalContextHint[] {
+    const model = this.options.model()
+    if (model.dismissible === false) return this.options.contextHints?.() ?? []
+    const selected = this.selectedItem(model)
+    const hasRows = (model.items?.length ?? 0) > 0
+    const hasAction = model.mode === 'select'
+      ? this.selectedAction(model, false) !== undefined || model.submit !== undefined
+      : model.submit !== undefined
+    const groups = model.grouped === true ? this.groups(model) : []
+    return [
+      ...(hasRows ? [{ id: 'navigate', keys: '↑↓', label: 'rows', priority: 90 }] : []),
+      ...((selected?.variants?.length ?? 0) > 1 ? [{ id: 'variant', keys: '←→', label: 'actions', priority: 92 }] : []),
+      ...(groups.length > 1 ? [{ id: 'group', keys: 'Tab/Shift-Tab', label: 'pages', compact: 'Tab', priority: 88 }] : []),
+      ...(hasAction ? [{ id: 'activate', keys: 'Enter', label: model.mode === 'loading' ? 'cancel' : 'choose', priority: 100 }] : []),
+      ...(model.filterable === true && this.query === '' ? [{ id: 'filter', keys: 'Type', label: 'to search', priority: 85 }] : []),
+      ...(!hasRows && model.view !== undefined ? [{ id: 'scroll', keys: '↑↓/PgUp/PgDn', label: 'scroll', compact: 'PgUp/PgDn', priority: 90 }] : []),
+      { id: 'dismiss', keys: model.filterable === true ? 'Esc' : 'Esc/q', label: model.mode === 'loading' ? 'cancel' : 'close', priority: 80 },
+      ...(this.options.contextHints?.() ?? []),
+    ]
   }
 
   private cancel(): void {

@@ -109,11 +109,12 @@ const components = {
  * Compile and render one scenario to a headless Terminal.
  * @param {object} scenario - manifest entry: `{ id, width, build, drive? }`.
  * @param {object} ui - the built `@dsh-blue/blue-ui` builder namespace.
+ * @param {Function} defineBlueComponent - the built component factory.
  * @returns {Promise<{ term: object, cols: number, rows: number }>}
  */
-export async function renderScenario(scenario, ui) {
+export async function renderScenario(scenario, ui, defineBlueComponent) {
   const width = scenario.width
-  const node = scenario.build(ui)
+  const node = scenario.build(ui, defineBlueComponent)
   const events = []
   const result = compileBlueUiNode(node, {
     components,

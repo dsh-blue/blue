@@ -421,7 +421,7 @@ export interface SettingsPanelOptions {
   readonly keymap: BlueKeymap
   readonly items: readonly SettingsItem[]
   readonly title: string
-  readonly footer: readonly string[]
+  readonly t?: BlueTranslate
   readonly notice: SettingsPanelNotice
   readonly onChange: (id: string, value: string) => void
   readonly onCancel: () => void
@@ -445,13 +445,11 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
   private readonly values = new Map<string, string>()
   private items: readonly SettingsItem[]
   private title: string
-  private footer: readonly string[]
   private cursor = 0
 
   constructor(readonly options: SettingsPanelOptions) {
     this.items = options.items
     this.title = options.title
-    this.footer = options.footer
     for (const item of options.items) this.values.set(item.id, item.currentValue)
     this.adapter = new CanonicalPanelAdapter({
       components: options.components,
@@ -459,6 +457,11 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
       onUnhandledEscape: options.onCancel,
+      ...(options.t === undefined ? {} : { t: options.t }),
+      contextHints: () => [
+        { id: 'activate', keys: 'Enter/Space', label: 'change', compact: 'Enter', priority: 100 },
+        { id: 'dismiss', keys: 'Esc', label: 'back', priority: 95 },
+      ],
     })
   }
 
@@ -481,14 +484,13 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
   }
 
   /** Replace localized copy in place while retaining raw values and cursor id. */
-  updatePresentation(items: readonly SettingsItem[], title: string, footer: readonly string[]): void {
+  updatePresentation(items: readonly SettingsItem[], title: string): void {
     const selectedId = this.items[this.cursor]?.id
     const ids = new Set(items.map(item => item.id))
     for (const id of this.values.keys()) if (!ids.has(id)) this.values.delete(id)
     for (const item of items) if (!this.values.has(item.id)) this.values.set(item.id, item.currentValue)
     this.items = items
     this.title = title
-    this.footer = footer
     const selected = selectedId === undefined ? -1 : items.findIndex(item => item.id === selectedId)
     this.cursor = selected >= 0 ? selected : Math.min(this.cursor, Math.max(0, items.length - 1))
     this.adapter.invalidate()
@@ -520,12 +522,7 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
           detail: item.description,
         })),
       },
-      footer: {
-        kind: 'stack', direction: 'column', children: [
-          { node: { kind: 'text', content: this.footer.join(' · '), tone: 'muted' } },
-          ...(current === undefined ? [] : [{ node: { kind: 'text', content: current.text, tone: current.error ? 'danger' : 'muted' } as const }]),
-        ],
-      },
+      ...(current === undefined ? {} : { footer: { kind: 'text', content: current.text, tone: current.error ? 'danger' as const : 'muted' as const } }),
     }
   }
 
@@ -737,7 +734,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
           components: display.components,
           keymap: display.keymap,
           title: t('settings › {namespace}', { namespace: ns }),
-          footer: [t('↑↓ select'), t('↵ change'), t('esc back')],
+          t,
           items: group.items,
           notice: panelNotice,
           onChange: (id, newValue) => {
@@ -762,7 +759,6 @@ export function registerSettingsCommand(ctx: Context): () => void {
           components: display.components,
           rows: groupRows(),
           title: 'settings',
-          titleHint: '· esc close · ↵ open',
           t,
           ...(seed === undefined ? {} : { initialValue: seed }),
           onSelect: (row) => {
@@ -1043,7 +1039,6 @@ export function registerSettingsCommand(ctx: Context): () => void {
             listPanel.updatePresentation(
               group.items,
               t('settings › {namespace}', { namespace: openNs }),
-              [t('↑↓ select'), t('↵ change'), t('esc back')],
             )
           }
         }

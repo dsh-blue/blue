@@ -54,7 +54,7 @@ docs/blue-interaction-model.md
 docs/blue-plugin-ecosystem.md
 docs/blue-compatibility-and-rollout.md
 docs/blue-fixture-audit.md
-docs/blue-skills-plan.md
+docs/history/blue-skills-plan.md
 docs/blue-implementation-plan.md
 ```
 
@@ -93,7 +93,7 @@ docs/blue-implementation-plan.md
 完整阅读 AGENTS.md，以及 docs/blue-frontend-architecture.md、
 docs/blue-session-runtime.md、docs/blue-interaction-model.md、
 docs/blue-plugin-ecosystem.md、docs/blue-compatibility-and-rollout.md、
-docs/blue-fixture-audit.md、docs/blue-skills-plan.md、
+docs/blue-fixture-audit.md、docs/history/blue-skills-plan.md、
 docs/blue-implementation-plan.md。
 
 本轮只做调查，不修改文件。请输出：

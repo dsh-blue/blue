@@ -152,7 +152,6 @@ export function openPermissionPanel(ctx: Context): void {
     components: display.components,
     rows,
     title: 'Permissions',
-    titleHint: '· esc cancel · ↵ switch',
     ...(current === 'custom' ? {} : { initialValue: current }),
     onSelect: row => {
       if (presets.resolve(row.value).sandbox === 'danger-full-access') {

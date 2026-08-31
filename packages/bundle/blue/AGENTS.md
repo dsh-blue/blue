@@ -1,131 +1,105 @@
-# @dsh-blue/blue (bundle) — agent notes
+# `@dsh-blue/blue`
 
-Implementation detail for this package (the user-facing surface is `README.md`/`README.zh.md`). Repo-wide conventions live in the root [AGENTS.md](../../../AGENTS.md); decisions cited as Dxx are in [docs/blue-decisions.md](../../../docs/blue-decisions.md).
+Repo-wide rules live in the root [AGENTS.md](../../../AGENTS.md). This package
+is the installable composition; its module entry owns no product behavior.
 
-## Patch layout
+## Boundary
 
-The installable unit contributes 34 Blue-owned rows: three host-support rows, one private-runtime composition group, and 30 product rows split into 9 baseline, 15 enhancement, and 6 assembly rows. The private group isolates `bluePluginControl`, `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` from ordinary siblings while allowing the public `bluePluginHost` facade to cross the boundary. The baseline contains the API host, locale runtime/settings adapter, core/theme, banner, transcript model hosts/footer, conversation projection, and official transcript consumer. `blue-locale` is baseline because every optional localized surface requires deterministic English/system fallback even when settings is absent; creative isolation includes `blueLocale` so dynamic children cannot mutate frontend preference state. Conversation is baseline because no legacy event-fold renderer remains. Official tool presentation uses canonical models and no intent rows are mounted. Core's surface bridge owns public panes/overlays, while the view and interaction bridges own additive status/commands/publish-only notifications; independent status/editor-provider owners are Experimental/reference composition routes. The app-owned session bridge mounts after `blue-app` provides its reader and projection source and owns public readonly `session.read` plus `session.projections.read` readiness. The bundle module itself mounts nothing.
+`cordis.patch.yml` explicitly composes host support, a private runtime group,
+baseline product rows, optional enhancements, and assembly rows. Runtime
+behavior stays in owning packages. Validation-only context, remote,
+OpenPencil, and Lark adapters remain outside both the bundle dependency and
+row closure.
 
-F3 `blue-context` remains a validation-only adapter for the cutover release. It supplies the official app-projection-to-frontend adapter when installed independently; the bundle's `/context` command and `blue-status-context` consume app-owned renderer-neutral session details/facts instead. The independent fixture covers projection replay, multi-key coalescing, session-epoch rejection, and unload without adding the package to the bundle dependency closure.
+`blue-runtime-private` isolates `bluePluginControl` and raw app
+reader/projection/action backing services. Ordinary siblings and dynamic
+creative children may inherit only the guarded public `bluePluginHost` facade.
+Adding any `blue*` Context service requires deciding whether it belongs in the
+private isolate or an explicit public allowlist; the bundle drift tests enforce
+that decision.
 
-F5 carries baseline `blue-conversation` and `blue-transcript-official` rows. The domain row registers the official append-origin `blueConversation` and `blueConversationFacts` projections and publishes its effect-scoped readiness capability. The consumer injects that capability, so concurrent sibling activation cannot snapshot resumed history before replay exists. The legacy transcript fold, status-entry registry, intent presenters, and child-event tracker are deleted.
+## Composition Ownership
 
-F6 keeps `blue-openpencil` and `blue-lark` as validation-only ecosystem adapters. They are intentionally absent from the installable bundle dependency closure and are exercised through independent packed fixtures. OpenPencil observes only official dsh-tools results, drops signed result metadata, and publishes bounded tool/notification models. Lark registers an official command and uses the optional public loopback settings route without retaining credentials. Missing external capabilities produce no contribution and do not pending the tree; their package `AGENTS.md` files record the compatibility seams and deletion conditions.
+Cordis sibling rows mount concurrently. Every ordering requirement is an
+explicit row/plugin `inject`, never an assumption about YAML position. Public
+definition registries are host-buffered across frontend owner boot gaps;
+transient overlays, notifications, actions, and gestures still require their
+live owner. Bundle fixture wrappers mirror source inject lists exactly.
 
-F5 keeps the registries in their owning parent plugins: `blue-transcript` owns the package-private `blueStatusEntries` and bottom-only `blueBottomPanes` composition seams plus `blueStatusComposition`, `blueToolModels`, and `blueTranscriptModels`; `blue-interaction` owns `blueCommandModels`, `blueEditorModels`, and the frontend-tree-scoped interaction state service. The basic/cwd/git/title/context/mode rows publish canonical status nodes through `blueStatusEntries`; activity/todo/agents/BTW and the interaction-owned queue publish canonical fallback nodes through `blueBottomPanes`. Public plugin panes/overlays enter through the API host and core surface bridge; additive status enters through the transcript owner bridge.
+Baseline owns the public API host, locale, core/theme, banner, conversation
+projection, transcript model/status owners, and official transcript consumer.
+Enhancement rows add editor/attachment helpers, status producers, Blue-owned
+bottom panes, public status bridge, and the reference status-provider owner.
+Assembly owns interaction, the editor-provider owner, public interaction
+bridge, startup/app, and the app-owned public session bridge. The latter waits
+for API control plus app reader/projection sources before exposing readonly
+`session.read` and `session.projections.read`; generic public `session.act`
+remains absent.
 
-W5-A adds one independent composition row, `blue-status-provider-owner`, after
-the additive bridge. It advertises only `status.provider`, consumes the
-tree-scoped composition service and app-owned readonly session reader, and
-follows the persisted `blue.statusProvider` selection. Provider candidates
-remain inert on installation; `blue.default` is the built-in fallback, and a
-bad or absent desired id is never written back. Bundle e2e fixture wrappers
-must mirror source inject lists exactly; no contribution may duplicate content
-in the default composition. The API host durably buffers provider candidates,
-so boot-time sibling rows may register before this owner becomes ready; its
-initial snapshot must replay them. Whole-tree regression coverage mounts the
-ecosystem candidate rows during Loader boot, not only after `bootBlue()`.
+The title behavior is a deliberate pair: disable the base first-prompt title
+row, mount Harness's all-prompts provider with the same policy, and retain the
+app cadence bridge until upstream observes the opening human message on every
+turn. Move or retire both halves together and prove behavior in whole-tree
+tests.
 
-W5-B adds `blue-editor-provider-owner` immediately after the parent
-interaction row. Its row-level `blueEditorHost` injection delays the active
-renderer binding until the stable frontend-tree editor composition exists;
-candidate registration may already be ready through the host buffer. The owner
-follows `blue.editorProvider`, publishes inert candidates into the existing
-editor outer delegate, and preserves `blue.default` on owner unload or failed
-first activation; it never creates a second editor engine. Candidate
-registration is host-buffered across that boot gap and owner reload; provider
-selection, live shell/LKG state, breaker, gestures, and fallback remain owned
-by this frontend tree. The whole-tree ecosystem boot case drives slash
-completion through the selected example shell and asserts that Tab updates the
-same host-owned editor, guarding provider chrome from consuming editor keys.
+Bottom-pane priorities and explicit dependencies preserve activity, queue,
+todo, BTW, agents, then editor behavior under scarce height. The queue never
+claims editor history keys. Provider candidate rows are inert; persisted user
+selection, frontend-tree owners, and default fallback control activation.
 
-The BTW row explicitly injects app-owned `blueSessionActions`. Although it appears before `blue-app`, Cordis holds the pane fiber until the app provides the action service; the app itself still publishes the service synchronously before its loader-settlement Agent creation. This ordering keeps Agent/session seeding out of transcript without adding an implicit race.
+## Preset And Skills
 
-The `blue-plugin-session-bridge` assembly row follows `blue-app` and explicitly injects `bluePluginControl`, `blueSessionReader`, and `blueSessionProjections`. These services are available only inside `blue-runtime-private`, so public `session.read` and `session.projections.read` cannot become ready before the API host and both app-owned sources exist. Creative child Fibers inherit only `bluePluginHost`; control, reader, projections, and broad actions remain isolated. Generic public `session.act` is absent.
+The bundle adds one preset root, `blue-cordis`, alongside upstream Harness
+presets. Do not copy, alias, shadow, or edit upstream preset directories. The
+thin-host disable list follows the upstream web composition and is guarded
+against both missing base ids and silent upstream drift. The host runner lives
+inside `blue-creative-host`; browser/client dynamic code has no Blue surface.
 
-## Session-title cadence swap (S30) + bridge (D41)
+The preset ships exactly three audience-specific skills:
 
-The base ships the first-prompt title provider (one auxiliary-model title per session); Blue runs the Claude Code shape — every human message re-titles, so a mis-derived title self-corrects on the next one. The swap is a pair (the `sessionTitle` service accepts one provider at most, so both halves must move together): the base `session-title-llm` row is disabled (a Blue-only disable — outside the thin-host lockstep list the drift guard compares against the web-app patch, with its own named allowlist in `bundle.spec.ts`), and the `@deepseek-ai/dsh-session-title-all-prompts-llm` row is inserted with the base row's policy config copied verbatim (targetWords 5 / targetCjkCharacters 10 / maxInputBytes 4096 / maxOutputTokens 64 / timeoutMs 60000). The package rides the bundle's dev pins (the version spec keeps it on the harness line).
+| Skill | Use |
+| --- | --- |
+| `cordis-plugin-development` | Temporary process-local inspect/define/run/update/rollback prototypes |
+| `blue-plugin-development` | Durable external plugin creation, extension, or legacy migration after explicit persistence choice |
+| `editing-cordis-compositions` | User-owned preset and composition editing |
 
-The all-prompts row alone remains inert from a session's second message on (D41): source inspection at `dsh-session-title@0.1.2-alpha.2` still shows derivations starting from `request/header` or `onMainRequest`, whose boundary gate rejects the message that opened a turn under dsh-agent-loop's event order. App-owned `title-cadence.ts` therefore continues to drive the public `sessionTitle.refresh` on each human message while keeping Session/Event values inside blue-app; retire it when upstream provides equivalent cadence.
+None is a Blue repository-maintainer skill. Dynamic prototyping does not
+authorize package creation; local persistence does not authorize GitHub/npm;
+and changes to Blue or its bundled preset follow repository/package
+`AGENTS.md`. The author skill invokes the installed plugin kit through the
+`DSH_BLUE_PLUGIN_NODE`/`DSH_BLUE_PLUGIN_BIN` facts provided by interaction,
+never ambient PATH or a checkout.
 
-## Dock order discipline
+## Change Rules
 
-Sibling rows mount concurrently. Activity/todo/agents explicitly inject `blueComponents` plus `blueSessionFacts`; queue injects components plus app reader/actions and refreshes from the narrow app-owned queue-change notification; BTW injects components plus app actions. Their row-level dependencies and internal bottom-pane priority/id ordering pin activity → queue → todo → BTW → agents, with the interaction editor last. There is no internal left/right lane. Queue never claims Up/Down from editor history.
+- Patch values using `!!js` are executable code. Keep them minimal and update
+  inject/order/drift assertions with every row change.
+- New public features require the API owner, an official consumer, lifecycle
+  tests, a bundle row, capability-absent behavior, and whole-tree evidence.
+  Owner-only services are not fallback routes for external plugins.
+- Preset payload is immutable installed product data. User-owned compositions
+  layer after Blue instead of modifying this patch or a shipped preset.
+- Product dependencies use `workspace:*` in the repository and become exact
+  versions when packed. A development install links the complete release
+  closure; independent plugins use profile-owned `file:` snapshots.
+- Runtime JS/type entries come from package exports. The tarball must include
+  `cordis.patch.yml` and only the intended `blue-cordis` preset payload.
+- Keep plugin-validator process tests as the negative corpus for static and
+  packed runners. A helper-only assertion does not prove JSON envelope,
+  timeout, cleanup, native ESM, or script-disabled packing behavior.
 
-## Thin-host migration (S28, D37)
+## Verification
 
-Three parts:
+Any patch, preset, skill, dependency, row inject, private-isolate, or package
+surface change requires `pnpm run verify:full`. Also run
+`pnpm run check:pack`, `pnpm run check:plugin-authoring-docs`,
+`pnpm run fixture:plugin-tutorial`, and the relevant preset/bundle e2e tests.
+Skill edits must keep valid frontmatter, task-specific routing, and realistic
+eval cases.
 
-1. The standard `agent-presets` row enables upstream `includeShippedRoot` and `includeUserRoot`, then adds the bundle-local root containing exactly one uniquely named preset, `blue-cordis`. Harness `0.1.2-alpha.2` owns `standard/minimal/ptc/cordis`; Blue no longer copies, shadows, or aliases those directories and deliberately provides no `code` alias. The Host-scoped `subagent-model-selection-settings` provider mirrors upstream web-app composition because the shipped delegation rows opt into it and fail their mount without it. `presets.spec.ts` guards the five-id effective roster and the alpha.2 composition rows inherited by `blue-cordis`. No launch path writes the host installation.
-2. Ahead of the insert, the web-app bundle's own ruling is ported row-for-row: twenty-three dsh-base agent-plane rows disabled (`tool-*`, plan-mode, the compaction trio, the delegation four, the workflow trio, `agent-instructions`; `tool-subagent-report` and `system-prompt` stay host-plane), which moves the agent plane behind the presets and gives `/preset` true replacement semantics.
-3. The host-plane `cordis-host-runner` row (also the web-app's own ruling — dsh-base mounts no provider) supplies `dynamicCordisRunner` + `cordisInspect`, the inject of the shipped `cordis` preset's `tool-cordis` row; without it that preset's standing mount fails the roster's activation audit. Blue wraps it in `blue-creative-host`, a Cordis isolate realm that withholds raw Blue services, commands, session projections, and approval/plan controls from every dynamic child while leaving `bluePluginHost` inherited as the additive UI route. The runner's required `tools` and Agent ownership plane stay inherited. The web client's half (`cordis-client-runner`) is deliberately not ported.
-
-The creative isolate enumerates every `blue*` Context service except
-`bluePluginHost`, including validation-only adapters so installing one cannot
-widen a dynamic child's authority. `bundle.spec.ts` mechanically extracts
-Context declarations, literal providers, and Blue service constants from all
-package sources; a new service fails until the isolate or explicit public
-allowlist is updated. Owner registries are never a compatibility fallback.
-
-The three creative authoring skills resolve from the preset-local `baseUrl`.
-Every `SKILL.md` frontmatter must parse through the pinned filesystem skill
-provider and declare the same name as its directory; `presets.spec.ts` guards
-this discovery contract because a malformed file is ignored even when shipped.
-P5's single `blue-plugin-development` skill reads the installed machine catalog,
-supports both new packages and same-package Blue entries for existing Harness
-plugins, and stops with a capability proposal when the catalog has no lawful
-surface. Its four realistic eval cases cover local persistence, existing-package
-extension, missing capability, and ambiguous distribution authority. The bundle
-depends on `blue-plugin-kit`; interaction's effect-bound author-environment child
-publishes the installed Node and bin paths through official `shellEnv` facts, so
-creative-mode shell tools invoke the published command without ambient PATH, a
-global install, a guessed profile root, or a Blue checkout.
-Independent local plugins are installed as profile-owned `file:` snapshots,
-not source links; reinstalling rematerializes their declared dependency closure
-before the required Blue restart.
-
-`bundle.spec.ts` pins the disable list to the web-app's (drift guard) and asserts every id addresses a real base row. The runtime dependencies `@deepseek-ai/dsh-agent-presets`, `@deepseek-ai/dsh-tool-subagent`, and `@deepseek-ai/dsh-cordis-host-runner` ride the bundle's `dependencies` so `dsh plugin add` installs them.
-
-## Distribution contract
-
-The bundle tarball contains runtime JS, declarations, `cordis.patch.yml`, and only the `blue-cordis` preset payload; the other four roster entries come from the exact upstream Harness installation. Its frontend-runtime Blue dependencies, including the public `blue-api`, pure `blue-ui` construction layer, and author `blue-plugin-kit`, are `workspace:*` in the repository and exact versions after packing, so an npm install cannot select an internal `*-test.*` prerelease. The candidate release workflow installs this tarball in a scratch dsh profile before promoting any tag.
-
-`plugin-validator.spec.ts` is also the process-level negative corpus for the
-repository-owned plugin validator and packed-fixture runner. It exercises real
-script-disabled npm/pnpm packs, malformed-report envelopes, exact and rejected
-self-reference forms, TypeScript runtime/declaration closure discovery,
-host-owned Cordis peer placement, special-file nonblocking, complete Harness
-mismatch reports, indirect loader aliases, callable `apply` shape, reachable
-lifecycle ownership, and external-entry probe isolation. These assertions
-execute the CLI scripts as child processes; a pure helper assertion alone is not
-evidence for the JSON envelope.
-Independent packed installs always use npm's normal peer resolver on the sole
-supported Harness `0.1.2-alpha.2` line; `--legacy-peer-deps` would hide an
-unsatisfied plugin contract. The fixture report records
-`peerResolution: 'normal'`, and the process-level fake-npm corpus pins the exact
-install flags so this release gate cannot silently weaken.
-The runtime-corpus case has an explicit 15-second Vitest ceiling because it
-launches one isolated validator process per corpus entry; each child still
-retains its own fail-closed process behavior, while the suite remains stable
-under full-workspace worker load.
-
-The whole-tree e2e keeps `/help` scroll assertions aligned with the expanded command roster and mounts the published host runner plus tool-cordis package for creative-mode coverage. Its explicit `@deepseek-ai/dsh` dev dependency supplies the pinned host preset tree and dynamic preset package closure without leaking that graph into the dependency-free `blue-cli` tarball. Scripted model calls exercise `cordis_define`/`cordis_run`, VM isolation, pane/status/command/notice rendering, stop, restart, update, rollback, process restart, and durable buffering across a missing view owner through the real chain. The safe-retraction case emits a creative-style `commands/change` during streamed thinking and requires the same-session reader refresh to preserve the editor receipt, erase the whole turn, and leave no interruption tombstone. Cases that mount real file-backed settings without exercising first-run onboarding, including the persisted status/editor-provider replay cases, seed their temporary credentials file explicitly, so the fixture never inherits success from a developer-machine API key. VT goldens pin the composed tool-card chrome (including bounded official presenter bodies) and horizontal model/effort variants, so renderer changes update both behavior assertions and the affected snapshots.
-
-Resize-driven e2e assertions request the final width through `fullFrameAt`.
-When that width equals the renderer's previous frame width, the helper first
-settles a distinct width; this prevents adjacent asynchronous resizes from
-coalescing into a no-op on checkout paths whose abbreviated cwd hits the exact
-footer budget.
-
-The independent W4 dialogs slice asserts Help, Info, Approval, Questionnaire,
-PlanReview, and form behavior through the canonical core compiler rather than
-interaction-owned terminal rows. Bundle e2e checks Plan decisions by stripped
-semantic text because core paint may place SGR boundaries inside a label/badge;
-the questionnaire VT golden owns the corresponding canonical overlay and
-editor-backed focused-input shape. These are composition acceptance assertions,
-not transcript renderer ownership.
-
-VT snapshot fixtures use the shared tracked-temp helper for their fixed cwd as
-well as per-case settings and attachment roots, so a worker cannot leave one
-directory behind for every snapshot run.
+Install into a dedicated worktree profile with `script/install-dev.sh`, run a
+pseudo-TTY smoke, and obtain live human acceptance before merge. Whole-tree
+tests cover real Loader composition with only the model and process terminal
+substituted; they do not replace the real profile gate. Canonical dialog e2e
+must exercise the real provider-add wizard: Enter confirms each text field
+before advancing, while Up/Down remains editor-owned during editing.

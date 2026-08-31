@@ -11,10 +11,11 @@ function fixture(initial?: FrontendPanelDocument, options: { hint?: string, show
   const onClose = vi.fn()
   const panel = new CanonicalDocumentController({
     ...display, model: () => model, onAction, onClose, maxVisible: 5,
-    ...(options.hint === undefined ? {} : { hint: options.hint }),
+    ...(options.hint === undefined ? {} : { contextHints: () => [{ id: 'custom', keys: options.hint!, priority: 95 }] }),
     ...(options.showSelectedVariantInFooter === undefined ? {} : { showSelectedVariantInFooter: options.showSelectedVariantInFooter }),
     ...(options.onUnhandledInput === undefined ? {} : { onUnhandledInput: options.onUnhandledInput }),
   })
+  panel.focused = true
   return { panel, onAction, onClose, setModel(next: FrontendPanelDocument) { model = next; panel.invalidate() } }
 }
 
@@ -54,7 +55,7 @@ describe('CanonicalDocumentController', () => {
     value.panel.handleInput('z')
     expect(value.panel.render(40).join('\n')).toContain('/ z')
     expect(value.panel.render(40).join('\n')).toContain('no matches')
-    expect(value.panel.currentNode()).toMatchObject({ footer: { content: 'Esc close' } })
+    expect(value.panel.render(80).join('\n')).toContain('Esc close')
     value.panel.handleInput(KEY.escape)
     expect(value.onClose).not.toHaveBeenCalled()
     expect(value.panel.render(40).join('\n')).not.toContain('/ z')
@@ -180,6 +181,12 @@ describe('CanonicalDocumentController', () => {
     const groupedNode = grouped.panel.currentNode()
     if (groupedNode.kind !== 'surface' || groupedNode.child.kind !== 'stack') throw new Error('expected grouped surface')
     expect(groupedNode.child.children.map(child => child.node).find(node => node.kind === 'tabs')).toMatchObject({ activeId: 'catalog' })
+
+    const cancellable = fixture({ mode: 'loading', title: 'Cancellable', view: { kind: 'text', content: 'working' }, submit: { kind: 'cancel' } })
+    expect(cancellable.panel.render(80).join('\n')).toContain('Enter cancel')
+
+    const errorStatus = fixture({ mode: 'error', title: 'Failed update', dismissible: false })
+    expect(errorStatus.panel.currentNode()).toMatchObject({ footer: { content: 'updating - do not close', tone: 'danger' } })
   })
 
   it('maps compiler list, tab, and Escape events through the canonical adapter', () => {
@@ -223,7 +230,7 @@ describe('CanonicalDocumentController', () => {
     const error = fixture({ mode: 'error', title: 'Nothing' })
     expect(error.panel.render(40).join('\n')).toContain('unavailable')
     const loading = fixture({ mode: 'loading', title: 'Loading' })
-    expect(loading.panel.currentNode()).toMatchObject({ footer: { content: 'Esc / q to cancel' } })
+    expect(loading.panel.render(80).join('\n')).toContain('Esc/q cancel')
 
     const detailed = fixture({ mode: 'select', title: 'Detail', items: [{ id: 'a', label: 'A', detail: 'description' }] })
     expect(extractList(detailed.panel.currentNode()).items[0]).toMatchObject({ detail: 'description' })
@@ -250,8 +257,9 @@ describe('CanonicalDocumentController', () => {
     grouped.panel.handleInput(KEY.left)
 
     const outOfRange = fixture({ mode: 'select', title: 'Clamp', items: [{ id: 'a', label: 'A' }] })
-    const outOfRangeState = outOfRange.panel as unknown as { group: number }
+    const outOfRangeState = outOfRange.panel as unknown as { group: number, groupId: string | undefined }
     outOfRangeState.group = 99
+    outOfRangeState.groupId = undefined
     expect(extractList(outOfRange.panel.currentNode()).items).toHaveLength(1)
 
     const variant = fixture({ mode: 'select', title: 'Variant', items: [{ id: 'a', label: 'A', selectedVariantId: 'missing', variants: [{ id: 'only', label: 'Only' }] }] })

@@ -34,9 +34,9 @@
 
 `/btw <question>` 把当前会话 fork 成一次性旁路 agent——以全量事件流为种子、继承父会话的 provider/model——在不打扰主线的情况下问一个"顺便一提"的问题：
 
-- 面板标题 ` BTW ` + 按键提示（`Esc close`，正文溢出时加 `↑↓ scroll`）；
+- 面板标题 ` BTW ` + 按键提示（`Esc close`，正文溢出时加 `PgUp/PgDn or wheel`）；
 - `› 问题` 行 + 流式 Markdown 回复 + thinking 行；行预算随终端高度自适应（resize 即重排）；
-- 打开期间编辑器顶角与面板拼接为 `├┤`；**Esc** 关闭（草稿存活）、**↑↓** 滚动、**Enter** 在同一旁路 agent 上续问；
+- 打开期间编辑器顶角与面板拼接为 `├┤`；**Esc** 关闭（草稿存活）、滚轮 / **PageUp** / **PageDown** 滚动、**Enter** 在同一旁路 agent 上续问；
 - 槽位单一：再次 `/btw` 会先销毁上一个旁路 agent；无参 `/btw` 直接收起面板。
 
 ## 子代理分组面板（agents）

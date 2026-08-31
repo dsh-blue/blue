@@ -25,6 +25,6 @@
 │ → Node [1]                                                                   │
 │   Deno [2]                                                                   │
 │   Other [3]                                                                  │
-│↑↓ select · 1-9 choose · Enter choose · Tab next · Esc cancel                 │
+│  ↑↓/1-9 options · Enter choose · Tab/Shift-Tab questions                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

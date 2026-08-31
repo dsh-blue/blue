@@ -6,6 +6,7 @@
 <circle cx="54" cy="25" r="6" fill="#28c840"/>
 <g font-family="'JetBrains Mono',monospace" font-size="14">
 <rect x="12" y="38" width="8.4" height="19" fill="#e0e0e0"/>
+<rect x="20.4" y="38" width="67.2" height="19" fill="#3a3a4a"/>
 <text x="20.4" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">[</text>
 <text x="37.2" y="52" textLength="33.6" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">Save</text>
 <text x="79.2" y="52" textLength="8.4" lengthAdjust="spacingAndGlyphs" fill="#4fa8ff">]</text>

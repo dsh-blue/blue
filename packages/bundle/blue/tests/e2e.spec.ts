@@ -2583,11 +2583,11 @@ describe('blue whole-tree e2e', () => {
     await tree.ctx.sessions.flush(forked.session)
     tree.terminal.resize(300, 40)
     await expect(executeCommand(tree, forked, '/sessions')).resolves.toEqual({ kind: 'success' })
-    // The framed picker: the `Sessions` title with the key hint, rows
-    // carrying the `❯ ` pointer and the `← current` badge on the live one.
+    // The framed picker: the `Sessions` title, focus-derived operation hint,
+    // and rows carrying the `❯ ` pointer plus the `← current` badge.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Sessions') })
     const picker = tree.terminal.output
-    expect(picker).toContain('esc cancel · ↵ resume')
+    expect(picker).toContain('↑↓ options · Enter choose · Space toggle branch')
     expect(picker).toContain(String(first.id))
     expect(picker).toContain(String(second.id))
     expect(picker).toContain(String(forked.id))
@@ -2900,9 +2900,9 @@ describe('blue whole-tree e2e', () => {
     // Form: route, baseURL, key.
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
     tree.terminal.sendInput('blue-e2e-gw')
-    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput(`${server.url}/v1`)
-    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput('sk-test-key')
     tree.terminal.sendInput('\r')
     // Discovery feeds the adopt multi-select.
@@ -2911,8 +2911,7 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput(' ')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Model defaults') })
-    tree.terminal.sendInput('\r')
-    tree.terminal.sendInput('\r')
+    for (let step = 0; step < 4; step += 1) tree.terminal.sendInput('\r')
     await expect(outcome).resolves.toEqual({ kind: 'success', text: 'provider "blue-e2e-gw" added' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · blue-e2e-gw') })
     // Escape keeps the provider without switching the default.
@@ -2967,17 +2966,16 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Custom endpoint') })
     tree.terminal.sendInput('deadgw')
-    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput(`http://127.0.0.1:${port}/v1`)
-    tree.terminal.sendInput('\t')
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput('sk-probe')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Advertised models') })
     tree.terminal.sendInput(' ')
     tree.terminal.sendInput('\r')
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Model defaults') })
-    tree.terminal.sendInput('\r')
-    tree.terminal.sendInput('\r')
+    for (let step = 0; step < 4; step += 1) tree.terminal.sendInput('\r')
     await expect(outcome).resolves.toEqual({ kind: 'success', text: 'provider "deadgw" added' })
     await vi.waitFor(() => { expect(tree.terminal.output).toContain('Select a model · deadgw') })
     tree.terminal.sendInput('\r')
@@ -4148,6 +4146,7 @@ describe('blue whole-tree e2e', () => {
     tree.terminal.sendInput('\r')
     await vi.waitFor(async () => { expect(await fullFrame(tree.terminal)).toContain('type y to confirm') })
     // The typed y closes both layers and dispatches the real switch.
+    tree.terminal.sendInput('\r')
     tree.terminal.sendInput('\x7f')
     tree.terminal.sendInput('y')
     tree.terminal.sendInput('\r')

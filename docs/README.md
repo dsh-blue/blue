@@ -42,7 +42,7 @@
 | [blue-frontend-runtime-migration-checklist.md](./blue-frontend-runtime-migration-checklist.md) | C0-C7 执行/验收清单 |
 | [blue-implementation-plan.md](./blue-implementation-plan.md) | F0-F6 阶段实施与兼容策略 |
 | [blue-plugin-ecosystem.md](./blue-plugin-ecosystem.md) | 外部插件分类、安装与 provider lifecycle |
-| [blue-skills-plan.md](./blue-skills-plan.md) | plugin development/migration/fixture/validation skills |
+| [history/blue-skills-plan.md](./history/blue-skills-plan.md) | repository/preset skill ownership consolidation decision |
 | [blue-api-design.md](./blue-api-design.md) | 早期公共 API foundation；由 v1 target contract 接替 |
 | [blue-editor-walkthrough.md](./blue-editor-walkthrough.md) | editor contract/implementation/consumer/enhancement 走查 |
 | [blue-roadmap.md](./blue-roadmap.md) | 阶段路线图；早期 seam 名称是历史记录，以当前架构文档为准 |

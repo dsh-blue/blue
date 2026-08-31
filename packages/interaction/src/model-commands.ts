@@ -673,7 +673,6 @@ export function registerModelCommands(ctx: Context): () => void {
       components: display.components,
       rows,
       title: 'Providers',
-      titleHint: '· esc cancel · ↵ switch / add',
       onSelect: row => {
         restore()
         void (async () => {

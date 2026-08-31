@@ -1,6 +1,6 @@
 ---
 name: blue-plugin-development
-description: Create or persist a Blue frontend plugin from the blue-cordis preset after an in-session prototype is accepted, or add a Blue frontend entry to an existing Harness plugin package. Uses the published blue-plugin catalog, generator, validator, and packed conformance command without requiring a Blue checkout. Stops with a capability proposal when the machine catalog cannot express the requested feature. Not for ephemeral prototyping, Blue core changes, agent presets, marketplace submission, or publishing without explicit user authorization.
+description: Create, extend, or migrate a durable external Blue frontend plugin after the user chooses persistence. Uses the installed blue-plugin catalog, generator, validator, and packed conformance runner without requiring a Blue checkout. Not for ephemeral prototypes, Blue repository maintenance, agent presets, marketplace submission, or publishing without explicit authorization.
 ---
 
 # Develop a Blue plugin
@@ -62,7 +62,34 @@ confirm repository ownership, package name, visibility, authentication, 2FA,
 organization policy, tag, and exact version before the corresponding external
 mutation. Never publish merely because conformance passes.
 
-## 3. Choose the package path
+## 3. Audit before migrating an existing plugin
+
+Run the validator before editing an existing package. A failing report is an
+inventory, not permission to rewrite unrelated domain code:
+
+```sh
+"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" validate ./existing-plugin
+```
+
+Classify the current implementation into domain truth, projection/action
+boundary, interaction, renderer, and composition. Record direct pi-tui, ANSI,
+DOM, Agent/Session, package-internal, event-folding, module-singleton, implicit
+bundle-order, and unowned-listener dependencies. Identify the public
+renderer-neutral Service or projection that can remain authoritative.
+
+Migrate additively. Preserve domain behavior and the old renderer as a named
+acceptance baseline while introducing the public Blue entry, canonical
+manifest, capability-absent fallback, and Fiber-owned registrations. Do not
+translate a private renderer or raw session object into a nominally public
+model. If no lawful public domain seam or catalog capability exists, stop and
+propose the smallest missing seam or capability before editing the frontend.
+
+Delete the old renderer, compatibility adapter, or legacy bundle row only
+after packed conformance, unload/restart checks, and explicit live acceptance
+prove the replacement. Record any temporary adapter's owner and deletion
+condition in the plugin repository.
+
+## 4. Choose the package path
 
 ### New package
 
@@ -77,7 +104,7 @@ canonical `blue.plugin.json`, public entry, and `cordis.patch.yml` to the
 catalog decisions. Keep `package.json.blue.manifest` as the only discovery
 pointer and keep `manifest.id` equal to the npm package name.
 
-### Existing Harness plugin
+### Existing or legacy Harness plugin
 
 Do not run `create` over an existing package. Preserve its domain entry,
 exports, files, dependencies, scripts, and ownership. Add:
@@ -96,7 +123,7 @@ objects, credentials, renderer state, or package internals to recreate domain
 truth. If the Harness plugin has no suitable public seam, stop and propose that
 seam before adding the Blue entry.
 
-## 4. Implement the accepted feature
+## 5. Implement the accepted feature
 
 Every Cordis entry exports stable `name`, optional `inject`, and `apply(ctx)`.
 Open the parsed canonical manifest through `ctx.bluePluginHost.open(ctx,
@@ -114,7 +141,7 @@ Preserve a capability-absent fallback. Definition-style registrations may be
 restored after an owner gap, but notifications, overlays, gestures, actions,
 and old callback results are never queued or replayed.
 
-## 5. Close the local package gate
+## 6. Close the local package gate
 
 Run the published checks from any directory:
 
@@ -136,7 +163,7 @@ The conformance report must have:
 The validator and fixture disable lifecycle scripts while packing untrusted
 input, but they are compatibility checks, not a security sandbox.
 
-## 6. Dogfood without replacing the live tree
+## 7. Dogfood without replacing the live tree
 
 Use a dedicated profile and delegate installation to its owner:
 

@@ -11,6 +11,7 @@
   "scripts": {
     "build": "node script/generate-blue-plugin-contract.mjs --check && node script/clean-lib.mjs && tsc -b tsconfig.json --force && node script/prune-types.mjs && tsdown",
     "test": "vitest run",
+    "test:repo-workflow": "node --test script/tests/*.test.mjs",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -b tsconfig.json",
     "lint": "oxlint packages examples",
@@ -31,6 +32,10 @@
     "generate:plugin-contract": "node script/generate-blue-plugin-contract.mjs",
     "check:plugin-contract": "node script/generate-blue-plugin-contract.mjs --check",
     "check:plugin-authoring-docs": "node script/check-plugin-authoring-docs.mjs",
+    "check:agent-docs": "node script/check-agent-docs.mjs",
+    "verify:changed": "node script/verify-changed.mjs",
+    "verify:full": "node script/verify-changed.mjs --full --smoke",
+    "build:changed": "node script/build-changed.mjs",
     "fixture:plugin-tutorial": "node script/blue-plugin-tutorial-fixture.mjs",
     "fixture:context-upstream": "node script/context-upstream-fixture.mjs",
     "fixture:remote-upstream": "node script/remote-upstream-fixture.mjs",

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * The 19 component-shot scenarios, one per `ui.*` section of
- * website/plugins/ui-reference.md. Each entry compiles one wire node built
+ * The component-shot scenarios: one per `ui.*` section of
+ * website/plugins/ui-reference.md, plus the two code examples of
+ * website/plugins/ui-kit.md (`uikit-builder`, `uikit-component`). Each entry
+ * compiles one wire node built
  * with the BUILT `@dsh-blue/blue-ui` builder namespace; `drive` optionally
  * pushes an interactive node into a meaningful visual state through the
  * compiler's focus target (same machinery as core's ui-compiler spec).
@@ -240,5 +242,47 @@ export const SCENARIOS = [
     title: 'divider — semantic separator',
     width: 48,
     build: ui => ui.divider(),
+  },
+  {
+    id: 'uikit-builder',
+    // ui-kit.md "Builder" section example, verbatim.
+    title: 'ui-kit — builder surface example',
+    width: 64,
+    build: ui => ui.surface({
+      title: 'Context',
+      chrome: 'lane',
+      child: ui.stack.column([
+        ui.progress({ label: 'Tokens', value: 12_000, max: 28_000 }),
+        ui.child(ui.text('deepseek-chat', { tone: 'muted' }), {
+          when: { minWidth: 32 },
+        }),
+      ], { gap: 1 }),
+    }),
+  },
+  {
+    id: 'uikit-component',
+    // ui-kit.md "可复用组件 / Reusable components" defines summaryMetric with
+    // props; the shot renders that exact definition through
+    // defineBlueComponent with the canonical props its documented consumer
+    // (examples/header) passes.
+    title: 'ui-kit — defineBlueComponent render result',
+    width: 64,
+    build: (ui, defineBlueComponent) => defineBlueComponent({
+      id: '@acme/summary-metric',
+      api: '^1.0.0-beta.1',
+      render: props => ui.surface({
+        chrome: 'lane',
+        child: ui.stack.row([
+          ui.richText([
+            { text: props.label, tone: 'muted' },
+            { text: ` ${props.value}`, tone: 'accent', emphasis: 'strong' },
+          ]),
+          ui.child(ui.text(props.detail, { tone: 'muted' }), {
+            grow: 1,
+            when: { minWidth: 32 },
+          }),
+        ], { gap: 1 }),
+      }),
+    }).render({ label: 'Branch', value: 'main', detail: 'Blue ecosystem example' }),
   },
 ]

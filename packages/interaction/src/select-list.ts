@@ -9,7 +9,7 @@
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { BlueTranslate } from '@dsh-blue/blue-frontend'
-import { CanonicalPanelAdapter, type CanonicalNodeSource } from './canonical-panel.ts'
+import { CanonicalPanelAdapter, type CanonicalContextHint, type CanonicalNodeSource } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_SUBMIT, ACTION_TOGGLE } from './keys.ts'
 
 /** One selectable row of a {@link CanonicalSelectController}. */
@@ -29,8 +29,8 @@ export interface SelectListPanelOptions {
   readonly components: BlueComponents
   readonly rows: readonly SelectRow[] | ((query: string) => readonly SelectRow[])
   readonly title?: string
-  readonly titleHint?: string
   readonly footer?: string
+  readonly contextHints?: readonly CanonicalContextHint[]
   readonly initialValue?: string
   readonly filter?: boolean
   /** Dynamic translator for package-owned chrome and row copy. */
@@ -82,6 +82,14 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
       onUnhandledEscape: options.onCancel,
+      ...(options.t === undefined ? {} : { t: options.t }),
+      contextHints: () => [
+        ...(this.filter && this.query === '' ? [{ id: 'filter', keys: 'Type', label: 'to search', priority: 85 }] : []),
+        ...(this.query.length === 0 && this.options.onToggle !== undefined
+          ? [{ id: 'toggle', keys: this.options.keymap.getKeys(ACTION_TOGGLE)[0] ?? 'Space', label: 'toggle', priority: 95 }]
+          : []),
+        ...(this.options.contextHints ?? []),
+      ],
     })
   }
 
@@ -145,13 +153,8 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     const selected = view[this.cursor]
     const range = windowedRange(this.cursor, view.length, MAX_LIST_VISIBLE)
     const visible = view.slice(range.start, range.end)
-    const titleHint = this.options.titleHint === undefined ? undefined : t(this.options.titleHint)
-    const hint = this.filter && this.query === ''
-      ? [titleHint, t('type to search')].filter(Boolean).join(' · ')
-      : titleHint
     const footer = [
       this.options.footer === undefined ? undefined : t(this.options.footer),
-      hint,
       counterRow(this.cursor, view.length, MAX_LIST_VISIBLE),
     ].filter((value): value is string => value !== undefined && value !== '')
     return {
