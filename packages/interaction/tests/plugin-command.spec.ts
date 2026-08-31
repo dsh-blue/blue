@@ -335,6 +335,12 @@ describe('registerPluginCommand', () => {
 
   it('opens Installed first and performs visible Verify and Remove actions', async () => {
     vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(bundledPluginCatalog())
+    const run = vi.spyOn(pluginCommandInternals.effects, 'run')
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({ package: '@scope/installed', valid: true, files: 2, violations: [] }),
+        stderr: '',
+      })
+      .mockResolvedValueOnce({ stdout: 'plugin|--profile|acceptance|remove|@scope/installed\n', stderr: '' })
     const world = await mount({ display: true })
     writeProfileManifest(world.profile, { '@scope/installed': '1.0.0' })
     addPlugin(world, '@scope/installed')
@@ -352,7 +358,7 @@ describe('registerPluginCommand', () => {
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('uninstalled; restart Blue to apply'))
 
-    const failure = vi.spyOn(pluginCommandInternals.effects, 'run').mockRejectedValueOnce(new Error('validator offline'))
+    const failure = run.mockRejectedValueOnce(new Error('validator offline'))
     panel.handleInput(KEY.left)
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('plugin operation failed: validator offline'))
