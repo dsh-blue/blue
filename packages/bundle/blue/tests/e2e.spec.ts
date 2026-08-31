@@ -2314,6 +2314,47 @@ describe('blue whole-tree e2e', () => {
     expect(full).toContain('all 6 items · ctrl+t to collapse')
   })
 
+  it('renders the goal badge in the todo pane title from the goal projection', async () => {
+    const tree = await bootBlue([], { script: [] })
+    const agent = await currentAgent(tree)
+    // Durable goal snapshots straight into the session log; the e2e goal
+    // projection stand-in folds them, and the pane's badge subscription
+    // receives the value through blueSessionFacts.
+    agent.session.append('todo/write', { todos: [{ content: 'badge-task', status: 'pending' }] })
+    agent.session.append('goal/change', {
+      kind: 'goal/change', version: 1, operation: 'create',
+      goal: { id: 'goal-e2e', revision: 1, objective: 'ship the badge', phase: 'active', maxGoalRounds: 8 },
+      roundsStarted: 2, createdAt: 1000, updatedAt: 2000,
+    })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('● active') })
+    expect(tree.terminal.output).toContain('2/8')
+    expect(stripSgr(await fullFrame(tree.terminal))).toContain('Todo · ● active · 2/8')
+
+    // A blocked goal repaints the title in the error tone and adds the
+    // reason row under it.
+    agent.session.append('goal/change', {
+      kind: 'goal/change', version: 1, operation: 'block',
+      goal: { id: 'goal-e2e', revision: 2, objective: 'ship the badge', phase: 'blocked', blockedReason: { code: 'tests-red', message: 'tests are red' }, maxGoalRounds: 8 },
+      roundsStarted: 2, createdAt: 1000, updatedAt: 3000,
+    })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('✕ blocked') })
+    expect(tree.terminal.output).toContain('blocked:')
+    expect(tree.terminal.output).toContain('tests are red')
+
+    // Completing the goal retires the badge; the todo list stays.
+    agent.session.append('goal/change', {
+      kind: 'goal/change', version: 1, operation: 'complete',
+      goal: { id: 'goal-e2e', revision: 3, objective: 'ship the badge', phase: 'complete', maxGoalRounds: 8 },
+      roundsStarted: 2, createdAt: 1000, updatedAt: 4000,
+    })
+    await waitForRender()
+    const frame = stripSgr(await fullFrame(tree.terminal))
+    expect(frame).toContain('badge-task')
+    expect(frame).not.toContain('● active')
+    expect(frame).not.toContain('✕ blocked')
+    expect(frame).not.toContain('blocked:')
+  })
+
   it('hides todo_write tool calls from the stream while sibling tools render', async () => {
     const tree = await bootBlue([], {
       script: [

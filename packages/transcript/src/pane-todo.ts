@@ -18,9 +18,18 @@
  * expansion persists across writes (kimi `setTodos` semantics) and resets on
  * a session change or a settled list. A list whose every entry is completed
  * closes the pane automatically (the kimi session-event-handler rule).
- * A session without any `todo/write` renders zero rows, so the pane occupies
- * nothing. A dialog taking the editor slot also hides the pane temporarily,
- * preserving its todo snapshot and expansion choice until the editor returns.
+ *
+ * When the official `goal` projection reports a current goal whose phase is
+ * not `complete`, the title row carries a goal badge — the phase marker from
+ * the existing chrome family (`●` active in primary, `❚❚` paused muted, `✕`
+ * blocked in error), the phase name, and `roundsStarted/maxGoalRounds` — and
+ * a blocked goal adds one `  blocked: <reason>` row under the title. The
+ * badge keeps the pane visible even with an empty todo list; a completed or
+ * absent goal restores the todo-only pane. A session without any
+ * `todo/write` and without a current goal renders zero rows, so the pane
+ * occupies nothing. A dialog taking the editor slot also hides the pane
+ * temporarily, preserving its todo snapshot and expansion choice until the
+ * editor returns.
  *
  * @module @dsh-blue/blue-transcript/pane-todo
  */
@@ -29,6 +38,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { BlueInlineSpan, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import type { BlueBottomPaneNode } from './dock-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
@@ -185,10 +195,60 @@ function renderRow(todo: TodoItem, colors: BlueSemanticColors, components: BlueC
   }
 }
 
+/** The goal phases the badge renders; a completed goal hides it again. */
+type BadgePhase = 'active' | 'paused' | 'blocked'
+
+/** The badge marker and canonical tone per phase (the chrome family, no emoji). */
+const GOAL_BADGE: Record<BadgePhase, { readonly marker: string, readonly tone: 'accent' | 'muted' | 'danger' }> = {
+  active: { marker: '●', tone: 'accent' },
+  paused: { marker: '❚❚', tone: 'muted' },
+  blocked: { marker: '✕', tone: 'danger' },
+}
+
+/**
+ * The badge the title row shows, or null when no goal is current or the goal
+ * completed (both restore the todo-only pane).
+ * @param goal - the current goal projection value.
+ * @returns the goal with its rendered phase, or null for no badge.
+ */
+function goalBadge(goal: GoalProjection | null): { readonly goal: GoalProjection, readonly phase: BadgePhase } | null {
+  if (goal === null || goal.goal.phase === 'complete') return null
+  return { goal, phase: goal.goal.phase }
+}
+
+/** The blocked row's reason text; the durable reason is optional in shape. */
+function blockedReasonText(goal: GoalProjection): string {
+  return goal.goal.blockedReason?.message ?? ''
+}
+
+/** Build the title spans, appending the goal badge when one renders. */
+function titleSpans(goal: GoalProjection | null): readonly BlueInlineSpan[] {
+  const title: BlueInlineSpan = { text: '  Todo', tone: 'accent', emphasis: 'strong' }
+  const badge = goalBadge(goal)
+  if (badge === null) return [title]
+  const paint = GOAL_BADGE[badge.phase]
+  return [
+    title,
+    { text: ' · ', tone: 'muted' },
+    { text: `${paint.marker} ${badge.phase}`, tone: paint.tone, ...(badge.phase === 'active' ? { emphasis: 'strong' as const } : {}) },
+    { text: ` · ${badge.goal.roundsStarted}/${badge.goal.goal.maxGoalRounds}`, tone: 'muted' },
+  ]
+}
+
+/** Build the `  blocked: <reason>` row under a blocked goal's title. */
+function blockedSpans(goal: GoalProjection): readonly BlueInlineSpan[] {
+  return [
+    { text: '  blocked: ', tone: 'danger' },
+    { text: blockedReasonText(goal), tone: 'muted' },
+  ]
+}
+
 /** The pane's render state, mutated by the subscriptions in `apply`. */
 interface TodoState {
   /** The latest whole-list snapshot; empty until the first `todo/write`. */
   todos: readonly TodoItem[]
+  /** The current goal projection value; null without a current goal. */
+  goal: GoalProjection | null
   /** Whether the pane renders the full list instead of the folded selection. */
   expanded: boolean
   /** Whether a dialog temporarily occupies the editor slot. */
@@ -203,15 +263,23 @@ interface TodoState {
  */
 function signature(state: TodoState): string {
   const list = state.todos.map(todo => `${todo.status}:${todo.content}`).join('\n')
-  return `${state.dialog ? 'dialog' : 'visible'}\n${state.expanded ? 'expanded' : 'folded'}\n${list}`
+  const badge = goalBadge(state.goal)
+  const goalKey = badge === null
+    ? 'no-goal'
+    : `${badge.phase}:${badge.goal.goal.revision}:${badge.goal.roundsStarted}:${badge.goal.goal.maxGoalRounds}:${blockedReasonText(badge.goal)}`
+  return `${state.dialog ? 'dialog' : 'visible'}\n${state.expanded ? 'expanded' : 'folded'}\n${goalKey}\n${list}`
 }
 
 /** Build the canonical todo tree; the core compiler owns paint and width. */
 function todoNode(state: TodoState): BlueUiNode {
   const children: { readonly node: BlueUiNode }[] = [
     { node: { kind: 'divider' } },
-    { node: { kind: 'rich-text', spans: [{ text: '  Todo', tone: 'accent', emphasis: 'strong' }] } },
+    { node: { kind: 'rich-text', spans: titleSpans(state.goal) } },
   ]
+  const badge = goalBadge(state.goal)
+  if (badge?.phase === 'blocked') {
+    children.push({ node: { kind: 'rich-text', spans: blockedSpans(badge.goal) } })
+  }
   if (state.expanded) {
     for (const todo of state.todos) children.push({ node: { kind: 'rich-text', spans: todoSpans(todo) } })
     if (state.todos.length > MAX_VISIBLE) {
@@ -235,12 +303,28 @@ class TodoPaneComponent {
     private readonly state: TodoState,
   ) {}
 
+  /** The bold title row, appended with the goal badge when one renders. */
+  private titleLine(): string {
+    const base = this.colors.primary(`${BOLD_OPEN}  Todo${BOLD_CLOSE}`)
+    const badge = goalBadge(this.state.goal)
+    if (badge === null) return base
+    const paint = badge.phase === 'active' ? this.colors.primary : badge.phase === 'paused' ? this.colors.textMuted : this.colors.error
+    const marker = GOAL_BADGE[badge.phase].marker
+    const label = badge.phase === 'active' ? `${BOLD_OPEN}${marker} active${BOLD_CLOSE}` : `${marker} ${badge.phase}`
+    return `${base}${this.colors.textMuted(' · ')}${paint(label)}${this.colors.textMuted(` · ${badge.goal.roundsStarted}/${badge.goal.goal.maxGoalRounds}`)}`
+  }
+
   render(width: number): string[] {
-    if (this.state.dialog || this.state.todos.length === 0 || width < TODO_MIN_WIDTH) return []
+    const badge = goalBadge(this.state.goal)
+    if (this.state.dialog || (this.state.todos.length === 0 && badge === null) || width < TODO_MIN_WIDTH) return []
     const lines = [
       this.colors.border('─'.repeat(width)),
-      this.colors.primary(`${BOLD_OPEN}  Todo${BOLD_CLOSE}`),
+      this.titleLine(),
     ]
+    if (badge?.phase === 'blocked') {
+      const reason = this.components.truncateToWidth(blockedReasonText(badge.goal), Math.max(0, width - 11))
+      lines.push(`${this.colors.error('  blocked: ')}${this.colors.muted(reason)}`)
+    }
     if (this.state.expanded) {
       for (const todo of this.state.todos) lines.push(renderRow(todo, this.colors, this.components, width))
       if (this.state.todos.length > MAX_VISIBLE) {
@@ -259,8 +343,8 @@ class TodoPaneComponent {
 
 /**
  * Mount the todo pane over the current projection-backed facts. A current
- * session identity change clears the previous list and expansion before the
- * new whole-value facts arrive. A settled list (every entry completed) closes the pane and resets
+ * session identity change clears the previous list, expansion, and goal badge
+ * before the new whole-value facts and goal projection arrive. A settled list (every entry completed) closes the pane and resets
  * the expansion; the expansion otherwise persists across writes (kimi
  * `setTodos` semantics). Redraws are requested only when the render
  * signature changed. Also registers the global Ctrl-T action whose handler
@@ -272,7 +356,7 @@ class TodoPaneComponent {
 export function apply(ctx: Context): void {
   const colors = ctx.blueTheme.colors
   const components = ctx.blueComponents
-  const state: TodoState = { todos: [], expanded: false, dialog: false }
+  const state: TodoState = { todos: [], goal: null, expanded: false, dialog: false }
   let rendered = signature(state)
 
   /**
@@ -293,17 +377,34 @@ export function apply(ctx: Context): void {
     ctx.blueBottomPanes.refresh('blue.dock.todo')
   }
 
+  /**
+   * Install a new goal projection value. The badge joins the title row for
+   * every non-complete phase and disappears for a completed or cleared goal;
+   * the refresh is signature-gated like the list updates.
+   * @param goal - the incoming goal projection value.
+   */
+  const updateGoal = (goal: GoalProjection | null): void => {
+    state.goal = goal
+    const next = signature(state)
+    if (next === rendered) return
+    rendered = next
+    ctx.blueBottomPanes.refresh('blue.dock.todo')
+  }
+
   const facts = ctx.get('blueSessionFacts') as SessionFactsService | undefined
   let sessionId = facts?.currentSession?.id
   const offSession = facts?.subscribeSession((session) => {
     if (session?.id === sessionId) return
     sessionId = session?.id
     state.expanded = false
+    state.goal = null
     update([])
   })
   const offFacts = facts?.subscribe((next: ConversationFacts) => update(next.todos))
+  const offGoal = facts?.subscribeGoal((next) => updateGoal(next))
   ctx.effect(() => () => offSession?.())
   ctx.effect(() => () => offFacts?.())
+  ctx.effect(() => () => offGoal?.())
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     if (state.dialog === occupied) return
     state.dialog = occupied
@@ -326,7 +427,7 @@ export function apply(ctx: Context): void {
   const model = (): BlueBottomPaneNode => ({
     id: 'blue.dock.todo', priority: 30,
     node: todoNode(state),
-    collapsed: state.dialog || state.todos.length === 0,
+    collapsed: state.dialog || (state.todos.length === 0 && goalBadge(state.goal) === null),
   })
   const pane = new TodoPaneComponent(colors, components, state)
   ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))

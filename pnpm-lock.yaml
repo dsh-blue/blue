@@ -787,6 +787,9 @@ importers:
       '@deepseek-ai/dsh-commands':
         specifier: 0.1.2-alpha.2
         version: 0.1.2-alpha.2(8dc31b3a24d9a6bf6e7b5c470bfcc0fe)
+      '@deepseek-ai/dsh-goal':
+        specifier: 0.1.2-alpha.2
+        version: 0.1.2-alpha.2(32bcb1598cd285b404d0361572cc3ec6)
       '@deepseek-ai/dsh-invariants':
         specifier: 0.1.2-alpha.2
         version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)

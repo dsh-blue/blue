@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
+import type { GoalPhase, GoalProjection } from '@deepseek-ai/dsh-goal'
 import * as todo from '../src/pane-todo.ts'
 import { event, resetSeq, userEvent } from './helpers.ts'
 import { bootPanePlugin } from './pane-fakes.ts'
@@ -19,6 +20,41 @@ import { asAgent, fakeAgent } from './status-fakes.ts'
 /** A `todo/write` whole-list snapshot event. */
 function todoWrite(todos: TodoItem[]): SessionEvent<'todo/write'> {
   return event('todo/write', { todos })
+}
+
+/** One `goal` projection value for the badge fixtures. */
+function makeGoal(phase: GoalPhase, options: { rounds?: number, max?: number, message?: string } = {}): GoalProjection {
+  return {
+    goal: {
+      id: 'goal-1' as GoalProjection['goal']['id'],
+      revision: 3,
+      objective: 'ship the badge',
+      phase,
+      ...(options.message === undefined ? {} : { blockedReason: { code: 'tests-red', message: options.message } }),
+      maxGoalRounds: options.max ?? 8,
+    },
+    roundsStarted: options.rounds ?? 2,
+    createdAt: 1000,
+    updatedAt: 2000,
+  }
+}
+
+/** A durable snapshot `goal/change` event carrying the projection fields. */
+function goalChange(goal: GoalProjection, operation: 'create' | 'edit' | 'pause' | 'resume' | 'complete' | 'block' = 'create'): SessionEvent<'goal/change'> {
+  return event('goal/change', {
+    kind: 'goal/change', version: 1, operation,
+    goal: goal.goal, roundsStarted: goal.roundsStarted,
+    createdAt: goal.createdAt, updatedAt: goal.updatedAt,
+  })
+}
+
+/** A durable `goal/change` clear tombstone. */
+function goalClear(): SessionEvent<'goal/change'> {
+  return event('goal/change', {
+    kind: 'goal/change', version: 1, operation: 'clear',
+    cleared: { id: 'goal-1' as GoalProjection['goal']['id'], revision: 3 },
+    clearedAt: 3000,
+  })
 }
 
 /** The pane's flat top rule at the given width (identity border). */
@@ -419,6 +455,134 @@ describe('blue-pane-todo', () => {
     expect(pane.render(3)).toEqual([])
     pane.invalidate()
     expect(pane.render(10)).toEqual(narrow)
+    await dispose()
+  })
+})
+
+describe('blue-pane-todo goal badge', () => {
+  /** The badge title for an active goal (identity colors keep the bold SGR). */
+  const ACTIVE_TITLE = `${TITLE} · \x1b[1m● active\x1b[22m · 2/8`
+
+  it('appends the phase marker and round budget to the title for active and paused goals', async () => {
+    resetSeq()
+    const agent = fakeAgent([
+      goalChange(makeGoal('active')),
+      todoWrite([{ content: 'a', status: 'pending' }]),
+    ])
+    const { ctx, screen, dispose } = await bootPanePlugin(todo, agent)
+    expect(screen.paneLines()).toEqual([rule(78), ACTIVE_TITLE, row('○', 'a')])
+
+    ctx.emit('session/event', agent.session as unknown as Session, goalChange({ ...makeGoal('paused'), roundsStarted: 0 }, 'pause'))
+    expect(screen.paneLines()).toEqual([rule(78), `${TITLE} · ❚❚ paused · 0/8`, row('○', 'a')])
+    await dispose()
+  })
+
+  it('paints a blocked goal in error and adds the reason row, truncated to width', async () => {
+    resetSeq()
+    const agent = fakeAgent([
+      goalChange(makeGoal('blocked', { message: 'tests are red and the failure log is long' }), 'block'),
+      todoWrite([{ content: 'fix', status: 'in_progress' }]),
+    ])
+    const { screen, dispose } = await bootPanePlugin(todo, agent)
+    expect(screen.paneLines()).toEqual([
+      rule(78),
+      `${TITLE} · ✕ blocked · 2/8`,
+      '  blocked: tests are red and the failure log is long',
+      row(IN_PROGRESS, 'fix'),
+    ])
+
+    // The reason row honors the width budget like every other row (the mount
+    // layer's gutter column squeezes the child to width - 2).
+    const pane = screen.bottomChildren[0]!
+    const narrow = pane.render(20)
+    expect(narrow[2]?.includes('blocked:')).toBe(true)
+    for (const line of narrow) {
+      expect(line.replace(/\x1b\[[0-9;]*m/g, '').length).toBeLessThanOrEqual(20)
+    }
+    await dispose()
+  })
+
+  it('keeps the pane visible for a blocked goal without todos or a durable reason', async () => {
+    resetSeq()
+    const agent = fakeAgent([goalChange(makeGoal('blocked'), 'block')])
+    const { screen, dispose } = await bootPanePlugin(todo, agent)
+    expect(screen.paneLines()).toEqual([rule(78), `${TITLE} · ✕ blocked · 2/8`, '  blocked: '])
+    await dispose()
+  })
+
+  it('keeps the pane visible for a current goal without any todos', async () => {
+    resetSeq()
+    const agent = fakeAgent([goalChange(makeGoal('active'))])
+    const { ctx, screen, dispose } = await bootPanePlugin(todo, agent)
+    expect(screen.paneLines()).toEqual([rule(78), ACTIVE_TITLE])
+
+    // Clearing the goal with no list to show closes the pane again.
+    ctx.emit('session/event', agent.session as unknown as Session, goalClear())
+    expect(screen.paneLines()).toEqual([])
+    await dispose()
+  })
+
+  it('hides the badge when the goal completes and shows the next goal', async () => {
+    resetSeq()
+    const agent = fakeAgent([
+      goalChange(makeGoal('active')),
+      todoWrite([{ content: 'a', status: 'pending' }]),
+    ])
+    const { ctx, screen, dispose } = await bootPanePlugin(todo, agent)
+    expect(screen.paneLines()).toEqual([rule(78), ACTIVE_TITLE, row('○', 'a')])
+
+    ctx.emit('session/event', agent.session as unknown as Session, goalChange(makeGoal('complete'), 'complete'))
+    expect(screen.paneLines()).toEqual([rule(78), TITLE, row('○', 'a')])
+
+    ctx.emit('session/event', agent.session as unknown as Session, goalChange(makeGoal('active', { rounds: 5 })))
+    expect(screen.paneLines()).toEqual([rule(78), `${TITLE} · \x1b[1m● active\x1b[22m · 5/8`, row('○', 'a')])
+    await dispose()
+  })
+
+  it('clears the badge on a session change and ignores the stale session', async () => {
+    resetSeq()
+    const first = fakeAgent([
+      goalChange(makeGoal('active')),
+      todoWrite([{ content: 'first', status: 'pending' }]),
+    ])
+    const { ctx, screen, dispose } = await bootPanePlugin(todo, first)
+    expect(screen.paneLines()).toEqual([rule(78), ACTIVE_TITLE, row('○', 'first')])
+
+    resetSeq()
+    const second = fakeAgent([userEvent('fresh')])
+    ctx.emit('test/session-changed', asAgent(second))
+    expect(screen.paneLines()).toEqual([])
+
+    // A goal change on the stale session binds nothing and paints nothing.
+    const baseline = screen.renderRequests.length
+    ctx.emit('session/event', first.session as unknown as Session, goalChange(makeGoal('blocked', { message: 'ghost' }), 'block'))
+    expect(screen.paneLines()).toEqual([])
+    expect(screen.renderRequests.length).toBe(baseline)
+
+    // The new session's goal drives the badge, still without a todo list.
+    ctx.emit('session/event', second.session as unknown as Session, goalChange(makeGoal('paused')))
+    expect(screen.paneLines()).toEqual([rule(78), `${TITLE} · ❚❚ paused · 2/8`])
+    await dispose()
+  })
+
+  it('requests no redraw for a goal rewrite the signature cannot see', async () => {
+    resetSeq()
+    const agent = fakeAgent([
+      goalChange(makeGoal('active')),
+      todoWrite([{ content: 'a', status: 'pending' }]),
+    ])
+    const { ctx, screen, dispose } = await bootPanePlugin(todo, agent)
+    expect(screen.paneLines()).toEqual([rule(78), ACTIVE_TITLE, row('○', 'a')])
+
+    // An identical rewrite changes no signature and requests no redraw.
+    const baseline = screen.renderRequests.length
+    ctx.emit('session/event', agent.session as unknown as Session, goalChange(makeGoal('active'), 'edit'))
+    expect(screen.renderRequests.length).toBe(baseline)
+
+    // An admitted round advances the budget text and redraws.
+    ctx.emit('session/event', agent.session as unknown as Session, goalChange({ ...makeGoal('active'), roundsStarted: 3 }, 'edit'))
+    expect(screen.renderRequests.length).toBe(baseline + 1)
+    expect(screen.paneLines()).toEqual([rule(78), `${TITLE} · \x1b[1m● active\x1b[22m · 3/8`, row('○', 'a')])
     await dispose()
   })
 })

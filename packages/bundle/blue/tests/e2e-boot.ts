@@ -656,6 +656,32 @@ export const apply = ctx => {
   })
 }
 `)}`,
+    // The harness goal projection stand-in (the thin e2e tree boots no
+    // dsh-base): the `goal` projection key the todo pane's badge reads,
+    // folded from durable `goal/change` snapshots with the clear tombstone
+    // mapping to null — the real registry's wire view shape.
+    '- id: e2e-goal-projection',
+    `  name: ${fixture('e2e-goal-projection.mjs', `
+export const name = 'e2e-goal-projection'
+export const inject = ['sessionProjections']
+export const apply = ctx => {
+  const goalSchema = { parse: value => value ?? null }
+  ctx.sessionProjections.register({
+    key: 'goal',
+    stateSchema: goalSchema,
+    init: () => null,
+    apply: (state, event) => {
+      if (event.type !== 'goal/change') return state
+      const meta = event.data
+      return meta.operation === 'clear'
+        ? null
+        : { goal: meta.goal, roundsStarted: meta.roundsStarted, createdAt: meta.createdAt, updatedAt: meta.updatedAt }
+    },
+    wire: { viewSchema: goalSchema, view: state => state },
+    stateVersion: 1,
+  })
+}
+`)}`,
     '- id: blue-status-title',
     `  name: ${fixture('blue-status-title.mjs', `
 export const name = 'blue-status-title'

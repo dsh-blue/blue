@@ -24,7 +24,8 @@ singleton.
 readiness marker, then attaches to the current reader epoch and monotonic
 projection sequence. Session/key mismatches, stale replay, and post-unload work
 are rejected. `session-facts.ts` owns derived title/status/direct-child facts
-and clears them before notifying on a session generation change.
+plus the official `goal` projection value, and clears them before notifying on
+a session generation change.
 
 Read/search grouping happens at this projection-consumer layer, not in domain
 or core. Presenter vocabulary determines a read/search call; thinking is
@@ -55,7 +56,11 @@ yet expressible by canonical nodes; each adapter keeps a documented deletion
 condition in source and is clamped through core width truth. Activity's passive
 rotation teaches only stable commands/features; focus- or state-sensitive key
 guidance belongs to the active interaction surface. Todo's Ctrl-T hint remains
-pane-local because it describes that pane's hidden content.
+pane-local because it describes that pane's hidden content. The todo pane's
+title row also carries the current goal's badge — phase marker, phase name,
+and `roundsStarted/maxGoalRounds` from the `blueSessionFacts` goal bridge,
+with a blocked goal's reason on one extra row — and the badge alone keeps the
+pane visible when the todo list is empty.
 
 BTW owns one side-session handle for one pane lifetime, reads its official
 conversation projection through the opaque identity, and disposes on close or

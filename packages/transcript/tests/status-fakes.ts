@@ -15,6 +15,7 @@ import type {
   BlueScreen,
 } from '@dsh-blue/blue-core'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import type { GoalChangeMeta, GoalProjection } from '@deepseek-ai/dsh-goal'
 import { foldConversationFacts, initialConversationFacts, type ConversationFacts } from '../../conversation/src/facts.ts'
 import { projectChildSessionFacts, type ChildSessionFacts } from '../src/session-facts.ts'
 import { compileBlueStatusNode } from '../../core/src/ui-compiler.ts'
@@ -99,6 +100,18 @@ export interface FakeAgent {
   session: FakeSession
 }
 
+/**
+ * Reduce one durable `goal/change` payload to the `goal` projection value the
+ * real registry would publish: the clear tombstone maps to null, every
+ * snapshot change carries its own counters.
+ * @param meta - the durable goal change payload.
+ * @returns the projection value after the change.
+ */
+export function goalFromChange(meta: GoalChangeMeta): GoalProjection | null {
+  if (meta.operation === 'clear') return null
+  return { goal: meta.goal, roundsStarted: meta.roundsStarted, createdAt: meta.createdAt, updatedAt: meta.updatedAt }
+}
+
 /** Projection-shaped facts feed used by source-plane status/pane fixtures. */
 export class FakeFactsService {
   private agent: FakeAgent | null = null
@@ -106,8 +119,10 @@ export class FakeFactsService {
   private session: BlueSessionSnapshot | null = null
   private value: ConversationFacts = initialConversationFacts()
   private title: string | undefined
+  private goal: GoalProjection | null = null
   private readonly listeners = new Set<(facts: ConversationFacts) => void>()
   private readonly titleListeners = new Set<(title: string | undefined) => void>()
+  private readonly goalListeners = new Set<(goal: GoalProjection | null) => void>()
   private readonly sessionListeners = new Set<(session: BlueSessionSnapshot | null) => void>()
   private readonly childStates = new Map<string, { parentId: string, facts: ConversationFacts }>()
   private readonly childListeners = new Set<(facts: readonly ChildSessionFacts[]) => void>()
@@ -123,6 +138,10 @@ export class FakeFactsService {
         if (this.titleProjection && event.type === 'session/title') {
           this.title = event.data.title
           this.publishTitle()
+        }
+        if (event.type === 'goal/change') {
+          this.goal = goalFromChange(event.data)
+          this.publishGoal()
         }
         const next = foldConversationFacts(this.value, event)
         if (next !== this.value) this.value = next
@@ -157,6 +176,8 @@ export class FakeFactsService {
 
   get currentTitle(): string | undefined { return this.title }
 
+  get currentGoal(): GoalProjection | null { return this.goal }
+
   get currentSession(): BlueSessionSnapshot | null { return this.session }
 
   subscribe(listener: (facts: ConversationFacts) => void): () => void {
@@ -169,6 +190,12 @@ export class FakeFactsService {
     this.titleListeners.add(listener)
     listener(this.title)
     return () => this.titleListeners.delete(listener)
+  }
+
+  subscribeGoal(listener: (goal: GoalProjection | null) => void): () => void {
+    this.goalListeners.add(listener)
+    listener(this.goal)
+    return () => this.goalListeners.delete(listener)
   }
 
   subscribeSession(listener: (session: BlueSessionSnapshot | null) => void): () => void {
@@ -190,6 +217,8 @@ export class FakeFactsService {
     this.publishSession()
     const titleEvent = agent?.session.events.findLast((event): event is SessionEvent<'session/title'> => event.type === 'session/title')
     this.title = this.titleProjection ? titleEvent?.data.title : undefined
+    const goalEvent = agent?.session.events.findLast((event): event is SessionEvent<'goal/change'> => event.type === 'goal/change')
+    this.goal = goalEvent === undefined ? null : goalFromChange(goalEvent.data)
     this.value = agent === null ? initialConversationFacts() : agent.session.events.reduce(foldConversationFacts, {
       ...initialConversationFacts(),
       ...(agent.options?.provider === undefined ? {} : { provider: agent.options.provider }),
@@ -198,6 +227,7 @@ export class FakeFactsService {
     })
     this.publish()
     this.publishTitle()
+    this.publishGoal()
   }
 
   private snapshot(agent: FakeAgent | null): BlueSessionSnapshot | null {
@@ -221,6 +251,8 @@ export class FakeFactsService {
   private publish(): void { for (const listener of this.listeners) listener(this.value) }
 
   private publishTitle(): void { for (const listener of this.titleListeners) listener(this.title) }
+
+  private publishGoal(): void { for (const listener of this.goalListeners) listener(this.goal) }
 
   private publishSession(): void { for (const listener of this.sessionListeners) listener(this.session) }
 

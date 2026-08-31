@@ -28,9 +28,12 @@ import { createTranscriptModel, TranscriptModelComponent } from '../src/transcri
 import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import { BlueBottomPaneService } from '../src/dock-model.ts'
+import * as paneTodoPlugin from '../src/pane-todo.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
-import { fakeBlueComponents } from './helpers.ts'
-import { COLORS } from './status-fakes.ts'
+import { event, fakeBlueComponents } from './helpers.ts'
+import { bootPanePlugin } from './pane-fakes.ts'
+import { COLORS, fakeAgent } from './status-fakes.ts'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 import {
   interpolateLocaleMessage,
@@ -146,6 +149,33 @@ describe('transcript width-scan', () => {
         expectLinesFit(`BottomPaneAdapter/${name}`, component.render(width), width)
       }
       service.dispose()
+    })
+
+    it(`TodoPane goal badge survives ${name}`, async () => {
+      // The badge's new row shapes — the title suffix and the blocked-reason
+      // row — carry the fixture text through the real pane mount.
+      const agent = fakeAgent([
+        event('goal/change', {
+          kind: 'goal/change', version: 1, operation: 'block',
+          goal: {
+            id: 'scan-goal' as GoalProjection['goal']['id'],
+            revision: 3,
+            objective: text,
+            phase: 'blocked',
+            blockedReason: { code: 'scan', message: text },
+            maxGoalRounds: 8,
+          },
+          roundsStarted: 2, createdAt: 1000, updatedAt: 2000,
+        }),
+        event('todo/write', { todos: [{ content: text, status: 'in_progress' as const }] }),
+      ])
+      const { screen, dispose } = await bootPanePlugin(paneTodoPlugin, agent)
+      const component = screen.bottomChildren[0]
+      if (component === undefined) throw new Error('todo pane did not mount')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`TodoPaneGoalBadge/${name}`, component.render(width), width)
+      }
+      await dispose()
     })
 
     it(`UserMessageComponent survives ${name}`, () => {
