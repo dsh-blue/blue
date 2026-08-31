@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Pack and install the complete Blue ecosystem example suite, then exercise
- * eight public-export scenarios in one independent npm project.
+ * nine public-export scenarios in one independent npm project.
  *
  * @module script/blue-examples-fixture
  */
@@ -101,6 +101,7 @@ const packageDirs = [
   'examples/overlay',
   'examples/status-provider',
   'examples/editor-provider',
+  'examples/ui-gallery',
   'examples/blue-ecosystem',
 ]
 const pluginNames = [
@@ -110,6 +111,7 @@ const pluginNames = [
   '@dsh-blue-example/overlay',
   '@dsh-blue-example/status-provider',
   '@dsh-blue-example/editor-provider',
+  '@dsh-blue-example/ui-gallery',
 ]
 const expectedCapabilities = Object.freeze({
   '@dsh-blue-example/header': ['panes'],
@@ -118,6 +120,7 @@ const expectedCapabilities = Object.freeze({
   '@dsh-blue-example/overlay': ['commands', 'overlays'],
   '@dsh-blue-example/status-provider': ['status.provider'],
   '@dsh-blue-example/editor-provider': ['editor.provider'],
+  '@dsh-blue-example/ui-gallery': ['panes'],
 })
 
 try {
@@ -216,7 +219,7 @@ try {
   async function load(name) {
     return import(pathToFileURL(fixtureRequire.resolve(name)).href)
   }
-  const [blueHost, cordis, api, core, dark, kit, header, inspector, bottomLog, overlay, status, editor] = await Promise.all([
+  const [blueHost, cordis, api, core, dark, kit, header, inspector, bottomLog, overlay, status, editor, gallery] = await Promise.all([
     load('@dsh-blue/blue'),
     load('@deepseek-ai/cordis'),
     load('@dsh-blue/blue-api'),
@@ -229,6 +232,7 @@ try {
     load('@dsh-blue-example/overlay'),
     load('@dsh-blue-example/status-provider'),
     load('@dsh-blue-example/editor-provider'),
+    load('@dsh-blue-example/ui-gallery'),
   ])
 
   const compositionRoot = join(fixtureRoot, 'node_modules', '@dsh-blue-example', 'blue-ecosystem')
@@ -244,8 +248,8 @@ try {
   report.hostPeer = { name: '@dsh-blue/blue', declared: hostPeer, installed: hostManifest.version, packed: true }
   const composition = parseYaml(readFileSync(join(compositionRoot, 'cordis.patch.yml'), 'utf8'))
   const rows = composition.flatMap(entry => entry.insert ?? [])
-  ensure(rows.length === 6, 'EXAMPLES_COMPOSITION_ROWS', `composition has ${String(rows.length)} rows, expected 6`)
-  ensure(rows.map(row => row.name).join('\n') === pluginNames.join('\n'), 'EXAMPLES_COMPOSITION_ORDER', 'composition rows do not match the six plugin packages')
+  ensure(rows.length === 7, 'EXAMPLES_COMPOSITION_ROWS', `composition has ${String(rows.length)} rows, expected 7`)
+  ensure(rows.map(row => row.name).join('\n') === pluginNames.join('\n'), 'EXAMPLES_COMPOSITION_ORDER', 'composition rows do not match the seven plugin packages')
   for (const row of rows) {
     ensure(row.id === row.name, 'EXAMPLES_COMPOSITION_ID', `loader id/name mismatch for ${String(row.name)}`)
     const module = await load(row.name)
@@ -263,7 +267,7 @@ try {
     packedPluginManifests.set(name, manifest)
     report.pluginCapabilities[name] = manifest.capabilities
   }
-  report.observations.push({ scenario: 'composition.six-rows-resolve', rows: pluginNames })
+  report.observations.push({ scenario: 'composition.seven-rows-resolve', rows: pluginNames })
 
   const components = new core.BlueComponentsService(new cordis.Context(), { theme: { colors: dark.DARK_COLORS }, tui: {} })
   const widths = [20, 40, 80, 120]
@@ -353,6 +357,7 @@ try {
     ['header.pane-lifecycle', header, 'example.header.summary', 'header'],
     ['right-inspector.pane-lifecycle', inspector, 'example.inspector.context', 'right'],
     ['bottom-log.pane-lifecycle', bottomLog, 'example.log.recent', 'bottom'],
+    ['ui-gallery.pane-lifecycle', gallery, 'example.ui-gallery.showcase', 'right'],
   ]) {
     await scenario(scenarioName, async () => {
       const denied = world(['commands'])
@@ -539,7 +544,7 @@ try {
     recordFailure('fixture.cleanup', error, 'EXAMPLES_FIXTURE_CLEANUP_FAILED')
   }
   const valid = report.failures.length === 0 && report.skipped.length === 0
-    && report.declared.length === 8 && report.executed.length === 8
+    && report.declared.length === 9 && report.executed.length === 9
     && report.cleaned && report.fixtureCleaned
   console.log(JSON.stringify({ ...report, valid }, null, 2))
   process.exitCode = valid ? 0 : 1

@@ -21,6 +21,8 @@ const node = ui.surface({
 })
 ```
 
+![上述 builder 示例的渲染效果](/shots/uikit-builder.svg)
+
 Builder 的结果与手写 `BlueUiNode` 完全同形，并会递归克隆、深冻结调用方数据。
 普通 node 可直接传入 stack；只有 `grow`、`basis`、`minSize`、`when` 等 child
 layout metadata 才需要 `ui.child()`。
@@ -60,6 +62,8 @@ export const summaryMetric = defineBlueComponent<{
   }),
 })
 ```
+
+![上述 `summaryMetric` 组件的渲染效果](/shots/uikit-component.svg)
 
 `defineBlueComponent` 只校验组件 id、API range 与 render 函数，然后冻结每次
 render 的结果。它不注册自定义 node kind，也不绕过 core 的 schema、quota 与

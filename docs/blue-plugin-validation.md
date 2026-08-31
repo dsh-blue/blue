@@ -101,7 +101,7 @@ single-package fixture:
 pnpm check:examples
 ```
 
-It validates the user kit, six runnable plugins, and their composition bundle,
+It validates the user kit, seven runnable plugins, and their composition bundle,
 then packs the complete Blue host runtime dependency closure plus the full
 example closure into one independent npm project on Harness `0.1.2-alpha.2`.
 The composition's packed `@dsh-blue/blue` peer must be
@@ -109,12 +109,12 @@ an exact installed tarball version and resolve from a resolver rooted at the
 installed composition, including the host's public entry; a fixture-root
 import or `--legacy-peer-deps` is not evidence of peer closure.
 
-Acceptance requires the exact seven-scenario declared list to equal the
+Acceptance requires the exact nine-scenario declared list to equal the
 executed list, empty `skipped`/`failures`, recursively exact installed Harness
 versions, and both `cleaned` and `fixtureCleaned` set to `true`. The user kit
 has no plugin manifest or capability. Each runnable plugin's packed manifest
 must match its fixed expected capability list and its runtime `open()` request.
-All six consumers execute capability-absent and admitted paths; absent paths
+All seven consumers execute capability-absent and admitted paths; absent paths
 must leave no partial registration. The overlay path additionally proves that
 rejection for missing `overlays` does not consume its owner-minted gesture.
 

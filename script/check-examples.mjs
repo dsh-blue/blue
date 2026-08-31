@@ -9,6 +9,7 @@ const scenarios = [
   'header.pane-lifecycle',
   'right-inspector.pane-lifecycle',
   'bottom-log.pane-lifecycle',
+  'ui-gallery.pane-lifecycle',
   'overlay.gesture-and-late-containment',
   'status-provider.inert-candidate',
   'editor-provider.one-control-candidate',
@@ -21,6 +22,7 @@ const pluginCapabilities = {
   '@dsh-blue-example/overlay': ['commands', 'overlays'],
   '@dsh-blue-example/status-provider': ['status.provider'],
   '@dsh-blue-example/editor-provider': ['editor.provider'],
+  '@dsh-blue-example/ui-gallery': ['panes'],
 }
 
 function fixtureReport(line) {

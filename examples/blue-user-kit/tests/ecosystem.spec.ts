@@ -19,6 +19,7 @@ import { apply as applyHeader } from '../../header/src/index.ts'
 import { apply as applyOverlay } from '../../overlay/src/index.ts'
 import { apply as applyInspector } from '../../right-inspector/src/index.ts'
 import { apply as applyStatusProvider, statusProvider } from '../../status-provider/src/index.ts'
+import { apply as applyUiGallery } from '../../ui-gallery/src/index.ts'
 import { summaryMetric } from '../src/index.ts'
 
 class Scope {
@@ -73,6 +74,7 @@ function applyAll(scope: Scope): void {
   applyOverlay(ctx)
   applyStatusProvider(ctx)
   applyEditorProvider(ctx)
+  applyUiGallery(ctx)
 }
 
 describe('shared user kit', () => {
@@ -98,7 +100,7 @@ describe('plugin capabilities and lifecycle', () => {
     consumer.dispose()
   })
 
-  it('registers six opt-in examples and removes every contribution on Fiber unload', () => {
+  it('registers seven opt-in examples and removes every contribution on Fiber unload', () => {
     const { lease, consumer } = world()
     applyAll(consumer)
     const current = snapshot(lease)
@@ -106,6 +108,7 @@ describe('plugin capabilities and lifecycle', () => {
       ['example.header.summary', 'header'],
       ['example.inspector.context', 'right'],
       ['example.log.recent', 'bottom'],
+      ['example.ui-gallery.showcase', 'right'],
     ])
     expect(current.commands.map(entry => entry.id)).toEqual(['example-overlay'])
     expect(current.statusProviders.map(entry => entry.id)).toEqual(['example.status.compact'])
@@ -166,9 +169,9 @@ describe('plugin capabilities and lifecycle', () => {
     expect(JSON.stringify(plan).match(/editor-control/gu)).toHaveLength(1)
   })
 
-  it('ships a six-row opt-in composition and keeps its empty module Fiber-owned', () => {
+  it('ships a seven-row opt-in composition and keeps its empty module Fiber-owned', () => {
     const patch = readFileSync(join(import.meta.dirname, '..', '..', 'blue-ecosystem', 'cordis.patch.yml'), 'utf8')
-    expect(patch.match(/^\s+- id: '@dsh-blue-example\//gmu)).toHaveLength(6)
+    expect(patch.match(/^\s+- id: '@dsh-blue-example\//gmu)).toHaveLength(7)
     const { consumer } = world()
     applyBundle(consumer as unknown as Context)
     consumer.dispose()

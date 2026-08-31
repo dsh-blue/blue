@@ -24,6 +24,7 @@
     { "path": "examples/overlay" },
     { "path": "examples/status-provider" },
     { "path": "examples/editor-provider" },
+    { "path": "examples/ui-gallery" },
     { "path": "examples/blue-ecosystem" }
   ]
 }
