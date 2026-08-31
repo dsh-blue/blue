@@ -45,6 +45,7 @@ export const ECOSYSTEM_PACKAGE_DIRS = [
   'examples/overlay',
   'examples/status-provider',
   'examples/editor-provider',
+  'examples/ui-gallery',
   'examples/blue-ecosystem',
 ]
 

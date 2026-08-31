@@ -22,6 +22,8 @@ const node = ui.surface({
 })
 ```
 
+![Rendered result of the builder example above](/shots/uikit-builder.svg)
+
 Builder results have exactly the handwritten `BlueUiNode` wire shape. Caller
 data is recursively cloned and deeply frozen. Plain nodes can enter a stack
 directly; use `ui.child()` only for child layout metadata such as `grow`,
@@ -63,6 +65,8 @@ export const summaryMetric = defineBlueComponent<{
   }),
 })
 ```
+
+![Rendered result of the `summaryMetric` component above](/shots/uikit-component.svg)
 
 `defineBlueComponent` validates only component id, API range, and render
 function, then freezes each render result. It does not register custom node

@@ -1,5 +1,5 @@
 /**
- * Canonical compiler width scans for the shared kit and all six examples.
+ * Canonical compiler width scans for the shared kit and all seven examples.
  *
  * @module @dsh-blue-example/user-kit/tests/width-scan
  */
@@ -23,6 +23,7 @@ import { apply as applyHeader } from '../../header/src/index.ts'
 import { overlayRequest } from '../../overlay/src/index.ts'
 import { apply as applyInspector } from '../../right-inspector/src/index.ts'
 import { statusProvider } from '../../status-provider/src/index.ts'
+import { apply as applyUiGallery } from '../../ui-gallery/src/index.ts'
 import { summaryMetric } from '../src/index.ts'
 
 class Scope {
@@ -60,6 +61,7 @@ describe('example width contracts', () => {
     applyHeader(ctx)
     applyInspector(ctx)
     applyBottomLog(ctx)
+    applyUiGallery(ctx)
     const current = lease.snapshot()
     expect(current.ok).toBe(true)
     if (!current.ok) throw new Error(current.message)

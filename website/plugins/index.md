@@ -77,7 +77,7 @@ generic `session.act` 已移除；写操作使用所属 Harness service 或 feat
 
 - [快速开始](/plugins/quickstart) —— 十分钟从零跑通一个插件：包骨架、manifest、安装、验证、卸载；
 - [核心概念](/plugins/concepts) —— Cordis 树与 Fiber 生命周期、capability 裁剪、canonical node 词汇表、`BlueResult` 错误码、domain/adapter 拆分；
-- [公共 UI Kit](/plugins/ui-kit)、[UI 节点参考](/plugins/ui-reference)与[示例目录](/plugins/examples) —— 纯 builder、逐字段契约、共享组件和六个打包示例。
+- [公共 UI Kit](/plugins/ui-kit)、[UI 节点参考](/plugins/ui-reference)与[示例目录](/plugins/examples) —— 纯 builder、逐字段契约、共享组件和七个打包示例。
 
 **贡献能力** —— 每个能力一页：契约表、完整示例、行为细节与常见错误。
 
