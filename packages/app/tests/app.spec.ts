@@ -1565,3 +1565,398 @@ describe('exit epitaph (D47)', () => {
     )
   })
 })
+
+/** One manually resolved promise for mid-flight session switches. */
+function deferred<T>(): { promise: Promise<T>, resolve: (value: T) => void, reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+/** One host descendant-listing row (the fields the app boundary re-owns). */
+function hostChildRow(id: string, depth: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: 'child',
+    id,
+    parentId: extra['parentId'] ?? (depth === 1 ? 'agent-1' : 'parent'),
+    depth,
+    activity: 'inactive',
+    hasChildren: false,
+    mode: 'continuable',
+    label: `label-${id}`,
+    ...extra,
+  }
+}
+
+/** A live store session fake with a subagent header. */
+function storeSession(id: string, parentSession = 'agent-1'): Record<string, unknown> {
+  return { id, header: { origin: 'subagent', parentSession } }
+}
+
+describe('blue app subagent boundary', () => {
+  it('lists the subagent tree with live projection metrics and without a store', async () => {
+    const child = storeSession('child-1')
+    const nested = storeSession('child-2', 'child-1')
+    const bare = storeSession('child-bare')
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', {
+          listDescendants: vi.fn(async (root: string) => {
+            expect(root).toBe('agent-1')
+            return [
+              hostChildRow('child-1', 1, { activity: 'running', hasChildren: true }),
+              hostChildRow('child-2', 2, { parentId: 'child-1', mode: 'one-shot', label: undefined }),
+              { kind: 'diagnostic', id: 'child-3', parentId: 'agent-1', depth: 1, reason: 'corrupt' },
+              hostChildRow('child-bare', 1),
+              hostChildRow('child-cold', 1),
+            ]
+          }),
+        } as never)
+        ctx.provide('sessions', { list: () => [child, nested, bare, { id: 5, header: { origin: 'subagent' } }, { id: 'plain', header: {} }], flush: async () => {} } as never)
+        ctx.provide('sessionProjections', {
+          snapshot: (session: unknown) => session === child
+            ? { asOfSeq: 9, values: { blueConversationFacts: { epochTokens: 1234 }, subagentTiming: { settledMs: 4200, active: { since: 1000, through: 2000 } } } }
+            : session === nested
+              ? { asOfSeq: 2, values: { blueConversationFacts: { epochTokens: 7 }, subagentTiming: { settledMs: 5 } } }
+              : { asOfSeq: 0, values: {} },
+          onChanged: () => vi.fn(),
+        } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const result = await test.ctx.blueSessionActions.subagentTree()
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        {
+          kind: 'child', id: 'child-1', parentId: 'agent-1', depth: 1,
+          activity: 'running', hasChildren: true, mode: 'continuable', label: 'label-child-1',
+          tokens: 1234, settledMs: 4200, activeSince: 1000,
+        },
+        {
+          kind: 'child', id: 'child-2', parentId: 'child-1', depth: 2,
+          activity: 'inactive', hasChildren: false, mode: 'one-shot',
+          tokens: 7, settledMs: 5,
+        },
+        { kind: 'diagnostic', id: 'child-3', parentId: 'agent-1', depth: 1, reason: 'corrupt' },
+        // A live session without conversation projections enriches to nothing.
+        {
+          kind: 'child', id: 'child-bare', parentId: 'agent-1', depth: 1,
+          activity: 'inactive', hasChildren: false, mode: 'continuable', label: 'label-child-bare',
+        },
+        {
+          kind: 'child', id: 'child-cold', parentId: 'agent-1', depth: 1,
+          activity: 'inactive', hasChildren: false, mode: 'continuable', label: 'label-child-cold',
+        },
+      ],
+    })
+    expect(Object.isFrozen(result.ok === true ? result.value : [])).toBe(true)
+
+    // Without the session store every row degrades to the listed facts alone.
+    const storeless = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-1', 1)]) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(storeless.current()).not.toBeNull() })
+    await expect(storeless.ctx.blueSessionActions.subagentTree()).resolves.toEqual({
+      ok: true,
+      value: [{
+        kind: 'child', id: 'child-1', parentId: 'agent-1', depth: 1,
+        activity: 'inactive', hasChildren: false, mode: 'continuable', label: 'label-child-1',
+      }],
+    })
+    await test.ctx.fiber.dispose()
+    await storeless.ctx.fiber.dispose()
+  })
+
+  it('keeps subagent tree failures, absence, and stale switches inside the boundary', async () => {
+    const unavailable = bench({}, { createError: new Error('startup failed') })
+    await vi.waitFor(() => { expect(unavailable.exits).toEqual([1]) })
+    await expect(unavailable.ctx.blueSessionActions.subagentTree()).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
+    await expect(unavailable.ctx.blueSessionActions.childFollowup('c', [])).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
+    expect(unavailable.ctx.blueSessionActions.interruptChild('c')).toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
+    await expect(unavailable.ctx.blueSessionProjections.childCut('c', ['k'])).resolves.toMatchObject({ code: 'BLUE_SESSION_UNAVAILABLE' })
+    await unavailable.ctx.fiber.dispose()
+
+    const absent = bench({})
+    await vi.waitFor(() => { expect(absent.current()).not.toBeNull() })
+    await expect(absent.ctx.blueSessionActions.subagentTree()).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' })
+    await expect(absent.ctx.blueSessionActions.childFollowup('c', [])).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' })
+    expect(absent.ctx.blueSessionActions.interruptChild('c')).toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' })
+    await expect(absent.ctx.blueSessionProjections.childCut('c', ['k'])).resolves.toMatchObject({ code: 'BLUE_CAPABILITY_ABSENT' })
+    await absent.ctx.fiber.dispose()
+
+    const failing = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => { throw new Error('store down') }) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(failing.current()).not.toBeNull() })
+    await expect(failing.ctx.blueSessionActions.subagentTree()).resolves
+      .toEqual({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'store down' })
+    await expect(failing.ctx.blueSessionProjections.childCut('c', ['k'])).resolves
+      .toEqual({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'store down' })
+    await failing.ctx.fiber.dispose()
+
+    // A session switch landing mid-listing aborts the result instead of
+    // publishing a tree the new session never owned.
+    const pending = deferred<Record<string, unknown>[]>()
+    const stale = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(() => pending.promise) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(stale.current()).not.toBeNull() })
+    const treePromise = stale.ctx.blueSessionActions.subagentTree()
+    const cutPromise = stale.ctx.blueSessionProjections.childCut('child-1', ['k'])
+    stale.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(stale.current()?.id).toBe('agent-2') })
+    pending.resolve([hostChildRow('child-1', 1)])
+    await expect(treePromise).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    await expect(cutPromise).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    await stale.ctx.fiber.dispose()
+  })
+
+  it('reads a live child cut by key and rejects ids outside the tree', async () => {
+    const child = storeSession('child-1')
+    const bare = storeSession('child-2')
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', {
+          listDescendants: vi.fn(async () => [hostChildRow('child-1', 1), hostChildRow('child-2', 1)]),
+        } as never)
+        ctx.provide('sessions', { list: () => [child, bare], flush: async () => {} } as never)
+        ctx.provide('sessionProjections', {
+          snapshot: (session: unknown) => session === child
+            ? { asOfSeq: 6, values: { blueConversation: { entries: ['a'] }, other: 1, gap: undefined } }
+            : { asOfSeq: 1, values: {} },
+          onChanged: () => vi.fn(),
+        } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const projections = test.ctx.blueSessionProjections
+    await expect(projections.childCut('child-1', ['blueConversation', 'missing', 'gap'])).resolves.toEqual({
+      ok: true,
+      value: { id: 'child-1', live: true, asOfSeq: 6, values: { blueConversation: { entries: ['a'] }, gap: undefined } },
+    })
+    // A live child with an empty registry cut still answers, with no keys.
+    await expect(projections.childCut('child-2', ['blueConversation'])).resolves.toEqual({
+      ok: true,
+      value: { id: 'child-2', live: true, asOfSeq: 1, values: {} },
+    })
+    await expect(projections.childCut('stranger', ['k'])).resolves.toMatchObject({
+      code: 'BLUE_ACTION_REJECTED',
+      message: "session stranger is not in the current session's subagent tree",
+    })
+    await test.ctx.fiber.dispose()
+
+    // Without the projection registry a live cut degrades to empty values.
+    const registryLess = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-1', 1)]) } as never)
+        ctx.provide('sessions', { list: () => [storeSession('child-1')], flush: async () => {} } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(registryLess.current()).not.toBeNull() })
+    await expect(registryLess.ctx.blueSessionProjections.childCut('child-1', ['k'])).resolves.toEqual({
+      ok: true,
+      value: { id: 'child-1', live: true, asOfSeq: -1, values: {} },
+    })
+    await registryLess.ctx.fiber.dispose()
+  })
+
+  it('observes a cold child read-only and disposes the lease on every path', async () => {
+    const dispose = vi.fn()
+    const observeSession = vi.fn(async (id: string, options: Record<string, unknown>) => {
+      expect(id).toBe('child-cold')
+      expect(options['projectionMode']).toBe('all')
+      return {
+        projections: { asOfSeq: 12, values: { blueConversation: { entries: ['x'] }, other: 2 } },
+        [Symbol.dispose]: dispose,
+      }
+    })
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-cold', 1)]) } as never)
+        ctx.provide('sessions', { list: () => [], flush: async () => {} } as never)
+        ctx.provide('sessionQuery', { observeSession } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const signal = new AbortController().signal
+    await expect(test.ctx.blueSessionProjections.childCut('child-cold', ['blueConversation', 'missing'], signal)).resolves.toEqual({
+      ok: true,
+      value: { id: 'child-cold', live: false, asOfSeq: 12, values: { blueConversation: { entries: ['x'] } } },
+    })
+    expect(observeSession.mock.calls[0]![1]).toMatchObject({ signal })
+    expect(dispose).toHaveBeenCalledOnce()
+
+    // An observation without a projection cut degrades to an empty value set.
+    const noProjection = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-cold', 1)]) } as never)
+        ctx.provide('sessions', { list: () => [], flush: async () => {} } as never)
+        ctx.provide('sessionQuery', { observeSession: vi.fn(async () => ({ [Symbol.dispose]: dispose })) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(noProjection.current()).not.toBeNull() })
+    await expect(noProjection.ctx.blueSessionProjections.childCut('child-cold', ['k'])).resolves.toEqual({
+      ok: true,
+      value: { id: 'child-cold', live: false, asOfSeq: -1, values: {} },
+    })
+    await noProjection.ctx.fiber.dispose()
+
+    // No session-query seam: the cold read is an explicit capability absence.
+    const queryLess = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-cold', 1)]) } as never)
+        ctx.provide('sessions', { list: () => [], flush: async () => {} } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(queryLess.current()).not.toBeNull() })
+    await expect(queryLess.ctx.blueSessionProjections.childCut('child-cold', ['k'])).resolves.toMatchObject({
+      code: 'BLUE_CAPABILITY_ABSENT',
+      message: 'the child session is not live and the host composes no session query service',
+    })
+    await queryLess.ctx.fiber.dispose()
+
+    // Observation failures and mid-read session switches stay structured.
+    const failing = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-cold', 1)]) } as never)
+        ctx.provide('sessions', { list: () => [], flush: async () => {} } as never)
+        ctx.provide('sessionQuery', { observeSession: vi.fn(async () => { throw new Error('log corrupt') }) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(failing.current()).not.toBeNull() })
+    await expect(failing.ctx.blueSessionProjections.childCut('child-cold', ['k'])).resolves
+      .toEqual({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'log corrupt' })
+    await failing.ctx.fiber.dispose()
+
+    const pending = deferred<Record<string, unknown>>()
+    const staleDispose = vi.fn()
+    const stale = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { listDescendants: vi.fn(async () => [hostChildRow('child-cold', 1)]) } as never)
+        ctx.provide('sessions', { list: () => [], flush: async () => {} } as never)
+        ctx.provide('sessionQuery', { observeSession: vi.fn(() => pending.promise) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(stale.current()).not.toBeNull() })
+    const cut = stale.ctx.blueSessionProjections.childCut('child-cold', ['k'])
+    stale.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(stale.current()?.id).toBe('agent-2') })
+    pending.resolve({ projections: { asOfSeq: 1, values: {} }, [Symbol.dispose]: staleDispose })
+    await expect(cut).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    expect(staleDispose).toHaveBeenCalledOnce()
+    await stale.ctx.fiber.dispose()
+  })
+
+  it('delivers child follow-ups through the live parent and maps host rejections', async () => {
+    const followup = vi.fn(async () => 'msg-1')
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { followup } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const parent = test.current()!
+    const signal = new AbortController().signal
+    await expect(test.ctx.blueSessionActions.childFollowup('child-1', [{ type: 'text', text: 'keep digging' }], signal))
+      .resolves.toEqual({ ok: true, value: { messageId: 'msg-1' } })
+    expect(followup).toHaveBeenCalledWith(parent, 'child-1', [{ type: 'text', text: 'keep digging' }], {
+      source: { kind: 'user' },
+      signal,
+    })
+
+    // The default-signal arm mints a caller-owned controller.
+    await test.ctx.blueSessionActions.childFollowup('child-1', [])
+    expect(followup.mock.calls[1]![3]).toMatchObject({ source: { kind: 'user' }, signal: expect.any(AbortSignal) })
+
+    followup.mockRejectedValueOnce(new Error('not resumable'))
+    await expect(test.ctx.blueSessionActions.childFollowup('child-1', [])).resolves
+      .toEqual({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'not resumable' })
+    await test.ctx.fiber.dispose()
+
+    // A session switch while the delivery is in flight aborts the receipt.
+    const pending = deferred<string>()
+    const stale = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { followup: vi.fn(() => pending.promise) } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(stale.current()).not.toBeNull() })
+    const receipt = stale.ctx.blueSessionActions.childFollowup('child-1', [])
+    stale.ctx.emit('blue/request-new')
+    await vi.waitFor(() => { expect(stale.current()?.id).toBe('agent-2') })
+    pending.resolve('msg-late')
+    await expect(receipt).resolves.toMatchObject({ code: 'BLUE_ABORTED' })
+    await stale.ctx.fiber.dispose()
+  })
+
+  it('interrupts a child under exact-ancestor authority and maps host rejections', async () => {
+    const interrupt = vi.fn()
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('subagents', { interrupt } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const parent = test.current()!
+    expect(test.ctx.blueSessionActions.interruptChild('child-1')).toEqual({ ok: true, value: undefined })
+    expect(interrupt).toHaveBeenCalledWith('child-1', { kind: 'ancestor', agent: parent })
+
+    interrupt.mockImplementationOnce(() => { throw new Error('unauthorized') })
+    expect(test.ctx.blueSessionActions.interruptChild('child-1'))
+      .toEqual({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'unauthorized' })
+    await test.ctx.fiber.dispose()
+  })
+
+  it('fans live child projection changes out to targeted subscribers only', async () => {
+    let changed: ((session: unknown, key: string, value: unknown, seq: number) => void) | undefined
+    const direct = storeSession('child-1')
+    const grandchild = storeSession('child-2', 'child-1')
+    const test = bench({}, {
+      setupContext(ctx) {
+        ctx.provide('sessionProjections', {
+          snapshot: () => ({ asOfSeq: 0, values: {} }),
+          onChanged: (listener: typeof changed) => { changed = listener; return vi.fn() },
+        } as never)
+        ctx.provide('sessions', { list: () => [direct, grandchild], flush: async () => {} } as never)
+      },
+    })
+    await vi.waitFor(() => { expect(test.current()).not.toBeNull() })
+    const projections = test.ctx.blueSessionProjections
+    const first: unknown[] = []
+    const second: unknown[] = []
+    const offFirst = projections.subscribeChild('child-1', (...args) => { first.push(args) })
+    projections.subscribeChild('child-1', (...args) => { first.push(['second-listener', ...args]) })
+    const offSecond = projections.subscribeChild('child-2', (...args) => { second.push(args) })
+
+    // A direct child also keeps the existing subscribeChildren fan-out.
+    const broad: unknown[] = []
+    projections.subscribeChildren(child => { broad.push(child) })
+    changed?.(direct, 'blueConversation', 'v1', 3)
+    // A grandchild reaches only its targeted subscribers.
+    changed?.(grandchild, 'blueConversation', 'v2', 4)
+    // An unknown session reaches nobody.
+    changed?.({ id: 'stray' }, 'blueConversation', 'v3', 5)
+    expect(first).toEqual([['blueConversation', 'v1', 3], ['second-listener', 'blueConversation', 'v1', 3]])
+    expect(second).toEqual([['blueConversation', 'v2', 4]])
+    expect(broad).toEqual([{ id: 'child-1', key: 'blueConversation', value: 'v1', asOfSeq: 3 }])
+
+    offFirst()
+    offFirst()
+    changed?.(direct, 'blueConversation', 'v4', 6)
+    expect(first).toHaveLength(3)
+    offSecond()
+    // Once the bucket is gone a repeated unsubscribe is a silent no-op.
+    offSecond()
+    changed?.(grandchild, 'blueConversation', 'v5', 7)
+    expect(second).toHaveLength(1)
+    await test.ctx.fiber.dispose()
+  })
+})

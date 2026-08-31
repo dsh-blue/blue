@@ -30,7 +30,7 @@ Baseline owns the public API host, locale, core/theme, banner, conversation
 projection, transcript model/status owners, and official transcript consumer.
 Enhancement rows add editor/attachment helpers, status producers, Blue-owned
 bottom panes, public status bridge, and the reference status-provider owner.
-Assembly owns interaction, the editor-provider owner, public interaction
+Assembly owns interaction, the child-attach view owner, the editor-provider owner, public interaction
 bridge, startup/app, and the app-owned public session bridge. The latter waits
 for API control plus app reader/projection sources before exposing readonly
 `session.read` and `session.projections.read`; generic public `session.act`

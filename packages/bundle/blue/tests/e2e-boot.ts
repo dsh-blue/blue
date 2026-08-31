@@ -55,6 +55,7 @@ import { startBlueTerminal} from '../../../core/src/terminal.ts'
 import { mountPluginSurfaceBridge} from '../../../core/src/plugin-surface-bridge.ts'
 import { FakeTerminal} from '../../../core/tests/fake-terminal.ts'
 import * as interactionPlugin from '../../../interaction/src/index.ts'
+import * as attachViewPlugin from '../../../interaction/src/attach-view.ts'
 import * as contextPlugin from '../../../context/src/index.ts'
 import * as conversationPlugin from '../../../conversation/src/index.ts'
 import * as editorPlusPlugin from '../../../interaction/src/editor-plus.ts'
@@ -190,6 +191,7 @@ export const CREATIVE_BLUE_INTERNAL_SERVICES = [
   'blueContextFeature',
   'blueConversationProjection',
   'blueBottomPanes',
+  'blueChildAttach',
   'blueEditorHost',
   'blueEditorModels',
   'blueHarnessActionAdapter',
@@ -265,6 +267,7 @@ interface BlueE2EHooks {
   statusProviderOwnerApply: typeof statusProviderOwnerPlugin.apply
   editorProviderOwnerApply: typeof editorProviderOwnerPlugin.apply
   interactionApply: typeof interactionPlugin.apply
+  attachViewApply: typeof attachViewPlugin.apply
   interactionBridgeApply: typeof interactionBridgePlugin.apply
   editorPlusApply: typeof editorPlusPlugin.apply
   attachmentsApply: typeof attachmentsPlugin.apply
@@ -299,6 +302,8 @@ export async function bootBlue(argv: string[], options: {
   creativePersonaOnly?: boolean
   /** Omit the public view bridge while retaining the rest of the composition. */
   viewBridge?: boolean
+  /** Omit the child-attach view row to exercise the capability-absent /agents notice. */
+  attachView?: boolean
   persistenceRoot?: string
   footerExtra?: string
   contextWindow?: number
@@ -481,6 +486,7 @@ export async function bootBlue(argv: string[], options: {
     statusProviderOwnerApply: statusProviderOwnerPlugin.apply,
     editorProviderOwnerApply: editorProviderOwnerPlugin.apply,
     interactionApply: interactionPlugin.apply,
+    attachViewApply: attachViewPlugin.apply,
     interactionBridgeApply: interactionBridgePlugin.apply,
     editorPlusApply: editorPlusPlugin.apply,
     attachmentsApply: attachmentsPlugin.apply,
@@ -749,6 +755,17 @@ export const name = 'blue-interaction'
 export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
 export const apply = ctx => globalThis.__blueE2E.interactionApply(ctx)
 `)}`,
+    // The attach-view row mirrors cordis.patch.yml's assembly placement (the
+    // /agents Enter target); `attachView: false` drops it to exercise the
+    // capability-absent notice path.
+    ...(options.attachView === false ? [] : [
+      '- id: blue-attach-view',
+      `  name: ${fixture('blue-attach-view.mjs', `
+export const name = 'blue-attach-view'
+export const inject = ['blueSessionReader', 'blueSessionProjections', 'blueSessionActions', 'blueEditorHost']
+export const apply = ctx => globalThis.__blueE2E.attachViewApply(ctx)
+`)}`,
+    ]),
     '- id: blue-editor-provider-owner',
     `  name: ${fixture('blue-editor-provider-owner.mjs', `
 export const name = 'blue-editor-provider-owner'

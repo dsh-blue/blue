@@ -25,6 +25,9 @@
       "path": "../app"
     },
     {
+      "path": "../conversation"
+    },
+    {
       "path": "../transcript"
     }
   ]

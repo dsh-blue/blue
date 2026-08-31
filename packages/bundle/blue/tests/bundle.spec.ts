@@ -98,6 +98,7 @@ describe('blue bundle', () => {
       'blue-plugin-view-bridge',
       'blue-status-provider-owner',
       'blue-interaction',
+      'blue-attach-view',
       'blue-editor-provider-owner',
       'blue-plugin-interaction-bridge',
       'blue-startup',
@@ -118,6 +119,7 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/plugin-host-bridge'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/status-provider-owner'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/editor-provider-owner'")
+    expect(patch).toContain("name: '@dsh-blue/blue-interaction/attach-view'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
     expect(patch).toContain("name: '@dsh-blue/blue-app/plugin-host-session-bridge'")
     expect(patch).toMatch(/- id: blue-app[\s\S]*?- id: blue-plugin-session-bridge\n\s+name: '@dsh-blue\/blue-app\/plugin-host-session-bridge'\n\s+inject: \[bluePluginControl, blueSessionReader, blueSessionProjections\]/u)

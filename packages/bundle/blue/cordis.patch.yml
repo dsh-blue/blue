@@ -166,6 +166,7 @@
         blueContextFeature: true
         blueConversationProjection: true
         blueBottomPanes: true
+        blueChildAttach: true
         blueEditorHost: true
         blueEditorModels: true
         blueHarnessActionAdapter: true
@@ -424,6 +425,15 @@
         # answerer.
         - id: blue-interaction
           name: '@dsh-blue/blue-interaction'
+
+        # Child-session attach view (the /agents Enter target): the
+        # blueChildAttach owner swaps the editor slot for a framed panel over
+        # one subagent-tree member's official projections — read-only for a
+        # one-shot child, follow-up input plus Ctrl+C interrupt for a
+        # continuable one. The module inject waits for the interaction tree's
+        # editor host, so row order against blue-interaction does not matter.
+        - id: blue-attach-view
+          name: '@dsh-blue/blue-interaction/attach-view'
 
         # Exclusive editor-provider owner: candidates remain inert until the
         # persisted blue.editorProvider id selects one. The owner waits for the

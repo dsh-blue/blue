@@ -210,6 +210,18 @@ const zh: Readonly<Record<string, string>> = {
   '… output truncated': '… 输出已截断',
   'exit code {code}': '退出码 {code}',
   'no matching files under the session cwd': '会话工作目录下没有匹配文件',
+  'Subagents': '子代理',
+  'no subagents in this session': '本会话没有子代理',
+  'Enter attach · Space expand · Esc close': '回车 attach · 空格展开 · Esc 关闭',
+  'the attach view is unavailable: the blue-attach-view plugin is not mounted': 'attach 视图不可用：blue-attach-view 插件未挂载',
+  'Subagent': '子代理',
+  'running': '运行中',
+  'idle': '空闲',
+  'Say to this subagent…': '对这个子代理说…',
+  'one-shot subagent — read-only': '一次性子代理 — 只读',
+  'Enter follow up · Ctrl+C interrupt · q back': '回车追问 · Ctrl+C 中断 · q 返回',
+  'q back': 'q 返回',
+  'attach view is unavailable: the Blue screen is not mounted': 'attach 视图不可用：Blue 屏幕尚未挂载',
 }
 
 const en = Object.freeze(Object.fromEntries(Object.keys(zh).map(key => [key, key])))

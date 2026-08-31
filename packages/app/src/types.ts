@@ -148,6 +148,48 @@ export interface BlueChildSessionProjectionSnapshot {
   readonly value: unknown
 }
 
+/**
+ * One consistent readonly projection cut for one member of the active
+ * session's subagent tree, addressed by (current session, child id) — never
+ * by switching the current session. A cold (persisted-only) child is observed
+ * read-only through the optional session-query seam without resuming an
+ * Agent; `live` tells the consumer whether `subscribeChild` pushes can flow.
+ */
+export interface BlueChildProjectionCut {
+  readonly id: string
+  /** Whether the child session is resident in the live session store. */
+  readonly live: boolean
+  readonly asOfSeq: number
+  readonly values: Readonly<Record<string, unknown>>
+}
+
+/**
+ * One renderer-neutral row of the active session's subagent tree (stable
+ * pre-order; `depth` counts edges from the current session). Token and timing
+ * metrics ride along only while the child is resident and the host folds the
+ * conversation-facts and subagent-timing projections; a cold row omits them.
+ */
+export type BlueSubagentTreeEntry = {
+  readonly kind: 'child'
+  readonly id: string
+  readonly parentId: string
+  readonly depth: number
+  readonly activity: 'running' | 'inactive'
+  readonly hasChildren: boolean
+  readonly mode: 'one-shot' | 'continuable'
+  readonly label?: string | undefined
+  readonly tokens?: number | undefined
+  readonly settledMs?: number | undefined
+  /** Open-turn start of a resident child, while one is running. */
+  readonly activeSince?: number | undefined
+} | {
+  readonly kind: 'diagnostic'
+  readonly id: string
+  readonly parentId: string
+  readonly depth: number
+  readonly reason: 'corrupt' | 'unsupported' | 'unavailable'
+}
+
 /** The presenter hooks a resolved tool definition may carry (host face, structural). */
 export interface BlueToolPresenterHost {
   readonly presentCall?: (args: unknown) => unknown
@@ -181,6 +223,19 @@ export interface BlueSessionProjectionReader {
   children(key: string): readonly BlueChildSessionProjectionSnapshot[]
   /** Subscribe to projection changes from direct subagent children of the active session. */
   subscribeChildren(listener: (child: BlueChildSessionProjectionSnapshot & { readonly key: string }) => void): () => void
+  /**
+   * Read one consistent projection cut for one member of the active session's
+   * subagent tree. The host's own descendant listing is the authority check;
+   * a live child answers from the projection registry, a settled or cold
+   * child from a read-only session observation (no Agent is resumed).
+   */
+  childCut(childId: string, keys: readonly string[], signal?: AbortSignal): Promise<BlueResult<BlueChildProjectionCut>>
+  /**
+   * Subscribe to live projection changes of one subagent-tree member. The
+   * listener fires only while that child session is resident in the store;
+   * pair it with `childCut` for the initial (possibly cold) value.
+   */
+  subscribeChild(childId: string, listener: (key: string, value: unknown, seq: number) => void): () => void
 }
 
 /** Renderer-neutral command descriptor projected for discovery surfaces. */
@@ -225,6 +280,23 @@ export interface BlueSessionActions {
   steer(blocks: readonly BluePromptBlock[]): BlueResult<BluePromptReceipt>
   /** Interrupt the current request and any running continuable descendants. */
   interrupt(): BlueResult
+  /**
+   * List the active session's complete subagent tree in stable pre-order.
+   * The current session stays committed; the tree is addressed from it.
+   */
+  subagentTree(signal?: AbortSignal): Promise<BlueResult<readonly BlueSubagentTreeEntry[]>>
+  /**
+   * Deliver a human follow-up to one continuable child of the current
+   * session (the host cold-resumes a non-resident child). One-shot children
+   * reject at the host boundary.
+   */
+  childFollowup(childId: string, blocks: readonly BluePromptBlock[], signal?: AbortSignal): Promise<BlueResult<BluePromptReceipt>>
+  /**
+   * Interrupt one live continuable descendant of the current session under
+   * exact-ancestor authority. An absent, idle, or already-settled target is
+   * the host's accepted no-op.
+   */
+  interruptChild(childId: string): BlueResult
   /** Project the current Agent's pending inbox without exposing it. */
   queued(): readonly BlueQueuedMessage[]
   /** Flush the current session through the host persistence coordinator. */

@@ -683,6 +683,9 @@ importers:
       '@dsh-blue/blue-app':
         specifier: workspace:*
         version: link:../app
+      '@dsh-blue/blue-conversation':
+        specifier: workspace:*
+        version: link:../conversation
       '@dsh-blue/blue-core':
         specifier: workspace:*
         version: link:../core

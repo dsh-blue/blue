@@ -37,6 +37,10 @@
       "types": "./lib/types/attachments.d.ts",
       "default": "./lib/attachments.js"
     },
+    "./attach-view": {
+      "types": "./lib/types/attach-view.d.ts",
+      "default": "./lib/attach-view.js"
+    },
     "./paste-image": {
       "types": "./lib/types/paste-image.d.ts",
       "default": "./lib/paste-image.js"
@@ -86,6 +90,7 @@
     "@deepseek-ai/dsh-user-approval": "^0.1.2-alpha.2",
     "@deepseek-ai/dsh-user-questions": "^0.1.2-alpha.2",
     "@dsh-blue/blue-app": "workspace:*",
+    "@dsh-blue/blue-conversation": "workspace:*",
     "@dsh-blue/blue-core": "workspace:*",
     "@dsh-blue/blue-transcript": "workspace:*"
   },
@@ -115,6 +120,7 @@
     "@deepseek-ai/dsh-user-approval": "0.1.2-alpha.2",
     "@deepseek-ai/dsh-user-questions": "0.1.2-alpha.2",
     "@dsh-blue/blue-app": "workspace:*",
+    "@dsh-blue/blue-conversation": "workspace:*",
     "@dsh-blue/blue-core": "workspace:*",
     "@dsh-blue/blue-transcript": "workspace:*"
   }

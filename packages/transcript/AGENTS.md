@@ -26,6 +26,11 @@ projection sequence. Session/key mismatches, stale replay, and post-unload work
 are rejected. `session-facts.ts` owns derived title/status/direct-child facts
 and clears them before notifying on a session generation change.
 
+The package index re-exports `conversationTranscriptModel`,
+`ToolPresentationSource`, and `TranscriptModelRenderer` so interaction's
+child-attach view renders one subagent session through this same model
+pipeline instead of growing a second transcript fold.
+
 Read/search grouping happens at this projection-consumer layer, not in domain
 or core. Presenter vocabulary determines a read/search call; thinking is
 transparent, while turn/content boundaries split runs. Groups retain bounded

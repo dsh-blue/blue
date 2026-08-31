@@ -39,6 +39,7 @@ const approvedWidthMath = new Set([
 ])
 
 const approvedPresentation = new Set([
+  "border:packages/interaction/src/attach-view.ts:return colors.border('│') + ' ' + clipped + ' '.repeat(padding) + ' ' + colors.border('│')",
   "border:packages/interaction/src/session-tree.ts:visit(child, depth + 1, index === shown.length - 1 ? '└─' : '├─')",
   "border:packages/transcript/src/agent-group.ts:const branch = isLast ? '└─' : '├─'",
   "border:packages/transcript/src/agent-group.ts:const prefix = isLast ? '   ' : '│  '",
@@ -51,6 +52,8 @@ const approvedPresentation = new Set([
   "border:packages/transcript/src/search-group.ts:const branch = last ? '└─' : '├─'",
   "border:packages/transcript/src/search-group.ts:const childContinuation = `${String(continuation)}${last ? '   ' : '│  '}`",
   "border:packages/transcript/src/search-group.ts:const continuation = last ? '   ' : '│  '",
+  "padding:packages/interaction/src/agents-command.ts:const indent = '  '.repeat(Math.max(0, entry.depth - 1))",
+  "padding:packages/interaction/src/attach-view.ts:return colors.border('│') + ' ' + clipped + ' '.repeat(padding) + ' ' + colors.border('│')",
   "padding:packages/interaction/src/session-tree.ts:const prefix = depth === 0 ? '' : `${'  '.repeat(depth - 1)}${branch} `",
   "padding:packages/interaction/src/usage.ts:return '█'.repeat(filled) + '░'.repeat(Math.max(0, width - filled))",
   "padding:packages/transcript/src/banner-art.ts:'    ⠃⠏⠿⣿⣿⣿⣿⣿⠿⠟⠇⠂⠃⠃⠃'.padEnd(LOGO_COLS),",
@@ -70,6 +73,7 @@ const approvedPresentation = new Set([
   "padding:packages/transcript/src/status-model.ts:: leftText + ' '.repeat(Math.max(0, width - leftWidth - rightWidth)) + rightText",
   "padding:packages/transcript/src/status-model.ts:? ' '.repeat(Math.max(0, width - rightWidth)) + rightText",
   "padding:packages/transcript/src/status-model.ts:? leftText + ' '.repeat(Math.max(0, width - leftWidth))",
+  "pointer:packages/interaction/src/attach-view.ts:prompt: '› ',",
   "pointer:packages/interaction/src/update-command.ts:subtitle: [`v${fromVersion} → v${toVersion}`, detail].join(' · ').replace(/ · $/, ''),",
   "pointer:packages/interaction/src/update-command.ts:{ kind: 'divider', label: `v${fromVersion} → v${toVersion}` },",
   'pointer:packages/interaction/src/updater/swap.ts:message: `updated ${input.fromVersion} → ${input.toVersion} · smoke passed · restart dsh to apply — this session keeps running ${input.fromVersion}`,',

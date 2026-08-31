@@ -47,6 +47,17 @@ reserved or already registered commands. Dialogs use package-private canonical
 controllers plus one compiler adapter; do not restore the removed public panel
 class hierarchy or a second UI vocabulary.
 
+`/agents` (`agents-command.ts`) browses the active session's subagent tree in
+an editor-slot select panel; Enter hands the child descriptor to the optional
+`blue-attach-view` subpath plugin's `blueChildAttach` service and surfaces a
+capability-absent notice when that row is not mounted. The attach owner swaps
+the editor slot (the D30 panel stack, so q/Escape pops back to the browser)
+for a framed view over one child's official projections — `childCut` seeds the
+initial value, `subscribeChild` follows live pushes, a continuable child gets
+a follow-up input crossing `childFollowup`, and Ctrl+C interrupts through
+`interruptChild`. A main-session switch, session unload, or fiber unload
+force-closes the view and restores the pre-attach editor.
+
 `CanonicalPanelAdapter` leases stable field editors by semantic path/id across
 compiler rebuilds and delegates rows, secret masking, cursor/IME/paste,
 validation, and width containment to core. Up/Down navigates forms only outside
@@ -65,7 +76,8 @@ guarded host. Definition buffers replay after an owner gap, but notifications,
 gestures, actions, and old callbacks do not.
 
 Optional subpath plugins own editor enhancements, attachments/image paste,
-queue/status rows, command-model UI, public bridge, and provider ownership.
+queue/status rows, the child-session attach view, command-model UI, public
+bridge, and provider ownership.
 `blue-plugin-author-environment` contributes only the installed Node and
 plugin-kit executable paths to Harness `shellEnv`, with Fiber-owned cleanup;
 the preset author skill must not guess PATH/profile roots.

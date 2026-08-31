@@ -18,7 +18,7 @@ Public `editor.extensions` contributions can add passive rows, hints, diagnostic
 
 ## Commands And Panels
 
-Built-in command families cover project init (`/init`), session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
+Built-in command families cover project init (`/init`), session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, subagents (`/agents` browses the session's subagent tree; Enter attaches to one child), trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
 
 Bare `/plugin` opens two fixed tabs. **Installed** inventories current-profile
 dependencies that publish a Blue manifest, with compatible/incompatible/invalid
@@ -58,6 +58,7 @@ The `blue` settings namespace persists both exclusive provider choices. `statusP
 - `./command-model`: renderer-neutral command models and execution actions.
 - `./plugin-host-bridge`: public command/notification/editor-extension adapter.
 - `./editor-provider-owner`: exclusive editor-shell selection and event owner.
+- `./attach-view`: the `blueChildAttach` child-session attach view (the `/agents` Enter target).
 
 All registrations, async work, screen children, aliases, and host contributions are disposed with their owning Fiber.
 

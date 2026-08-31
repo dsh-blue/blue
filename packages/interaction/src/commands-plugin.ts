@@ -48,6 +48,7 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
+import { registerAgentsCommand } from './agents-command.ts'
 import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerMcpCommands } from './mcp-commands.ts'
@@ -460,6 +461,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     const skillsCommand = registerSkillsCommand(ctx)
     // The MCP server browser (`/mcp`, S34): read-only over loader entries.
     const mcpBrowser = registerMcpCommands(ctx)
+    // The subagent tree browser and attach view (`/agents`).
+    const agentsBrowser = registerAgentsCommand(ctx)
     // `/trace` is a read-only view over the official session-query seam.
     const trace = registerTraceCommand(ctx)
     // `/update` is the crash-safe, preflighted profile swap.
@@ -486,6 +489,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       agentPresets()
       skillsCommand()
       mcpBrowser()
+      agentsBrowser()
       trace()
       update()
       plugin()

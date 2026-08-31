@@ -16,7 +16,7 @@ import { symbols} from '@deepseek-ai/cordis'
 import type { Agent} from '@deepseek-ai/dsh-agent'
 import { createServer} from 'node:http'
 import type { StreamChunk} from '@deepseek-ai/dsh-llm'
-import { createUserMessage} from '@deepseek-ai/dsh-llm'
+import { createUserMessage, MessageId} from '@deepseek-ai/dsh-llm'
 import type { ApprovalOutcome, ApprovalRequest} from '@deepseek-ai/dsh-user-approval'
 import type { BluePluginApi, BluePluginOpen } from '../../../api/src/contracts.ts'
 import * as publicBlueApi from '../../../api/src/index.ts'
@@ -2641,6 +2641,174 @@ describe('blue whole-tree e2e', () => {
     expect(tree.terminal.output).toContain(String(parent.id))
     expect(tree.terminal.output).toContain(String(child.id))
     expect(tree.terminal.output).toContain('└─')
+  })
+
+  it('/agents browses the subagent tree; Enter without the attach plugin notices', async () => {
+    const tree = await bootBlue(['main task'], {
+      script: [textResponse('main answer')],
+      // The capability-absent path: the composition drops blue-attach-view.
+      attachView: false,
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+
+    // A resident subagent child session with one completed exchange.
+    // dsh-session is not a direct bundle dependency: brand the id inline.
+    const child = tree.ctx.sessions.create('agents-e2e-child' as never, {
+      meta: { origin: 'subagent', parentSession: agent.id, cwd: '/tmp' },
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'child question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    child.append('step/start', { turn: 1, step: 0 })
+    child.append('assistant/message', {
+      turn: 1,
+      step: 0,
+      message: {
+        id: MessageId('agents-e2e-assistant'),
+        role: 'assistant',
+        content: [{ type: 'text', text: 'child answer' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    // The optional host control surface, faked: the listing is the app's
+    // tree authority; no follow-up or interrupt crosses in this scenario.
+    tree.ctx.provide('subagents', {
+      listDescendants: async (root: unknown) => {
+        expect(String(root)).toBe(String(agent.id))
+        return [
+          { kind: 'child', id: child.id, parentId: agent.id, depth: 1, activity: 'inactive', hasChildren: true, mode: 'continuable', label: 'explore' },
+          { kind: 'child', id: 'agents-e2e-nested', parentId: child.id, depth: 2, activity: 'inactive', hasChildren: false, mode: 'one-shot' },
+          { kind: 'diagnostic', id: 'agents-e2e-broken', parentId: agent.id, depth: 1, reason: 'corrupt' },
+        ]
+      },
+      followup: async () => { throw new Error('not exercised') },
+      interrupt: () => { throw new Error('not exercised') },
+    })
+
+    await expect(executeCommand(tree, agent, '/agents')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Subagents') })
+    expect(tree.terminal.output).toContain('explore')
+    expect(tree.terminal.output).toContain('continuable')
+    expect(tree.terminal.output).toContain('agents-e2e-broken')
+    // Collapsed by default: the nested row hides until Space expands it.
+    expect(tree.terminal.output).not.toContain('agents-e2e-nested')
+    tree.terminal.sendInput(' ')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('agents-e2e-nested') })
+
+    // Enter on the diagnostic row is blocked; Enter on the child without the
+    // optional blue-attach-view plugin keeps the browser open — the
+    // capability notice rides the editor's hint line, which only repaints
+    // once the panel leaves the dock slot (the /sessions precedent). The
+    // unchanged panel paints no frame, so prove it is still alive by
+    // collapsing the row instead: the nested line leaves the next frame.
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\x1b[B')
+    tree.terminal.sendInput('\r')
+    tree.terminal.sendInput('\x1b[A')
+    tree.terminal.sendInput('\x1b[A')
+    tree.terminal.sendInput('\r')
+    const mark = tree.terminal.written.length
+    tree.terminal.sendInput(' ')
+    await vi.waitFor(() => {
+      const frame = tree.terminal.written.slice(mark).join('')
+      expect(frame).toContain('Subagents')
+      expect(frame).not.toContain('agents-e2e-nested')
+    })
+
+    // Escape closes the browser; the editor returns carrying the notice.
+    const escMark = tree.terminal.written.length
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('blue-attach-view') })
+    expect(tree.terminal.written.slice(escMark).join('')).not.toContain('Subagents')
+  })
+
+  it('/agents Enter opens the attach view; a follow-up delivers and q returns to the browser', async () => {
+    const tree = await bootBlue(['main task'], {
+      script: [textResponse('main answer')],
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+
+    // A resident subagent child session with one completed exchange: the
+    // live-cut path reads the projection registry's in-place fold.
+    const child = tree.ctx.sessions.create('agents-e2e-live-child' as never, {
+      meta: { origin: 'subagent', parentSession: agent.id, cwd: '/tmp' },
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'child question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    child.append('step/start', { turn: 1, step: 0 })
+    child.append('assistant/message', {
+      turn: 1,
+      step: 0,
+      message: {
+        id: MessageId('agents-e2e-live-assistant'),
+        role: 'assistant',
+        content: [{ type: 'text', text: 'child answer' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    // The optional host control surface, faked: the listing admits the child
+    // and the follow-up recorder proves the attach view's Enter submission.
+    const followups: { readonly child: string, readonly text: string }[] = []
+    tree.ctx.provide('subagents', {
+      listDescendants: async () => [
+        { kind: 'child', id: child.id, parentId: agent.id, depth: 1, activity: 'inactive', hasChildren: false, mode: 'continuable', label: 'explore' },
+      ],
+      followup: async (_parent: unknown, childId: unknown, content: readonly { readonly type: string, readonly text?: string }[]) => {
+        followups.push({ child: String(childId), text: String(content[0]?.text) })
+        return MessageId('agents-e2e-followup')
+      },
+      interrupt: () => { throw new Error('not exercised') },
+    })
+
+    await expect(executeCommand(tree, agent, '/agents')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Subagents') })
+
+    // Enter on the child row stacks the attach view over the browser: the
+    // title rule carries the label and idle status, the body renders the
+    // child's transcript through the same conversation pipeline as the main
+    // view, and the guidance row offers the continuable controls.
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('Subagent · explore')
+      expect(frame).toContain('○ idle')
+      expect(frame).toContain('child answer')
+      expect(frame).toContain('continuable · Enter follow up · Ctrl+C interrupt · q back')
+    })
+
+    // The continuable footer row takes a follow-up; Enter crosses
+    // childFollowup addressed by (current session, child id).
+    tree.terminal.sendInput('ping child')
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(() => {
+      expect(followups).toEqual([{ child: String(child.id), text: 'ping child' }])
+    })
+
+    // q pops the attach view back to the browser; Escape then restores the
+    // pre-attach editor in its dock slot.
+    tree.terminal.sendInput('q')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('Subagents')
+      expect(frame).not.toContain('Subagent · explore')
+    })
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Subagents')
+    })
   })
 
   it('/clear completes as an annotated alias of /new and runs its semantics', async () => {

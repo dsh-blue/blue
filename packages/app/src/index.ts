@@ -49,7 +49,9 @@ import { sessionDetails } from './session-details.ts'
 import { installSessionTitleCadence } from './title-cadence.ts'
 import type { BlueModelSelectionRef } from './model-ref.ts'
 import type {
+  BlueChildProjectionCut,
   BlueChildSessionProjectionSnapshot,
+  BluePromptReceipt,
   BlueSessionActions,
   BlueSessionCommand,
   BlueSessionCommandExecution,
@@ -60,12 +62,14 @@ import type {
   BlueSessionSkill,
   BlueSessionToolSchema,
   BlueSideSessionStatus,
+  BlueSubagentTreeEntry,
   BlueToolPresenterHost,
   BlueToolPresentationSource,
 } from './types.ts'
 
 export type {
   BlueRetractionService,
+  BlueChildProjectionCut,
   BluePromptBlock,
   BluePromptReceipt,
   BlueQueuedMessage,
@@ -89,6 +93,7 @@ export type {
   BlueSessionToolSchema,
   BlueSideSession,
   BlueSideSessionStatus,
+  BlueSubagentTreeEntry,
   BlueTurnRetraction,
 } from './types.ts'
 export type { BlueModelSelectionRef } from './model-ref.ts'
@@ -163,6 +168,43 @@ interface SessionCatalogSource {
 /** Optional official control surface for continuable subagents. */
 interface SubagentControlSource {
   interrupt(targetSessionId: SessionId, authority: { readonly kind: 'ancestor', readonly agent: Agent }): void
+  followup(
+    parent: Agent,
+    childId: SessionId,
+    content: ContentBlock[],
+    options: { readonly source: unknown, readonly signal: AbortSignal },
+  ): Promise<unknown>
+  listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<readonly HostSubagentTreeRow[]>
+}
+
+/** The host's descendant-listing row, degraded to the fields Blue re-owns. */
+type HostSubagentTreeRow = {
+  readonly kind: 'child'
+  readonly id: SessionId
+  readonly parentId: SessionId
+  readonly depth: number
+  readonly activity: 'running' | 'inactive'
+  readonly hasChildren: boolean
+} & ({
+  readonly mode: 'one-shot'
+  readonly label?: string
+} | {
+  readonly mode: 'continuable'
+  readonly label: string
+}) | {
+  readonly kind: 'diagnostic'
+  readonly id: SessionId
+  readonly parentId: SessionId
+  readonly depth: number
+  readonly reason: 'corrupt' | 'unsupported' | 'unavailable'
+}
+
+/** Optional session-query face for read-only cold child observations. */
+interface SessionQueryObservationSource {
+  observeSession(sessionId: SessionId, options: { readonly projectionMode: 'all', readonly signal?: AbortSignal }): Promise<{
+    readonly projections?: { readonly asOfSeq: number, readonly values: Readonly<Record<string, unknown>> } | undefined
+    [Symbol.dispose](): void
+  }>
 }
 
 /** Official command registry face consumed only inside the app boundary. */
@@ -344,6 +386,8 @@ export function apply(ctx: Context, config: Config): void {
   let currentSnapshot: BlueSessionSnapshot | null = null
   const projectionListeners = new Set<(key: string, value: unknown, seq: number, sessionEpoch: number) => void>()
   const childProjectionListeners = new Set<(child: BlueChildSessionProjectionSnapshot & { readonly key: string }) => void>()
+  /** Targeted live-projection listeners keyed by one subagent-tree member id. */
+  const childIdListeners = new Map<string, Set<(key: string, value: unknown, seq: number) => void>>()
   const modeState = (): BlueSessionModeState | undefined => {
     const active = session.current
     if (active === null) return undefined
@@ -470,6 +514,16 @@ export function apply(ctx: Context, config: Config): void {
   ctx.provide('blueToolPresentations', toolPresentations)
 
   const projectionSource = ctx.get('sessionProjections') as SessionProjectionSource | undefined
+  /** Every live store session with a subagent origin, keyed by id. */
+  const subagentSessions = (): ReadonlyMap<string, unknown> => {
+    const sessions = ctx.get('sessions') as unknown as SessionCatalogSource | undefined
+    const found = new Map<string, unknown>()
+    if (sessions === undefined) return found
+    for (const candidate of sessions.list()) {
+      if (candidate.header.origin === 'subagent' && typeof candidate.id === 'string') found.set(candidate.id, candidate)
+    }
+    return found
+  }
   const childSessions = (): readonly { readonly id: string, readonly session: unknown }[] => {
     const active = session.current
     const sessions = ctx.get('sessions') as unknown as SessionCatalogSource | undefined
@@ -521,6 +575,81 @@ export function apply(ctx: Context, config: Config): void {
       childProjectionListeners.add(listener)
       return () => { childProjectionListeners.delete(listener) }
     },
+    async childCut(childId, keys, signal): Promise<BlueResult<BlueChildProjectionCut>> {
+      const active = session.current
+      if (active === null) return unavailable()
+      const subagents = ctx.get('subagents') as unknown as SubagentControlSource | undefined
+      if (subagents === undefined) {
+        return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'subagent listing is unavailable: the host composes no subagents service' }
+      }
+      // The host's own descendant listing is the tree-membership authority:
+      // only an id it admits below the current session may be observed here.
+      let tree: readonly HostSubagentTreeRow[]
+      try {
+        tree = await subagents.listDescendants(active.id, signal)
+      } catch (error) {
+        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: describe(error) }
+      }
+      if (session.current !== active) {
+        return { ok: false, code: 'BLUE_ABORTED', message: 'the active session changed before the subagent read completed' }
+      }
+      if (!tree.some(entry => String(entry.id) === childId)) {
+        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: `session ${childId} is not in the current session's subagent tree` }
+      }
+      const live = subagentSessions().get(childId)
+      if (live !== undefined) {
+        const snapshot = projectionSource?.snapshot(live)
+        const values: Record<string, unknown> = {}
+        for (const key of keys) {
+          if (snapshot !== undefined && Object.prototype.hasOwnProperty.call(snapshot.values, key)) {
+            Object.defineProperty(values, key, { enumerable: true, value: snapshot.values[key] })
+          }
+        }
+        return success({ id: childId, live: true, asOfSeq: snapshot?.asOfSeq ?? -1, values })
+      }
+      const query = ctx.get('sessionQuery') as unknown as SessionQueryObservationSource | undefined
+      if (query === undefined) {
+        return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'the child session is not live and the host composes no session query service' }
+      }
+      let observation: Awaited<ReturnType<SessionQueryObservationSource['observeSession']>>
+      try {
+        observation = await query.observeSession(SessionId(childId), {
+          projectionMode: 'all',
+          ...(signal === undefined ? {} : { signal }),
+        })
+      } catch (error) {
+        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: describe(error) }
+      }
+      try {
+        if (session.current !== active) {
+          return { ok: false, code: 'BLUE_ABORTED', message: 'the active session changed before the subagent read completed' }
+        }
+        const snapshot = observation.projections
+        const values: Record<string, unknown> = {}
+        for (const key of keys) {
+          if (snapshot !== undefined && Object.prototype.hasOwnProperty.call(snapshot.values, key)) {
+            Object.defineProperty(values, key, { enumerable: true, value: snapshot.values[key] })
+          }
+        }
+        return success({ id: childId, live: false, asOfSeq: snapshot?.asOfSeq ?? -1, values })
+      } finally {
+        observation[Symbol.dispose]()
+      }
+    },
+    subscribeChild(childId, listener) {
+      let bucket = childIdListeners.get(childId)
+      if (bucket === undefined) {
+        bucket = new Set()
+        childIdListeners.set(childId, bucket)
+      }
+      bucket.add(listener)
+      return () => {
+        const current = childIdListeners.get(childId)
+        if (current === undefined) return
+        current.delete(listener)
+        if (current.size === 0) childIdListeners.delete(childId)
+      }
+    },
   }
   ctx.provide('blueSessionProjections', sessionProjections)
   const offProjection = projectionSource?.onChanged((eventSession, key, value, seq) => {
@@ -529,9 +658,18 @@ export function apply(ctx: Context, config: Config): void {
       return
     }
     const child = childSessions().find(candidate => candidate.session === eventSession)
-    if (child === undefined) return
-    const snapshot = { id: child.id, key, value, asOfSeq: seq }
-    for (const listener of childProjectionListeners) listener(snapshot)
+    if (child !== undefined) {
+      const snapshot = { id: child.id, key, value, asOfSeq: seq }
+      for (const listener of childProjectionListeners) listener(snapshot)
+    }
+    // Targeted attach-view fan-out: any resident subagent-origin session,
+    // including grandchildren the direct-child routing above skips.
+    if (childIdListeners.size === 0) return
+    const id = child?.id ?? [...subagentSessions()].find(([, candidate]) => candidate === eventSession)?.[0]
+    if (id === undefined) return
+    const bucket = childIdListeners.get(id)
+    if (bucket === undefined) return
+    for (const listener of bucket) listener(key, value, seq)
   })
 
   const sessionActions: BlueSessionActions = {
@@ -553,6 +691,88 @@ export function apply(ctx: Context, config: Config): void {
       const active = session.current
       if (active === null) return unavailable()
       return interruptActive(active)
+    },
+    async subagentTree(signal): Promise<BlueResult<readonly BlueSubagentTreeEntry[]>> {
+      const active = session.current
+      if (active === null) return unavailable()
+      const subagents = ctx.get('subagents') as unknown as SubagentControlSource | undefined
+      if (subagents === undefined) {
+        return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'subagent listing is unavailable: the host composes no subagents service' }
+      }
+      let rows: readonly HostSubagentTreeRow[]
+      try {
+        rows = await subagents.listDescendants(active.id, signal)
+      } catch (error) {
+        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: describe(error) }
+      }
+      if (session.current !== active) {
+        return { ok: false, code: 'BLUE_ABORTED', message: 'the active session changed before the subagent listing completed' }
+      }
+      const live = subagentSessions()
+      const entries = rows.map((row): BlueSubagentTreeEntry => {
+        if (row.kind === 'diagnostic') {
+          return { kind: 'diagnostic', id: String(row.id), parentId: String(row.parentId), depth: row.depth, reason: row.reason }
+        }
+        const base: BlueSubagentTreeEntry = {
+          kind: 'child',
+          id: String(row.id),
+          parentId: String(row.parentId),
+          depth: row.depth,
+          activity: row.activity,
+          hasChildren: row.hasChildren,
+          mode: row.mode,
+          ...(row.label === undefined ? {} : { label: row.label }),
+        }
+        // Metrics ride along only for a resident child: the registry snapshot
+        // is free there, while a cold row would cost a full log read.
+        const liveSession = live.get(base.id)
+        if (liveSession === undefined || projectionSource === undefined) return base
+        const values = projectionSource.snapshot(liveSession).values
+        const facts = values['blueConversationFacts'] as { readonly epochTokens?: unknown } | undefined
+        const timing = values['subagentTiming'] as { readonly settledMs?: unknown, readonly active?: { readonly since?: unknown } } | undefined
+        return {
+          ...base,
+          ...(typeof facts?.epochTokens === 'number' ? { tokens: facts.epochTokens } : {}),
+          ...(typeof timing?.settledMs === 'number' ? { settledMs: timing.settledMs } : {}),
+          ...(typeof timing?.active?.since === 'number' ? { activeSince: timing.active.since } : {}),
+        }
+      })
+      return success(Object.freeze(entries))
+    },
+    async childFollowup(childId, blocks, signal): Promise<BlueResult<BluePromptReceipt>> {
+      const active = session.current
+      if (active === null) return unavailable()
+      const subagents = ctx.get('subagents') as unknown as SubagentControlSource | undefined
+      if (subagents === undefined) {
+        return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'subagent follow-up is unavailable: the host composes no subagents service' }
+      }
+      try {
+        const messageId = await subagents.followup(active, SessionId(childId), [...blocks] as ContentBlock[], {
+          // The human at the terminal is the child's user; attribution grants no authority.
+          source: { kind: 'user' },
+          signal: signal ?? new AbortController().signal,
+        })
+        if (session.current !== active) {
+          return { ok: false, code: 'BLUE_ABORTED', message: 'the active session changed before the child follow-up completed' }
+        }
+        return success({ messageId: String(messageId) })
+      } catch (error) {
+        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: describe(error) }
+      }
+    },
+    interruptChild(childId) {
+      const active = session.current
+      if (active === null) return unavailable()
+      const subagents = ctx.get('subagents') as unknown as SubagentControlSource | undefined
+      if (subagents === undefined) {
+        return { ok: false, code: 'BLUE_CAPABILITY_ABSENT', message: 'subagent interruption is unavailable: the host composes no subagents service' }
+      }
+      try {
+        subagents.interrupt(SessionId(childId), { kind: 'ancestor', agent: active })
+        return success(undefined)
+      } catch (error) {
+        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: describe(error) }
+      }
     },
     queued() {
       const active = session.current
@@ -828,6 +1048,7 @@ export function apply(ctx: Context, config: Config): void {
     sessionListeners.clear()
     projectionListeners.clear()
     childProjectionListeners.clear()
+    childIdListeners.clear()
   })
   installRetractionService(
     ctx,

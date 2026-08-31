@@ -18,7 +18,7 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 
 ## 命令与 Panel
 
-内置命令族覆盖项目初始化（`/init`）、会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、trace、settings 与 profile update。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
+内置命令族覆盖项目初始化（`/init`）、会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、subagent（`/agents` 浏览会话子代理树，回车 attach 到某个子会话）、trace、settings 与 profile update。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
 
 裸 `/plugin` 固定提供两个标签页。**已安装**列出当前 profile 中发布 Blue manifest 的
 依赖，标明 compatible/incompatible/invalid，并提供验证/移除动作；**插件目录**先立即
@@ -54,6 +54,7 @@ Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue 
 - `./command-model`：renderer-neutral command model 与执行 action。
 - `./plugin-host-bridge`：公开 command/notification/editor-extension adapter。
 - `./editor-provider-owner`：独占 editor shell 选择与事件 owner。
+- `./attach-view`：`blueChildAttach` 子会话 attach 视图（`/agents` 回车后的目标）。
 
 所有 registration、异步工作、screen child、alias 与 host contribution 都随所属 Fiber 释放。
 
