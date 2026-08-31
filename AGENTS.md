@@ -106,7 +106,11 @@ coverage once; do not precede it with a redundant plain `pnpm run test`.
 Useful direct commands remain `pnpm run test`, `pnpm run test:coverage`,
 `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`,
 `pnpm run check:lib`, `pnpm run check:pack`, `pnpm run check:examples`,
-`pnpm run website:build`, and the smoke scripts. `pnpm run build:changed`
+`pnpm run website:build`, and the smoke scripts. `pnpm run shots:sync`
+regenerates the committed component screenshots under
+`website/public/shots/` from a headless render (needs a prior build);
+`pnpm run shots:check` byte-compares them as a staleness gate.
+`pnpm run build:changed`
 performs incremental project-reference emission and bundles only changed
 runtime packages; structural build changes use the full clean build.
 

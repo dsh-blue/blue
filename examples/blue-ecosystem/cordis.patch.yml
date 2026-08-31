@@ -11,3 +11,5 @@
       name: '@dsh-blue-example/status-provider'
     - id: '@dsh-blue-example/editor-provider'
       name: '@dsh-blue-example/editor-provider'
+    - id: '@dsh-blue-example/ui-gallery'
+      name: '@dsh-blue-example/ui-gallery'

@@ -1,6 +1,6 @@
 /**
  * Empty runtime entry for the opt-in ecosystem composition bundle.
- * The six plugin Fibers are mounted exclusively by cordis.patch.yml.
+ * The seven plugin Fibers are mounted exclusively by cordis.patch.yml.
  *
  * @module @dsh-blue-example/blue-ecosystem
  */
