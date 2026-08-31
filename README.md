@@ -54,36 +54,36 @@ Set `DEEPSEEK_API_KEY` before the first run. Key bindings and slash commands are
 ## Architecture
 
 <!-- BEGIN diagram:blue-layers -->
-<!-- single source 单一来源: docs/diagrams/blue-layers.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
+<!-- single source 单一来源: docs/diagrams/blue-layers.en.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    ROOT["dsh 进程 — 一棵 Cordis 树<br/>Loader · Fiber 生命周期 · 事件/服务总线"]
+    ROOT["dsh process — a single Cordis tree<br/>Loader · Fiber lifecycle · event/service bus"]
 
-    subgraph BASE["dsh-base 行 · Harness domain 插件"]
+    subgraph BASE["dsh-base rows · Harness domain plugins"]
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 34 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue rows — 34 Fiber plugins composed by cordis.patch.yml (unload rolls back · hot-swappable · omittable)"]
         direction TB
-        subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
+        subgraph DOM["Domain side — the only holder of Agent/Session objects"]
             direction LR
-            CONV["blue-conversation<br/>Harness 事件 → projection 投影"]
+            CONV["blue-conversation<br/>Harness events → projections"]
             APP["blue-app<br/>blueSessionReader · blueSessionActions"]
         end
-        subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
+        subgraph UI["UI side — sees only readonly data and actions"]
             direction TB
             FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
-            ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
-            KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
+            ADP["blue-transcript · blue-interaction<br/>transcript · commands · panels · status bar · dock"]
+            KRN["blue-core — TUI kernel<br/>the tree's only pi-tui import"]
             FE --> ADP
             ADP --> KRN
         end
-        CONV -- "projection · 当前状态" --> FE
+        CONV -- "projection · current state" --> FE
         APP -- "readonly snapshot" --> FE
-        UI -- "action · 带 BlueResult 的写请求" --> DOM
+        UI -- "action · write request with BlueResult" --> DOM
     end
 
-    TERM["终端 — pi-tui · ANSI · 键盘"]
+    TERM["Terminal — pi-tui · ANSI · keyboard"]
 
     ROOT --> BASE
     ROOT --> BLUE

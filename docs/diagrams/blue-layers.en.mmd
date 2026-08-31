@@ -1,0 +1,36 @@
+flowchart TB
+    ROOT["dsh process — a single Cordis tree<br/>Loader · Fiber lifecycle · event/service bus"]
+
+    subgraph BASE["dsh-base rows · Harness domain plugins"]
+        HAR["agents · sessions · tools · approval<br/>commands · events"]
+    end
+
+    subgraph BLUE["Blue rows — 34 Fiber plugins composed by cordis.patch.yml (unload rolls back · hot-swappable · omittable)"]
+        direction TB
+        subgraph DOM["Domain side — the only holder of Agent/Session objects"]
+            direction LR
+            CONV["blue-conversation<br/>Harness events → projections"]
+            APP["blue-app<br/>blueSessionReader · blueSessionActions"]
+        end
+        subgraph UI["UI side — sees only readonly data and actions"]
+            direction TB
+            FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
+            ADP["blue-transcript · blue-interaction<br/>transcript · commands · panels · status bar · dock"]
+            KRN["blue-core — TUI kernel<br/>the tree's only pi-tui import"]
+            FE --> ADP
+            ADP --> KRN
+        end
+        CONV -- "projection · current state" --> FE
+        APP -- "readonly snapshot" --> FE
+        UI -- "action · write request with BlueResult" --> DOM
+    end
+
+    TERM["Terminal — pi-tui · ANSI · keyboard"]
+
+    ROOT --> BASE
+    ROOT --> BLUE
+    HAR ==> CONV
+    HAR ==> APP
+    KRN --> TERM
+
+    linkStyle 2,3,4 stroke:#2bc8e8,stroke-width:3px
