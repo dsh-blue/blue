@@ -40,7 +40,6 @@
     "website:dev": "node script/marketplace-fetch.mjs --allow-missing && pnpm --filter @dsh-blue/website run dev",
     "website:build": "node script/marketplace-fetch.mjs && pnpm --filter @dsh-blue/website run build",
     "website:preview": "pnpm --filter @dsh-blue/website run preview",
-    "website:preview:lan": "pnpm run website:build && pnpm --filter @dsh-blue/website run preview:lan",
     "marketplace:fetch": "node script/marketplace-fetch.mjs"
   },
   "devDependencies": {

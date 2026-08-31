@@ -106,12 +106,9 @@ coverage once; do not precede it with a redundant plain `pnpm run test`.
 Useful direct commands remain `pnpm run test`, `pnpm run test:coverage`,
 `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`,
 `pnpm run check:lib`, `pnpm run check:pack`, `pnpm run check:examples`,
-`pnpm run website:build`, `pnpm run website:preview:lan`, and the smoke
-scripts. `website:preview:lan` builds first, then serves the built site on all
-local interfaces; use the reachable LAN URL printed by VitePress for human
-review. `pnpm run build:changed` performs incremental project-reference
-emission and bundles only changed runtime packages; structural build changes
-use the full clean build.
+`pnpm run website:build`, and the smoke scripts. `pnpm run build:changed`
+performs incremental project-reference emission and bundles only changed
+runtime packages; structural build changes use the full clean build.
 
 The build contract is derived from package manifests: concrete `exports` and
 `bin` targets determine tsdown entries through `script/package-contract.mjs`.
@@ -147,19 +144,27 @@ dedicated worktree and branch. Never link a checkout into the production
 `blue-<tag>` for a worktree.
 
 1. Implement code, tests, docs, and any required package `AGENTS.md` update in
-   the worktree. Iterate with `verify:changed`; close the full gate before
-   acceptance.
+   the worktree. Iterate with `verify:changed`; use `verify:full` before
+   acceptance when the classifier, owning package instructions, or the broad
+   change rules above require it.
 2. Choose acceptance artifacts from the actual change. Documentation-only
    changes do not require a Blue profile. Here, documentation means README,
    `docs/**`, Website pages/assets, and `AGENTS.md`; executable configuration,
    manifests, scripts, preset payload, and shipped `SKILL.md` files are not
    documentation-only even when their syntax is Markdown or YAML.
-3. For any `website/**` change, run `pnpm run website:preview:lan`, keep the
-   built preview available on the local network, give the user its actual LAN
-   URL plus the affected routes, and wait for explicit visual/content
-   acceptance. A Website-only documentation change uses this preview and no
-   Blue profile. A mixed Website/runtime change requires both acceptance
-   paths.
+3. For any `website/**` change, build and serve the result on the local network:
+
+   ```sh
+   pnpm run website:build
+   pnpm --dir website exec vitepress preview . --host 0.0.0.0 --port <available-port>
+   ```
+
+   Keep that process available and give the user the affected routes under
+   `http://<actual-lan-ip>:<port>/` for explicit visual/content acceptance.
+   `0.0.0.0` is the bind address, not a browser URL; never hand off
+   `0.0.0.0`, `localhost`, or `127.0.0.1` for LAN review. A Website-only
+   documentation change uses this preview and no Blue profile. A mixed
+   Website/runtime change requires both acceptance paths.
 4. When runtime behavior, a public seam, composition, preset payload, or
    shipped skill requires a Blue profile, install from the worktree with
    `PROFILE=blue-<tag> script/install-dev.sh`, then run the relevant

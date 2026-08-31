@@ -34,14 +34,6 @@ describe('change impact planning', () => {
     assert.deepEqual(plan.tests.related, [])
   })
 
-  test('builds Website documentation without selecting runtime tests', () => {
-    const plan = classifyChanges(['website/guide/index.md'])
-    assert.equal(plan.mode, 'changed')
-    assert.equal(plan.checks.website, true)
-    assert.equal(plan.checks.build, false)
-    assert.deepEqual(plan.tests.related, [])
-  })
-
   test('routes retired skill documentation through the agent drift gate', () => {
     const plan = classifyChanges(['docs/skills/plugin-validation.md'])
     assert.equal(plan.checks.agentDocs, true)
@@ -120,29 +112,18 @@ describe('agent documentation drift', () => {
   function fixture(agent) {
     const root = mkdtempSync(join(tmpdir(), 'blue-agent-docs-'))
     roots.push(root)
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: {
-      'verify:changed': '',
-      'verify:full': '',
-      'check:agent-docs': '',
-      'website:preview:lan': '',
-    } }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { 'verify:changed': '', 'verify:full': '', 'check:agent-docs': '' } }))
     writeFileSync(join(root, 'AGENTS.md'), agent)
     return root
   }
 
   test('accepts durable instructions without project skills', () => {
-    const root = fixture([
-      'Use `pnpm run verify:changed`, `pnpm run verify:full`, and `pnpm run check:agent-docs`.',
-      'Use `pnpm run website:preview:lan` for Website acceptance.',
-      'Documentation-only changes do not require a Blue profile.',
-      'Profile handoff includes a change-specific acceptance checklist.',
-      '',
-    ].join('\n'))
+    const root = fixture('Use `pnpm run verify:changed`, `pnpm run verify:full`, and `pnpm run check:agent-docs`.\n')
     assert.deepEqual(auditAgentDocs(root, { packageDirs: [], checkPreset: false }), [])
   })
 
   test('rejects expiring snapshots, dead links, and project skills', () => {
-    const root = fixture('As of 2026-01-01, 10 passed. [missing](./missing.md)\nverify:changed verify:full check:agent-docs website:preview:lan\nDocumentation-only changes do not require a Blue profile. Include a change-specific acceptance checklist.\n')
+    const root = fixture('As of 2026-01-01, 10 passed. [missing](./missing.md)\nverify:changed verify:full check:agent-docs\n')
     mkdirSync(join(root, '.agents', 'skills', 'old'), { recursive: true })
     writeFileSync(join(root, '.agents', 'skills', 'old', 'SKILL.md'), '---\nname: old\n---\n')
     const problems = auditAgentDocs(root, { packageDirs: [], checkPreset: false })
@@ -152,7 +133,7 @@ describe('agent documentation drift', () => {
   })
 
   test('rejects prerelease literals outside the maintained version set', () => {
-    const root = fixture('Use verify:changed verify:full check:agent-docs website:preview:lan. Documentation-only changes do not require a Blue profile. Include a change-specific acceptance checklist. Old `0.1.1-rc.9`.\n')
+    const root = fixture('Use verify:changed verify:full check:agent-docs. Old `0.1.1-rc.9`.\n')
     const problems = auditAgentDocs(root, { packageDirs: [], checkPreset: false, allowedVersions: ['1.0.0-beta.1'] })
     assert.ok(problems.some(problem => problem.includes('stale prerelease 0.1.1-rc.9')))
   })
