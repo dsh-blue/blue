@@ -106,9 +106,12 @@ coverage once; do not precede it with a redundant plain `pnpm run test`.
 Useful direct commands remain `pnpm run test`, `pnpm run test:coverage`,
 `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`,
 `pnpm run check:lib`, `pnpm run check:pack`, `pnpm run check:examples`,
-`pnpm run website:build`, and the smoke scripts. `pnpm run build:changed`
-performs incremental project-reference emission and bundles only changed
-runtime packages; structural build changes use the full clean build.
+`pnpm run website:build`, `pnpm run website:preview:lan`, and the smoke
+scripts. `website:preview:lan` builds first, then serves the built site on all
+local interfaces; use the reachable LAN URL printed by VitePress for human
+review. `pnpm run build:changed` performs incremental project-reference
+emission and bundles only changed runtime packages; structural build changes
+use the full clean build.
 
 The build contract is derived from package manifests: concrete `exports` and
 `bin` targets determine tsdown entries through `script/package-contract.mjs`.
@@ -138,22 +141,39 @@ update its export, source entry, types target, and files inclusion;
 
 ## Worktree And Acceptance
 
-Develop every user-visible behavior or public seam in a dedicated worktree and
-branch. Never link a checkout into the production `blue` profile. Use
-`blue-dev` for the main development checkout and `blue-<tag>` for a worktree.
+Develop every user-visible behavior, public seam, or Website change in a
+dedicated worktree and branch. Never link a checkout into the production
+`blue` profile. Use `blue-dev` for the main development checkout and
+`blue-<tag>` for a worktree.
 
 1. Implement code, tests, docs, and any required package `AGENTS.md` update in
    the worktree. Iterate with `verify:changed`; close the full gate before
    acceptance.
-2. Install from that worktree with
-   `PROFILE=blue-<tag> script/install-dev.sh`. Rebuild after source edits;
-   reinstall only when the dependency graph changes.
-3. Run the relevant headless/PTY smoke and explicitly ask the user to exercise
-   `dsh --profile blue-<tag>` in a real terminal.
-4. Wait for explicit human acceptance. Do not merge, remove the profile, or
-   redirect acceptance to the shared `blue` profile beforehand.
-5. After acceptance, merge, rebuild the main checkout, then remove the
-   worktree profile and record exercised scenarios in the merge summary.
+2. Choose acceptance artifacts from the actual change. Documentation-only
+   changes do not require a Blue profile. Here, documentation means README,
+   `docs/**`, Website pages/assets, and `AGENTS.md`; executable configuration,
+   manifests, scripts, preset payload, and shipped `SKILL.md` files are not
+   documentation-only even when their syntax is Markdown or YAML.
+3. For any `website/**` change, run `pnpm run website:preview:lan`, keep the
+   built preview available on the local network, give the user its actual LAN
+   URL plus the affected routes, and wait for explicit visual/content
+   acceptance. A Website-only documentation change uses this preview and no
+   Blue profile. A mixed Website/runtime change requires both acceptance
+   paths.
+4. When runtime behavior, a public seam, composition, preset payload, or
+   shipped skill requires a Blue profile, install from the worktree with
+   `PROFILE=blue-<tag> script/install-dev.sh`, then run the relevant
+   headless/PTY smoke. Give the user `dsh --profile blue-<tag>` together with a
+   change-specific acceptance checklist: the primary workflow, expected
+   result, relevant fallback or narrow-width/lifecycle case, and the nearby
+   behavior that must not regress. Rebuild after source edits; reinstall only
+   when the dependency graph changes.
+5. Wait for every applicable human acceptance. Do not merge, stop a Website
+   preview, remove a profile, or redirect acceptance to the shared `blue`
+   profile beforehand.
+6. After acceptance, merge, rebuild the main checkout when runtime output is
+   involved, then stop previews, remove worktree profiles, and record the
+   exercised routes/scenarios in the merge summary.
 
 ## Style, Dependencies, And Security
 

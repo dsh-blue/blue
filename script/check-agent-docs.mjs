@@ -86,6 +86,15 @@ export function auditAgentDocs(root, options = {}) {
   for (const command of ['verify:changed', 'verify:full', 'check:agent-docs']) {
     if (!rootAgent.includes(command)) problems.push(`AGENTS.md does not route maintainers to ${command}`)
   }
+  if (!scripts.has('website:preview:lan') || !rootAgent.includes('website:preview:lan')) {
+    problems.push('Website acceptance is not routed through the LAN preview command')
+  }
+  if (!rootAgent.includes('Documentation-only') || !rootAgent.includes('do not require a Blue profile')) {
+    problems.push('AGENTS.md does not exempt documentation-only changes from Blue profile acceptance')
+  }
+  if (!rootAgent.includes('change-specific acceptance checklist')) {
+    problems.push('AGENTS.md does not require profile handoffs to include a change-specific acceptance checklist')
+  }
 
   if (checkPreset) {
     const presetRoot = join(root, 'packages', 'bundle', 'blue', 'presets', 'blue-cordis')
