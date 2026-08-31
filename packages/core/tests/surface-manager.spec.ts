@@ -334,7 +334,7 @@ describe('SurfaceManager', () => {
     a.replace(nextComponent, nextFocus)
     expect(manager.focusedId).toBe('a')
     expect(transitions.at(-1)).toEqual([oldFocus, nextFocus])
-    a.replace(oldComponent, null)
+    a.replace(nextComponent, null)
     expect(manager.focusedId).toBeUndefined()
     expect(transitions.at(-1)).toEqual([nextFocus, null])
 

@@ -1,11 +1,14 @@
 /** Canonical compiler layout, focus, event, width, and failure containment. */
 import { CURSOR_MARKER, HStack, ScrollView, stripTerminalSequences, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame, type LayoutBox, type LayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { LAYOUT_NODE, type LayoutNode } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { describe, expect, it, vi } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
 import {
+  BlueUiSurfaceRuntime,
   compileBlueEditorShellNode,
   compileBlueStatusNode,
+  compileBlueUiSurfaceNode,
   compileBlueUiNode,
   type BlueEditorShellCompilerOptions,
   type BlueStatusCompilerOptions,
@@ -482,6 +485,10 @@ describe('compileBlueUiNode', () => {
     viewport.columns = 80
     result.focusTarget!.focused = true
     expect(result.component.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    viewport.columns = 40
+    expect(result.component.render(40).join('')).not.toContain(CURSOR_MARKER)
+    viewport.columns = 80
+    expect(result.component.render(80).join('').match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
   })
 
   it('preserves the roving index across overlay-style focused false -> true', () => {
@@ -495,6 +502,561 @@ describe('compileBlueUiNode', () => {
     expect(focus.render(20).join('')).toContain(CURSOR_MARKER)
     focus.handleInput?.('\r')
     expect(events).toEqual([{ kind: 'tab-change', controlId: 'tabs', tabId: 'b' }])
+  })
+
+  it('keeps semantic focus, editor cursor, drafts, and confirmation in one surface runtime', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const firstFixture = fixture()
+    const first = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.text('before'),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'AB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      ] }),
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+    ]), { ...firstFixture.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.focused = true
+    stale.handleInput?.('\x1b[D')
+    stale.handleInput?.('X')
+    expect(firstFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXB' })
+
+    const secondFixture = fixture()
+    const second = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Display name', value: 'AXB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+      ] }),
+      ui.text('path changed'),
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+    ]), { ...secondFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(second.ok).toBe(true)
+    if (!second.ok) throw new Error(second.message)
+    const current = second.value.focusTarget!
+    current.focused = true
+    current.handleInput?.('Y')
+    expect(secondFixture.events).toEqual([{ kind: 'value-change', controlId: 'name', value: 'AXYB' }])
+    stale.handleInput?.('stale')
+    expect(firstFixture.events).toHaveLength(1)
+    expect(secondFixture.events).toHaveLength(1)
+    layout(stale as Component, 40, 4)
+    ;(stale as unknown as { focusEditor(): void }).focusEditor()
+    stale.invalidate()
+
+    current.handleInput?.('\t')
+    current.handleInput?.('\r')
+    const thirdFixture = fixture()
+    const third = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Display name', value: 'AXYB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: true },
+      ] }),
+    ]), { ...thirdFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(third.ok).toBe(true)
+    if (!third.ok) throw new Error(third.message)
+    third.value.focusTarget!.focused = true
+    expect(third.value.component.render(80).join('\n')).toContain('Enabled: [on]')
+    third.value.focusTarget!.handleInput?.('\t')
+    third.value.focusTarget!.handleInput?.('\r')
+    const confirmationFixture = fixture()
+    const confirmation = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.actions({ id: 'footer-actions', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Display name', value: 'AXYB' },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: true },
+      ] }),
+    ]), { ...confirmationFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(confirmation.ok).toBe(true)
+    if (!confirmation.ok) throw new Error(confirmation.message)
+    confirmation.value.focusTarget!.focused = true
+    expect(confirmation.value.component.render(80).join('\n')).toContain('Really?')
+
+    const externalFixture = fixture()
+    const external = compileBlueUiSurfaceNode(ui.form({ id: 'profile', fields: [
+      { kind: 'input', id: 'name', label: 'Name', value: 'Server' },
+      { kind: 'toggle', id: 'enabled', label: 'Enabled', value: false },
+    ] }), { ...externalFixture.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(external.ok).toBe(true)
+    if (!external.ok) throw new Error(external.message)
+    external.value.focusTarget!.focused = true
+    expect(external.value.component.render(80).join('\n')).toContain('Server')
+    external.value.focusTarget!.handleInput?.('\r')
+    expect(externalFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'Server' })
+
+    runtime.dispose()
+    external.value.focusTarget!.handleInput?.('ignored')
+    expect(externalFixture.events).toHaveLength(1)
+    expect(external.value.component.render(80)).toEqual([])
+    expect(runtime.state.controls()).toEqual([])
+    expect(runtime.state.allControls()).toEqual([])
+    runtime.state.emit({ kind: 'activate', controlId: 'ignored' })
+    expect(() => runtime.state.textEditor({ kind: 'input', id: 'name', label: 'Name', value: '' }, 'missing')).toThrow('inactive')
+    const afterDispose = compileBlueUiSurfaceNode(ui.text('ignored'), { ...externalFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(afterDispose.ok).toBe(false)
+    runtime.deactivate()
+    runtime.dispose()
+  })
+
+  it('retains a Director textarea while its tab content is temporarily absent', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editor.handleInput = vi.fn(editor.handleInput)
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const configureTree = (value: string, moved = false) => {
+      const form = ui.form({ id: 'director-form', fields: [{ kind: 'textarea' as const, id: 'instructions', label: 'Instructions', value }] })
+      return ui.stack.column([
+        ui.tabs({ id: 'director-tabs', activeId: 'configure', items: [
+          { id: 'overview', label: 'Overview' },
+          { id: 'configure', label: 'Configure' },
+        ] }),
+        ...(moved ? [ui.surface({ child: form })] : [form]),
+        ui.actions({ id: 'director-actions', items: [{ id: 'save', label: 'Save', intent: 'primary' }] }),
+      ])
+    }
+    const firstFixture = fixture({ components: localComponents })
+    const first = compileBlueUiSurfaceNode(configureTree('AB'), { ...firstFixture.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.focused = true
+    first.value.component.render(80)
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[D')
+    stale.handleInput?.('X')
+    expect(firstFixture.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'instructions', value: 'AXB' })
+    expect(editors).toHaveLength(1)
+
+    const overviewFixture = fixture({ components: localComponents })
+    const overview = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.tabs({ id: 'director-tabs', activeId: 'overview', items: [
+        { id: 'overview', label: 'Overview' },
+        { id: 'configure', label: 'Configure' },
+      ] }),
+      ui.text('overview'),
+    ]), { ...overviewFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(overview.ok).toBe(true)
+    if (!overview.ok) throw new Error(overview.message)
+    overview.value.component.render(80)
+    expect(editors[0]!.focused).toBe(false)
+
+    const restoredFixture = fixture({ components: localComponents })
+    const restored = compileBlueUiSurfaceNode(configureTree('AXB', true), { ...restoredFixture.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    const target = restored.value.focusTarget!
+    target.focused = true
+    target.render(80)
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\t')
+    target.handleInput?.('\x1b[B')
+    target.handleInput?.('Y')
+    expect(restoredFixture.events).toEqual([{ kind: 'value-change', controlId: 'instructions', value: 'AXYB' }])
+    expect(editors).toHaveLength(1)
+    expect(editors[0]!.handleInput).toHaveBeenCalledWith('\x1b[B')
+    const restoredRows = restored.value.component.render(80).join('\n')
+    expect(restoredRows.replaceAll(CURSOR_MARKER, '')).toContain('Instructions: AXYB')
+    expect(restoredRows.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    stale.handleInput?.('ignored')
+    expect(firstFixture.events).toHaveLength(1)
+    expect(restoredFixture.events).toHaveLength(1)
+  })
+
+  it('keeps TokenLedger nested-tab focus through tree and item reorder', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const first = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.tabs({ id: 'ledger-view', activeId: 'projects', items: [
+        { id: 'overview', label: 'Overview' },
+        { id: 'projects', label: 'Projects' },
+      ] }),
+      ui.surface({ child: ui.stack.column([
+        ui.text('usage ledger'),
+        ui.tabs({ id: 'metric-view', activeId: 'cost', items: [
+          { id: 'tokens', label: 'Tokens' },
+          { id: 'cost', label: 'Cost' },
+        ] }),
+      ]) }),
+    ]), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const stale = first.value.focusTarget!
+    stale.focused = true
+    first.value.component.render(80)
+    stale.handleInput?.('\t')
+    stale.handleInput?.('\x1b[C')
+
+    const reordered = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.surface({ child: ui.stack.column([
+        ui.tabs({ id: 'metric-view', activeId: 'cost', items: [
+          { id: 'cost', label: 'Cost' },
+          { id: 'tokens', label: 'Tokens' },
+        ] }),
+        ui.text('usage ledger'),
+      ]) }),
+      ui.tabs({ id: 'ledger-view', activeId: 'overview', items: [
+        { id: 'projects', label: 'Projects' },
+        { id: 'overview', label: 'Overview' },
+      ] }),
+    ]), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(reordered.ok).toBe(true)
+    if (!reordered.ok) throw new Error(reordered.message)
+    const target = reordered.value.focusTarget!
+    target.focused = true
+    const rows = reordered.value.component.render(80).join('')
+    expect(rows.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
+    target.handleInput?.('\r')
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'tab-change', controlId: 'metric-view', tabId: 'cost' },
+      { kind: 'tab-change', controlId: 'metric-view', tabId: 'tokens' },
+    ])
+    stale.handleInput?.('\r')
+    expect(f.events).toHaveLength(2)
+  })
+
+  it('keeps duplicate action node ids in separate horizontal navigation groups', () => {
+    const f = fixture()
+    const target = compiled(ui.stack.column([
+      ui.actions({ id: 'shared', items: [{ id: 'first-a', label: 'First A' }, { id: 'first-b', label: 'First B' }] }),
+      ui.actions({ id: 'shared', items: [{ id: 'second-a', label: 'Second A' }, { id: 'second-b', label: 'Second B' }] }),
+    ]), f.options).focusTarget!
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\x1b[C')
+    target.handleInput?.('\r')
+    target.handleInput?.('\t')
+    target.handleInput?.('\t')
+    target.handleInput?.('\x1b[D')
+    target.handleInput?.('\r')
+    expect(f.events).toEqual([
+      { kind: 'activate', controlId: 'first-a' },
+      { kind: 'activate', controlId: 'second-b' },
+    ])
+  })
+
+  it('blurs pooled editors when responsive visibility or disabled state removes their control', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const tree = (disabled = false) => ui.stack.column([
+      ui.child(ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'AB', disabled }] }), { when: { minWidth: 60 } }),
+    ])
+    const first = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.focusTarget!.focused = true
+    first.value.component.render(80)
+    expect(editors[0]!.focused).toBe(true)
+
+    f.viewport.columns = 40
+    first.value.component.render(40)
+    expect(editors[0]!.focused).toBe(false)
+    f.viewport.columns = 80
+    first.value.component.render(80)
+    expect(editors[0]!.focused).toBe(true)
+
+    const disabled = compileBlueUiSurfaceNode(tree(true), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(disabled.ok).toBe(true)
+    if (!disabled.ok) throw new Error(disabled.message)
+    expect(disabled.value.focusTarget).toBeNull()
+    const disabledLayout = disabled.value.component as BlueComponent & { [LAYOUT_NODE](): LayoutNode }
+    disabledLayout[LAYOUT_NODE]()
+    expect(editors[0]!.focused).toBe(false)
+
+    const restored = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    restored.value.focusTarget!.focused = true
+    restored.value.component.render(80)
+    expect(editors).toHaveLength(1)
+    expect(editors[0]!.focused).toBe(true)
+  })
+
+  it('restores responsive focus by semantic id but forgets controls that are removed', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const tree = (disabled = false) => ui.stack.column([
+      ui.actions({ id: 'fallback', items: [{ id: 'fallback', label: 'Fallback' }] }),
+      ui.child(ui.tabs({ id: 'modes', activeId: 'b', items: [
+        { id: 'a', label: 'Alpha' },
+        { id: 'b', label: 'Beta', disabled },
+      ] }), { when: { minWidth: 60 } }),
+    ])
+    const first = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const firstFocus = first.value.focusTarget!
+    firstFocus.focused = true
+    firstFocus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'b' })
+
+    f.viewport.columns = 40
+    first.value.component.render(40)
+    firstFocus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
+
+    f.viewport.columns = 80
+    first.value.component.render(80)
+    firstFocus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'b' })
+
+    f.viewport.columns = 40
+    first.value.component.render(40)
+    const removed = compileBlueUiSurfaceNode(tree(true), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    removed.value.focusTarget!.focused = true
+    removed.value.component.render(40)
+    removed.value.focusTarget!.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
+
+    const restored = compileBlueUiSurfaceNode(tree(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    f.viewport.columns = 80
+    restored.value.component.render(80)
+    restored.value.focusTarget!.focused = true
+    restored.value.focusTarget!.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
+  })
+
+  it('falls back to the preferred sibling when the selected semantic control is removed', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const f = fixture()
+    const tabs = (withBeta: boolean) => ui.tabs({ id: 'modes', activeId: 'a', items: [
+      { id: 'a', label: 'Alpha' },
+      ...(withBeta ? [{ id: 'b', label: 'Beta' }] : []),
+    ] })
+    const first = compileBlueUiSurfaceNode(tabs(true), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.focusTarget!.handleInput?.('\x1b[C')
+    const removed = compileBlueUiSurfaceNode(tabs(false), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    removed.value.focusTarget!.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'tab-change', controlId: 'modes', tabId: 'a' })
+
+    const firstSiblingRuntime = new BlueUiSurfaceRuntime()
+    const firstSiblingFixture = fixture()
+    const selected = compileBlueUiSurfaceNode(ui.actions({ id: 'commands', items: [
+      { id: 'a', label: 'Alpha' },
+      { id: 'b', label: 'Beta' },
+    ] }), { ...firstSiblingFixture.options, surfaceRuntime: firstSiblingRuntime, refreshMode: 'external' })
+    expect(selected.ok).toBe(true)
+    if (!selected.ok) throw new Error(selected.message)
+    selected.value.focusTarget!.handleInput?.('\x1b[C')
+    const firstSibling = compileBlueUiSurfaceNode(ui.actions({ id: 'commands', items: [
+      { id: 'a', label: 'Alpha' },
+    ] }), { ...firstSiblingFixture.options, surfaceRuntime: firstSiblingRuntime, refreshMode: 'internal' })
+    expect(firstSibling.ok).toBe(true)
+    if (!firstSibling.ok) throw new Error(firstSibling.message)
+    firstSibling.value.focusTarget!.handleInput?.('\r')
+    expect(firstSiblingFixture.events.at(-1)).toEqual({ kind: 'activate', controlId: 'a' })
+  })
+
+  it('rolls back external setup failure without clearing local state or moving the editor cursor', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const first = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.form({ id: 'profile', fields: [
+        { kind: 'input', id: 'name', label: 'Name', value: 'AB' },
+        { kind: 'select', id: 'theme', label: 'Theme', value: 'dark', options: [{ id: 'dark', label: 'Dark' }, { id: 'light', label: 'Light' }] },
+        { kind: 'toggle', id: 'enabled', label: 'Enabled', value: true },
+      ] }),
+      ui.actions({ id: 'danger', items: [{ id: 'delete', label: 'Delete', confirm: 'Really?' }] }),
+    ]), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const focus = first.value.focusTarget!
+    focus.focused = true
+    first.value.component.render(80)
+    expect(editors).toHaveLength(1)
+    focus.handleInput?.('\x1b[D')
+    focus.handleInput?.('X')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\x1b[B')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+    focus.handleInput?.('\t')
+    focus.handleInput?.('\r')
+
+    const failingComponents = {
+      ...localComponents,
+      createMarkdown: () => { throw new Error('setup failed') },
+    } as BlueComponents
+    const failed = compileBlueUiSurfaceNode(ui.stack.column([
+      ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'Server' }] }),
+      ui.text('failure after the form'),
+    ]), {
+      ...f.options,
+      components: failingComponents,
+      markdownLeafPath: '$.1',
+      surfaceRuntime: runtime,
+      refreshMode: 'external',
+    })
+    expect(failed.ok).toBe(false)
+
+    expect(first.value.component.render(80).join('\n').replaceAll(CURSOR_MARKER, '')).toContain('Name: AXB')
+    expect(first.value.component.render(80).join('\n')).toContain('Theme: Light')
+    expect(first.value.component.render(80).join('\n')).toContain('Enabled: [off]')
+    focus.handleInput?.('\r')
+    expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'delete' })
+    focus.handleInput?.('\t')
+    focus.handleInput?.('Y')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXYB' })
+    expect(first.value.component.render(40).join('').replaceAll(CURSOR_MARKER, '')).toContain('AXYB')
+    expect(editors).toHaveLength(1)
+  })
+
+  it('retains an inactive field editor and draft until the semantic field returns', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'AB' }] })
+    const first = compileBlueUiSurfaceNode(form, { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    const firstTarget = first.value.focusTarget!
+    firstTarget.focused = true
+    first.value.component.render(40)
+    expect(editors).toHaveLength(1)
+    firstTarget.handleInput?.('\x1b[D')
+    firstTarget.handleInput?.('X')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXB' })
+    const staleChange = editors[0]!.onChange!
+    const staleSubmit = editors[0]!.onSubmit!
+
+    const removed = compileBlueUiSurfaceNode(ui.text('removed'), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) throw new Error(removed.message)
+    expect(editors[0]!.focused).toBe(false)
+    removed.value.component.render(40)
+    staleChange('ignored')
+    staleSubmit('ignored')
+    expect(f.events).toHaveLength(1)
+
+    const reused = compileBlueUiSurfaceNode(form, { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(reused.ok).toBe(true)
+    if (!reused.ok) throw new Error(reused.message)
+    reused.value.component.render(40)
+    expect(editors).toHaveLength(1)
+    reused.value.focusTarget!.focused = true
+    reused.value.focusTarget!.handleInput?.('Y')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AXYB' })
+    firstTarget.handleInput?.('stale')
+    expect(f.events).toHaveLength(2)
+    const disposedChange = editors[0]!.onChange!
+    const disposedSubmit = editors[0]!.onSubmit!
+    runtime.dispose()
+    disposedChange('ignored')
+    disposedSubmit('ignored')
+    expect(f.events).toHaveLength(2)
+  })
+
+  it('drops incompatible field state when a semantic field changes kind', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const input = () => ui.form({ id: 'profile', fields: [{ kind: 'input' as const, id: 'mode', label: 'Mode', value: 'A' }] })
+    const first = compileBlueUiSurfaceNode(input(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'external' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.message)
+    first.value.component.render(40)
+    first.value.focusTarget!.handleInput?.('B')
+    expect(f.events.at(-1)).toEqual({ kind: 'value-change', controlId: 'mode', value: 'AB' })
+
+    const select = compileBlueUiSurfaceNode(ui.form({ id: 'profile', fields: [{
+      kind: 'select', id: 'mode', label: 'Mode', value: 'dark', options: [{ id: 'dark', label: 'Dark' }],
+    }] }), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(select.ok).toBe(true)
+    if (!select.ok) throw new Error(select.message)
+    expect(select.value.component.render(40).join('\n')).toContain('Mode: Dark')
+
+    const restored = compileBlueUiSurfaceNode(input(), { ...f.options, surfaceRuntime: runtime, refreshMode: 'internal' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error(restored.message)
+    expect(restored.value.component.render(40).join('\n')).toContain('Mode: A')
+    expect(restored.value.component.render(40).join('\n')).not.toContain('AB')
+    expect(editors).toHaveLength(2)
+  })
+
+  it('evicts the oldest inactive field after the registration cache reaches 64 entries', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createTestEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = fixture({ components: localComponents })
+    const field = (index: number) => ui.form({ id: 'profile', fields: [{ kind: 'input' as const, id: `field-${String(index)}`, label: `Field ${String(index)}`, value: '' }] })
+    const compileField = (index: number, refreshMode: 'internal' | 'external') => {
+      const result = compileBlueUiSurfaceNode(field(index), { ...f.options, surfaceRuntime: runtime, refreshMode })
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error(result.message)
+      result.value.component.render(40)
+    }
+
+    compileField(0, 'external')
+    for (let index = 1; index <= 64; index += 1) compileField(index, 'internal')
+    expect(editors).toHaveLength(65)
+    const oldestInactiveEditor = editors[1]!
+    compileField(0, 'internal')
+    expect(editors).toHaveLength(65)
+    compileField(65, 'internal')
+    expect(editors).toHaveLength(66)
+    expect(oldestInactiveEditor.onChange).toBeUndefined()
+    compileField(0, 'internal')
+    expect(editors).toHaveLength(66)
+    compileField(1, 'internal')
+    expect(editors).toHaveLength(67)
   })
 
   it('inserts its marker only after HStack composition', () => {

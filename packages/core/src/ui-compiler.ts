@@ -31,6 +31,7 @@ import { validateBlueEditorShellNode, validateBlueStatusNode, validateBlueUiNode
 const FOCUS_SENTINEL = '\uf8ff'
 const ERROR_MAX_ROWS = 3
 const LAYOUT_VALUE_MAX = 1_000_000
+const INACTIVE_FIELD_CACHE_LIMIT = 64
 const PASSIVE_EVENT_SINK = Function.prototype as (event: BlueUiEvent) => void
 
 /** Pane-relative dimensions used by responsive child conditions. */
@@ -67,6 +68,12 @@ export interface BlueUiCompilerOptions {
 /** Canonical shell dependencies, including the one host-owned editing engine. */
 export interface BlueEditorShellCompilerOptions extends BlueUiCompilerOptions {
   readonly editor: BlueEditor
+}
+
+/** Core-private compiler options for one bridge-owned plugin surface. */
+interface BlueUiSurfaceCompilerOptions extends BlueUiCompilerOptions {
+  readonly surfaceRuntime: BlueUiSurfaceRuntime
+  readonly refreshMode: 'internal' | 'external'
 }
 
 /** Passive dependencies and bounded height for one compact status tree. */
@@ -179,6 +186,7 @@ interface RuntimeCompilerOptions extends BlueUiCompilerOptions {
 
 interface ControlBase {
   readonly key: string
+  readonly renderKey: string
   readonly preferred: boolean
   readonly group: string
   readonly navigation: 'horizontal' | 'vertical' | 'none'
@@ -194,16 +202,20 @@ type ControlDescriptor =
   | (ControlBase & { readonly kind: 'text', readonly field: TextField })
   | (ControlBase & { readonly kind: 'select', readonly field: SelectField })
   | (ControlBase & { readonly kind: 'toggle', readonly field: ToggleField })
-  | (ControlBase & { readonly kind: 'submit', readonly form: FormNode, readonly formPath: string })
+  | (ControlBase & { readonly kind: 'submit', readonly form: FormNode })
   | (ControlBase & { readonly kind: 'editor' })
 
 interface FocusState {
   activeKey: string | undefined
+  activeGroup: string | undefined
+  desiredKey: string | undefined
+  desiredGroup: string | undefined
   lastIndex: number
   focused: boolean
   layoutPass: boolean
   pendingConfirmation: string | undefined
   controls(): readonly ControlDescriptor[]
+  allControls(): readonly ControlDescriptor[]
   emit(event: BlueUiEvent): void
   field(field: BlueFormField, key: string): BlueFormField
   fieldValue(field: BlueFormField, key: string): string | boolean | null
@@ -211,6 +223,7 @@ interface FocusState {
   textEditor(field: TextField, key: string): BlueEditor
   setSelectValue(key: string, canonical: string | null, value: string | null): void
   setToggleValue(key: string, canonical: boolean, value: boolean): void
+  blurInactiveEditors(controls: readonly ControlDescriptor[]): void
   setLayoutViewport(viewport: BlueUiViewport): void
 }
 
@@ -303,10 +316,12 @@ function markdownLeafComponent(node: Extract<BlueUiNode, { readonly kind: 'text'
 }
 
 function editorFieldComponent(field: TextField, key: string, state: FocusState, options: RuntimeCompilerOptions): BlueComponent {
-  const editor = state.textEditor(field, key)
+  let editor: BlueEditor | undefined
+  const currentEditor = (): BlueEditor => editor ??= state.textEditor(field, key)
   return {
     render: width => {
       try {
+        const editor = currentEditor()
         const available = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
         const focused = state.focused && state.activeKey === key && field.disabled !== true
         editor.focused = focused
@@ -337,7 +352,7 @@ function editorFieldComponent(field: TextField, key: string, state: FocusState, 
         return errorRows(message, width, options.colors)
       }
     },
-    invalidate: () => editor.invalidate(),
+    invalidate: () => editor?.invalidate(),
   }
 }
 
@@ -359,11 +374,13 @@ function safePaint(colors: BlueSemanticColors, tone: BlueTone | undefined, value
 }
 
 function patternFocus(state: FocusState, prefix: string): PatternFocus {
+  const active = state.controls().find(control => control.group === prefix && control.key === state.activeKey)
+  const pending = state.controls().find(control => control.group === prefix && control.key === state.pendingConfirmation)
   return {
-    key: state.activeKey?.startsWith(prefix) === true ? state.activeKey.slice(prefix.length) : '',
+    key: active?.renderKey ?? '',
     focused: state.focused,
     marker: state.layoutPass ? `${CURSOR_MARKER} ` : FOCUS_SENTINEL,
-    ...(state.pendingConfirmation?.startsWith(prefix) === true ? { pendingKey: state.pendingConfirmation.slice(prefix.length) } : {}),
+    ...(pending === undefined ? {} : { pendingKey: pending.renderKey }),
   }
 }
 
@@ -448,12 +465,28 @@ function surfaceComponent(node: Extract<CompilableNode, { readonly kind: 'surfac
   return pad(component, node.padding ?? 0, options)
 }
 
+function controlKey(kind: string, controlId: string, itemId?: string): string {
+  return JSON.stringify(itemId === undefined ? [kind, controlId] : [kind, controlId, itemId])
+}
+
+function controlGroup(kind: string, controlId: string): string {
+  return JSON.stringify([kind, controlId])
+}
+
+function actionGroup(node: Extract<BlueUiNode, { readonly kind: 'actions' }>): string {
+  return JSON.stringify(['actions', node.id, [...node.items].map(item => item.id).sort()])
+}
+
+function fieldStateKey(key: string, kind: BlueFormField['kind']): string {
+  return JSON.stringify(['field-state', key, kind])
+}
+
 function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
   const controls: ControlDescriptor[] = []
   const visit = (current: CompilableNode, currentPath: string): void => {
     switch (current.kind) {
       case 'editor-control':
-        controls.push({ kind: 'editor', key: currentPath, preferred: true, group: currentPath, navigation: 'none' })
+        controls.push({ kind: 'editor', key: controlKey('editor', 'editor-control'), renderKey: 'editor-control', preferred: true, group: controlGroup('editor', 'editor-control'), navigation: 'none' })
         break
       case 'stack':
         for (const [index, child] of current.children.entries()) {
@@ -466,32 +499,32 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
         break
       case 'scroll': visit(current.child, `${currentPath}.scroll`); break
       case 'tabs':
-        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.id === current.activeId, group: currentPath, navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
+        for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', key: controlKey('tabs', current.id, item.id), renderKey: item.id, preferred: item.id === current.activeId, group: controlGroup('tabs', current.id), navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
         break
       case 'list':
         for (const item of current.items) if (item.disabled !== true) {
           const value = current.mode === 'multiple'
             ? current.selectedIds.includes(item.id) ? current.selectedIds.filter(id => id !== item.id) : [...current.selectedIds, item.id]
             : item.id
-          controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: current.selectedIds.includes(item.id), group: currentPath, navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
+          controls.push({ kind: 'event', key: controlKey('list', current.id, item.id), renderKey: item.id, preferred: current.selectedIds.includes(item.id), group: controlGroup('list', current.id), navigation: 'vertical', event: { kind: 'selection-change', controlId: current.id, value } })
         }
         if (current.items.length === 0 && current.empty !== undefined) visit(current.empty, `${currentPath}.empty`)
         break
       case 'form':
         for (const field of current.fields) if (field.disabled !== true) {
-          const base: ControlBase = { key: `${currentPath}:field:${field.id}`, preferred: false, group: currentPath, navigation: 'vertical' }
+          const base: ControlBase = { key: controlKey('form-field', current.id, field.id), renderKey: field.id, preferred: false, group: controlGroup('form', current.id), navigation: 'vertical' }
           if (field.kind === 'toggle') controls.push({ ...base, kind: 'toggle', field })
           else if (field.kind === 'select') controls.push({ ...base, kind: 'select', field })
           else controls.push({ ...base, kind: 'text', field })
         }
-        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: `${currentPath}:submit`, preferred: false, group: currentPath, navigation: 'vertical', form: current, formPath: currentPath })
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: currentPath, navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.submitActionId !== undefined) controls.push({ kind: 'submit', key: controlKey('form-submit', current.id), renderKey: 'submit', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', form: current })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: controlKey('form-cancel', current.id), renderKey: 'cancel', preferred: false, group: controlGroup('form', current.id), navigation: 'vertical', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'actions':
-        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', key: `${currentPath}:${item.id}`, preferred: item.intent === 'primary', group: currentPath, navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
+        for (const item of current.items) if (item.disabled !== true && item.busy !== true) controls.push({ kind: 'event', key: controlKey('action', current.id, item.id), renderKey: item.id, preferred: item.intent === 'primary', group: actionGroup(current), navigation: 'horizontal', event: { kind: 'activate', controlId: item.id }, ...(item.confirm === undefined ? {} : { confirm: item.confirm }) })
         break
       case 'loader':
-        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: `${currentPath}:cancel`, preferred: false, group: currentPath, navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
+        if (current.cancelActionId !== undefined) controls.push({ kind: 'event', key: controlKey('loader-cancel', current.cancelActionId), renderKey: 'cancel', preferred: false, group: controlGroup('loader', current.cancelActionId!), navigation: 'none', event: { kind: 'activate', controlId: current.cancelActionId } })
         break
       case 'empty': if (current.actions !== undefined) visit(current.actions, `${currentPath}.actions`); break
       default: break
@@ -509,7 +542,7 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
       return {
         render: width => {
           try {
-            editor.focused = state.focused && state.activeKey === path
+            editor.focused = state.focused && state.activeKey === controlKey('editor', 'editor-control')
             return editor.render(Math.max(1, width))
           } catch (error) {
             const message = renderFailure(error, 'unknown editor failure')
@@ -584,31 +617,32 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
       return new ScrollView(child, { follow: node.follow === 'end' ? 'end' : 'none', primary: false, overscroll: 'contain', scrollbar: node.scrollbar === true ? 'auto' : 'hidden' })
     }
     case 'tabs': {
-      return staticComponent(width => renderTabs(node, width, patternFocus(state, `${path}:`), options.colors), options)
+      return staticComponent(width => renderTabs(node, width, patternFocus(state, controlGroup('tabs', node.id)), options.colors), options)
     }
     case 'list': {
       if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`, mode)
-      return staticComponent(width => renderList(node, width, options.screenMode === 'main' ? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, `${path}:`), options.colors), options)
+      return staticComponent(width => renderList(node, width, options.screenMode === 'main' ? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, controlGroup('list', node.id)), options.colors), options)
     }
     case 'form': {
       const stack = new VStack()
       for (const field of node.fields) {
-        const key = `${path}:field:${field.id}`
+        const key = controlKey('form-field', node.id, field.id)
         stack.addChild(field.kind === 'input' || field.kind === 'textarea' || field.kind === 'secret'
           ? editorFieldComponent(field, key, state, options)
-          : staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, `${path}:field:`), options.colors), options))
+          : staticComponent(width => renderFormField(state.field(field, key), width, patternFocus(state, controlGroup('form', node.id)), options.colors), options))
       }
-      if (node.submitActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
-      if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
+      if (node.submitActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'submit', label: node.submitActionId!, intent: 'primary' }] }, width, patternFocus(state, controlGroup('form', node.id)), options.colors, true), options))
+      if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.id, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, controlGroup('form', node.id)), options.colors, true), options))
       return stack
     }
     case 'actions': {
-      return staticComponent(width => renderActions(node, width, patternFocus(state, `${path}:`), options.colors, options.screenMode === 'main'), options)
+      return staticComponent(width => renderActions(node, width, patternFocus(state, actionGroup(node)), options.colors, options.screenMode === 'main'), options)
     }
     case 'loader': {
       const stack = new VStack()
       stack.addChild(staticComponent(width => renderLoader(node, width, options.colors), options))
-      if (node.cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: node.cancelActionId!, items: [{ id: 'cancel', label: node.cancelActionId! }] }, width, patternFocus(state, `${path}:`), options.colors, true), options))
+      const cancelActionId = node.cancelActionId
+      if (cancelActionId !== undefined) stack.addChild(staticComponent(width => renderActions({ kind: 'actions', id: cancelActionId, items: [{ id: 'cancel', label: cancelActionId }] }, width, patternFocus(state, controlGroup('loader', cancelActionId)), options.colors, true), options))
       return stack
     }
     case 'empty': {
@@ -625,22 +659,302 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
 
 function reconcile(state: FocusState): readonly ControlDescriptor[] {
   const controls = state.controls()
+  state.blurInactiveEditors(controls)
+  const allControls = state.allControls()
+  if (state.desiredKey !== undefined && !allControls.some(control => control.key === state.desiredKey)) {
+    state.desiredKey = undefined
+    state.desiredGroup = undefined
+  }
   if (controls.length === 0) {
-    state.activeKey = undefined
+    if (state.desiredKey === undefined) {
+      state.activeKey = undefined
+      state.activeGroup = undefined
+    }
     state.pendingConfirmation = undefined
     state.lastIndex = 0
     return controls
   }
+  const desired = controls.findIndex(control => control.key === state.desiredKey)
+  if (desired >= 0) {
+    state.lastIndex = desired
+    state.activeKey = controls[desired]!.key
+    state.activeGroup = controls[desired]!.group
+    return controls
+  }
+  const desiredHidden = state.desiredKey !== undefined && allControls.some(control => control.key === state.desiredKey)
   const current = controls.findIndex(control => control.key === state.activeKey)
   if (current >= 0) {
     state.lastIndex = current
+    state.activeGroup = controls[current]!.group
+    if (state.desiredKey === undefined) {
+      state.desiredKey = controls[current]!.key
+      state.desiredGroup = controls[current]!.group
+    }
     return controls
   }
+  const fallbackGroup = desiredHidden ? state.desiredGroup : state.activeGroup
+  const sameGroup = controls.findIndex(control => control.group === fallbackGroup && control.preferred)
+  const firstInGroup = controls.findIndex(control => control.group === fallbackGroup)
   const preferred = controls.findIndex(control => control.preferred)
-  state.lastIndex = preferred >= 0 ? preferred : Math.min(state.lastIndex, controls.length - 1)
+  state.lastIndex = sameGroup >= 0
+    ? sameGroup
+    : firstInGroup >= 0
+      ? firstInGroup
+      : preferred >= 0 ? preferred : Math.min(state.lastIndex, controls.length - 1)
   state.pendingConfirmation = undefined
   state.activeKey = controls[state.lastIndex]!.key
+  state.activeGroup = controls[state.lastIndex]!.group
+  if (!desiredHidden) {
+    state.desiredKey = state.activeKey
+    state.desiredGroup = state.activeGroup
+  }
   return controls
+}
+
+/**
+ * Renderer-private state shared by every compiled projection of one mounted
+ * plugin surface. The bridge owns its lifetime; canonical nodes remain plain
+ * readonly data and never receive this object.
+ */
+export class BlueUiSurfaceRuntime {
+  private node: CompilableNode | undefined
+  private options: RuntimeCompilerOptions | undefined
+  private layoutViewport: ((viewport: BlueUiViewport) => void) | undefined
+  private generation = 0
+  private live = true
+  private readonly textBuffers = new Map<string, { canonical: string, value: string }>()
+  private readonly selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
+  private readonly toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
+  private readonly textEditors = new Map<string, BlueEditor>()
+  private readonly fieldKinds = new Map<string, BlueFormField['kind']>()
+  private readonly fieldOwners = new Map<string, string>()
+  private readonly fieldRecency = new Map<string, true>()
+  readonly state: FocusState
+
+  constructor() {
+    const fieldValue = (field: BlueFormField, key: string): string | boolean | null => {
+      const stateKey = fieldStateKey(key, field.kind)
+      if (field.kind === 'toggle') {
+        const current = this.toggleDrafts.get(stateKey)
+        if (current !== undefined && current.canonical === field.value) return current.value
+        this.toggleDrafts.set(stateKey, { canonical: field.value, value: field.value })
+        return field.value
+      }
+      if (field.kind === 'select') {
+        const current = this.selectDrafts.get(stateKey)
+        if (current !== undefined && current.canonical === field.value) return current.value
+        this.selectDrafts.set(stateKey, { canonical: field.value, value: field.value })
+        return field.value
+      }
+      const current = this.textBuffers.get(stateKey)
+      if (current !== undefined && current.canonical === field.value) return current.value
+      this.textBuffers.set(stateKey, { canonical: field.value, value: field.value })
+      return field.value
+    }
+    this.state = {
+      activeKey: undefined,
+      activeGroup: undefined,
+      desiredKey: undefined,
+      desiredGroup: undefined,
+      lastIndex: 0,
+      focused: false,
+      layoutPass: false,
+      pendingConfirmation: undefined,
+      controls: () => this.node === undefined || this.options === undefined ? [] : controlsForNode(this.node, this.options),
+      allControls: () => this.node === undefined || this.options === undefined ? [] : controlsForNode(this.node, this.options, '$', true),
+      emit: event => {
+        if (!this.live) return
+        try { this.options?.emit(event) } catch { /* event failures are host-owned */ }
+      },
+      field: (field, key) => ({ ...field, value: fieldValue(field, key) } as BlueFormField),
+      fieldValue,
+      setTextValue: (key, canonical, value) => { this.textBuffers.set(key, { canonical, value }) },
+      textEditor: (field, key) => this.textEditor(field, key),
+      setSelectValue: (key, canonical, value) => { this.selectDrafts.set(key, { canonical, value }) },
+      setToggleValue: (key, canonical, value) => { this.toggleDrafts.set(key, { canonical, value }) },
+      blurInactiveEditors: controls => {
+        const visible = new Set(controls.flatMap(control => control.kind === 'text'
+          ? [fieldStateKey(control.key, control.field.kind)]
+          : []))
+        for (const [stateKey, editor] of this.textEditors) if (!visible.has(stateKey)) editor.focused = false
+      },
+      setLayoutViewport: viewport => { this.layoutViewport?.(viewport) },
+    }
+  }
+
+  bind(node: CompilableNode, options: RuntimeCompilerOptions, refreshMode: 'internal' | 'external', setLayoutViewport: (viewport: BlueUiViewport) => void): number {
+    if (!this.live) throw new Error('surface runtime is disposed')
+    if (refreshMode === 'external') {
+      this.textBuffers.clear()
+      this.selectDrafts.clear()
+      this.toggleDrafts.clear()
+      this.state.pendingConfirmation = undefined
+    }
+    this.node = node
+    this.options = options
+    this.layoutViewport = setLayoutViewport
+    this.generation += 1
+    return this.generation
+  }
+
+  current(generation: number): boolean { return this.live && generation === this.generation }
+
+  setFocused(value: boolean): void {
+    this.state.focused = value
+    if (!value) for (const editor of this.textEditors.values()) editor.focused = false
+  }
+
+  checkpoint(): () => void {
+    const node = this.node
+    const options = this.options
+    const layoutViewport = this.layoutViewport
+    const generation = this.generation
+    const focus = {
+      activeKey: this.state.activeKey,
+      activeGroup: this.state.activeGroup,
+      desiredKey: this.state.desiredKey,
+      desiredGroup: this.state.desiredGroup,
+      lastIndex: this.state.lastIndex,
+      focused: this.state.focused,
+      layoutPass: this.state.layoutPass,
+      pendingConfirmation: this.state.pendingConfirmation,
+    }
+    const textBuffers = new Map(this.textBuffers)
+    const selectDrafts = new Map(this.selectDrafts)
+    const toggleDrafts = new Map(this.toggleDrafts)
+    return () => {
+      this.node = node
+      this.options = options
+      this.layoutViewport = layoutViewport
+      this.generation = generation
+      Object.assign(this.state, focus)
+      this.textBuffers.clear(); for (const [key, value] of textBuffers) this.textBuffers.set(key, value)
+      this.selectDrafts.clear(); for (const [key, value] of selectDrafts) this.selectDrafts.set(key, value)
+      this.toggleDrafts.clear(); for (const [key, value] of toggleDrafts) this.toggleDrafts.set(key, value)
+    }
+  }
+
+  /** Retain recent inactive fields while bounding registration-owned renderer state. */
+  admit(node: CompilableNode): void {
+    const active = new Set<string>()
+    const evict = (stateKey: string): void => {
+      this.textBuffers.delete(stateKey)
+      this.selectDrafts.delete(stateKey)
+      this.toggleDrafts.delete(stateKey)
+      const editor = this.textEditors.get(stateKey)
+      if (editor !== undefined) {
+        editor.focused = false
+        editor.onChange = undefined
+        editor.onSubmit = undefined
+        editor.onKey = undefined
+        this.textEditors.delete(stateKey)
+      }
+      const owner = this.fieldOwners.get(stateKey)!
+      this.fieldKinds.delete(owner)
+      this.fieldOwners.delete(stateKey)
+      this.fieldRecency.delete(stateKey)
+    }
+    const touch = (key: string, field: BlueFormField): void => {
+      const previousKind = this.fieldKinds.get(key)
+      if (previousKind !== undefined && previousKind !== field.kind) evict(fieldStateKey(key, previousKind))
+      const stateKey = fieldStateKey(key, field.kind)
+      this.fieldKinds.set(key, field.kind)
+      this.fieldOwners.set(stateKey, key)
+      this.fieldRecency.delete(stateKey)
+      this.fieldRecency.set(stateKey, true)
+      active.add(stateKey)
+    }
+    const visit = (current: CompilableNode): void => {
+      switch (current.kind) {
+        case 'stack': for (const child of current.children) visit(child.node); break
+        case 'surface': visit(current.child); if (current.footer !== undefined) visit(current.footer); break
+        case 'scroll': visit(current.child); break
+        case 'list': if (current.empty !== undefined) visit(current.empty); break
+        case 'form': for (const field of current.fields) touch(controlKey('form-field', current.id, field.id), field); break
+        case 'empty': if (current.actions !== undefined) visit(current.actions); break
+        default: break
+      }
+    }
+    visit(node)
+    for (const [stateKey, editor] of this.textEditors) if (!active.has(stateKey)) editor.focused = false
+    let inactive = this.fieldRecency.size - active.size
+    // Every active key was just touched and therefore sits after all inactive keys.
+    for (const stateKey of this.fieldRecency.keys()) {
+      if (inactive <= INACTIVE_FIELD_CACHE_LIMIT) break
+      evict(stateKey)
+      inactive -= 1
+    }
+  }
+
+  deactivate(): void {
+    if (!this.live) return
+    this.generation += 1
+    this.node = undefined
+    this.options = undefined
+    this.layoutViewport = undefined
+    this.setFocused(false)
+    this.state.pendingConfirmation = undefined
+    for (const editor of this.textEditors.values()) {
+      editor.focused = false
+      editor.onChange = undefined
+      editor.onSubmit = undefined
+      editor.onKey = undefined
+    }
+  }
+
+  dispose(): void {
+    if (!this.live) return
+    this.deactivate()
+    this.live = false
+    for (const editor of this.textEditors.values()) {
+      editor.focused = false
+      editor.onChange = undefined
+      editor.onSubmit = undefined
+      editor.onKey = undefined
+    }
+    this.textEditors.clear()
+    this.textBuffers.clear()
+    this.selectDrafts.clear()
+    this.toggleDrafts.clear()
+    this.fieldKinds.clear()
+    this.fieldOwners.clear()
+    this.fieldRecency.clear()
+    this.state.activeKey = undefined
+    this.state.activeGroup = undefined
+    this.state.desiredKey = undefined
+    this.state.desiredGroup = undefined
+    this.state.lastIndex = 0
+  }
+
+  private textEditor(field: TextField, key: string): BlueEditor {
+    const options = this.options
+    if (options === undefined) throw new Error('surface runtime is inactive')
+    const stateKey = fieldStateKey(key, field.kind)
+    let editor = options.resolveTextEditor?.(field.id, stateKey) ?? this.textEditors.get(stateKey)
+    if (editor === undefined) {
+      editor = options.components.createEditor()
+      this.textEditors.set(stateKey, editor)
+    }
+    const controlled = String(this.state.fieldValue(field, key))
+    if (editor.getExpandedText() !== controlled) {
+      editor.onChange = undefined
+      editor.setText(controlled)
+    }
+    editor.disableSubmit = field.kind === 'textarea'
+    editor.onChange = () => {
+      if (!this.live || this.options !== options) return
+      const value = editor!.getExpandedText()
+      this.state.setTextValue(stateKey, field.value, value)
+      this.state.emit({ kind: 'value-change', controlId: field.id, value })
+    }
+    editor.onSubmit = value => {
+      if (!this.live || this.options !== options) return
+      this.state.setTextValue(stateKey, field.value, value)
+      this.state.emit({ kind: 'value-change', controlId: field.id, value })
+      try { options.onTextSubmit?.(field.id, value) } catch { /* official submit observers cannot escape input */ }
+    }
+    return editor
+  }
 }
 
 class CompiledSurface implements BlueEditorShellComponent {
@@ -648,8 +962,17 @@ class CompiledSurface implements BlueEditorShellComponent {
   private readonly root: Component
   private viewport: BlueUiViewport
   private runtimeFailure: string | undefined
+  private readonly surfaceRuntime: BlueUiSurfaceRuntime
+  private readonly generation: number
 
-  constructor(node: CompilableNode, private readonly options: BlueUiCompilerOptions, mode: CompilerMode, private readonly editor?: BlueEditor) {
+  constructor(
+    node: CompilableNode,
+    private readonly options: BlueUiCompilerOptions,
+    mode: CompilerMode,
+    private readonly editor?: BlueEditor,
+    surfaceRuntime?: BlueUiSurfaceRuntime,
+    refreshMode: 'internal' | 'external' = 'external',
+  ) {
     this.viewport = safeViewport(options.getViewport)
     const runtimeOptions: RuntimeCompilerOptions = {
       ...options,
@@ -657,83 +980,23 @@ class CompiledSurface implements BlueEditorShellComponent {
       getViewport: () => this.viewport,
       reportRuntimeFailure: message => { this.runtimeFailure ??= message },
     }
-    const textBuffers = new Map<string, { canonical: string, value: string }>()
-    const selectDrafts = new Map<string, { canonical: string | null, value: string | null }>()
-    const toggleDrafts = new Map<string, { canonical: boolean, value: boolean }>()
-    const textEditors = new Map<string, BlueEditor>()
-    const fieldValue = (field: BlueFormField, key: string): string | boolean | null => {
-      if (field.kind === 'toggle') {
-        const current = toggleDrafts.get(key)
-        if (current !== undefined && current.canonical === field.value) return current.value
-        toggleDrafts.set(key, { canonical: field.value, value: field.value })
-        return field.value
-      }
-      if (field.kind === 'select') {
-        const current = selectDrafts.get(key)
-        if (current !== undefined && current.canonical === field.value) return current.value
-        selectDrafts.set(key, { canonical: field.value, value: field.value })
-        return field.value
-      }
-      const current = textBuffers.get(key)
-      if (current !== undefined && current.canonical === field.value) return current.value
-      textBuffers.set(key, { canonical: field.value, value: field.value })
-      return field.value
-    }
-    let runtimeState!: FocusState
-    const textEditor = (field: TextField, key: string): BlueEditor => {
-      let editor = options.resolveTextEditor?.(field.id, key) ?? textEditors.get(key)
-      if (editor === undefined) {
-        editor = options.components.createEditor()
-        textEditors.set(key, editor)
-      }
-      const controlled = String(runtimeState.fieldValue(field, key))
-      if (editor.getExpandedText() !== controlled) {
-        editor.onChange = undefined
-        editor.setText(controlled)
-      }
-      editor.disableSubmit = field.kind === 'textarea'
-      editor.onChange = () => {
-        const value = editor!.getExpandedText()
-        runtimeState.setTextValue(key, field.value, value)
-        runtimeState.emit({ kind: 'value-change', controlId: field.id, value })
-      }
-      editor.onSubmit = value => {
-        runtimeState.setTextValue(key, field.value, value)
-        runtimeState.emit({ kind: 'value-change', controlId: field.id, value })
-        try { options.onTextSubmit?.(field.id, value) } catch { /* official submit observers cannot escape input */ }
-      }
-      return editor
-    }
-    runtimeState = {
-      activeKey: undefined,
-      lastIndex: 0,
-      focused: false,
-      layoutPass: false,
-      pendingConfirmation: undefined,
-      controls: () => controlsForNode(node, runtimeOptions),
-      emit: event => {
-        try { options.emit(event) } catch { /* event failures are host-owned */ }
-      },
-      field: (field, key) => ({ ...field, value: fieldValue(field, key) } as BlueFormField),
-      fieldValue,
-      setTextValue: (key, canonical, value) => { textBuffers.set(key, { canonical, value }) },
-      textEditor,
-      setSelectValue: (key, canonical, value) => { selectDrafts.set(key, { canonical, value }) },
-      setToggleValue: (key, canonical, value) => { toggleDrafts.set(key, { canonical, value }) },
-      setLayoutViewport: viewport => { this.viewport = viewport },
-    }
-    this.state = runtimeState
+    this.surfaceRuntime = surfaceRuntime ?? new BlueUiSurfaceRuntime()
+    this.generation = this.surfaceRuntime.bind(node, runtimeOptions, refreshMode, viewport => { this.viewport = viewport })
+    this.state = this.surfaceRuntime.state
     this.root = compileNode(node, this.state, runtimeOptions, '$', mode)
+    this.surfaceRuntime.admit(node)
   }
 
   get focused(): boolean { return this.state.focused }
   set focused(value: boolean) {
-    this.state.focused = value
+    if (!this.surfaceRuntime.current(this.generation)) return
+    this.surfaceRuntime.setFocused(value)
     if (!value && this.editor !== undefined) this.editor.focused = false
     if (!value) this.state.pendingConfirmation = undefined
   }
 
   [LAYOUT_NODE](): LayoutNode {
+    if (!this.surfaceRuntime.current(this.generation)) return { type: 'vstack', entries: [], gap: 0, align: 'stretch' }
     this.viewport = safeViewport(this.options.getViewport)
     reconcile(this.state)
     this.state.layoutPass = true
@@ -747,6 +1010,7 @@ class CompiledSurface implements BlueEditorShellComponent {
 
   private renderFrame(width: number, maxRows: number | undefined): BlueStatusRenderResult {
     const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+    if (!this.surfaceRuntime.current(this.generation)) return { rows: [], overflowed: false }
     this.runtimeFailure = undefined
     try {
       this.state.layoutPass = false
@@ -792,6 +1056,9 @@ class CompiledSurface implements BlueEditorShellComponent {
     const editor = this.editor!
     const focus = {
       activeKey: this.state.activeKey,
+      activeGroup: this.state.activeGroup,
+      desiredKey: this.state.desiredKey,
+      desiredGroup: this.state.desiredGroup,
       lastIndex: this.state.lastIndex,
       focused: this.state.focused,
       layoutPass: this.state.layoutPass,
@@ -807,6 +1074,9 @@ class CompiledSurface implements BlueEditorShellComponent {
         : { rows: rendered.rows, runtimeFailure: rendered.runtimeFailure }
     } finally {
       this.state.activeKey = focus.activeKey
+      this.state.activeGroup = focus.activeGroup
+      this.state.desiredKey = focus.desiredKey
+      this.state.desiredGroup = focus.desiredGroup
       this.state.lastIndex = focus.lastIndex
       this.state.focused = focus.focused
       this.state.layoutPass = focus.layoutPass
@@ -818,10 +1088,14 @@ class CompiledSurface implements BlueEditorShellComponent {
   }
 
   focusEditor(): void {
+    if (!this.surfaceRuntime.current(this.generation)) return
     this.viewport = safeViewport(this.options.getViewport)
     const controls = this.state.controls()
     const index = controls.findIndex(control => control.kind === 'editor')
     this.state.activeKey = controls[index]!.key
+    this.state.activeGroup = controls[index]!.group
+    this.state.desiredKey = controls[index]!.key
+    this.state.desiredGroup = controls[index]!.group
     this.state.lastIndex = index
     this.state.pendingConfirmation = undefined
   }
@@ -830,6 +1104,7 @@ class CompiledSurface implements BlueEditorShellComponent {
   renderStatus(width: number, maxRows: number): BlueStatusRenderResult { return this.renderFrame(width, maxRows) }
 
   handleInput(data: string): void {
+    if (!this.surfaceRuntime.current(this.generation)) return
     this.viewport = safeViewport(this.options.getViewport)
     const controls = reconcile(this.state)
     if (data === '\x1b') {
@@ -844,6 +1119,9 @@ class CompiledSurface implements BlueEditorShellComponent {
       this.state.pendingConfirmation = undefined
       this.state.lastIndex = index
       this.state.activeKey = controls[index]!.key
+      this.state.activeGroup = controls[index]!.group
+      this.state.desiredKey = controls[index]!.key
+      this.state.desiredGroup = controls[index]!.group
     }
     if (data === '\t' || data === '\x1b[Z') {
       // An editor-only provider shell has nowhere to rove. Preserve the
@@ -874,7 +1152,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       const nextIndex = currentIndex < 0
         ? direction > 0 ? 0 : enabled.length - 1
         : (currentIndex + enabled.length + direction) % enabled.length
-      this.state.setSelectValue(active.key, active.field.value, enabled[nextIndex]!.id)
+      this.state.setSelectValue(fieldStateKey(active.key, active.field.kind), active.field.value, enabled[nextIndex]!.id)
       return
     }
     if (direction !== 0) {
@@ -890,7 +1168,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     if (data !== '\r' && data !== '\n' && data !== ' ') return
     if (active.kind === 'toggle') {
       const value = !this.state.fieldValue(active.field, active.key)
-      this.state.setToggleValue(active.key, active.field.value, value)
+      this.state.setToggleValue(fieldStateKey(active.key, active.field.kind), active.field.value, value)
       this.state.emit({ kind: 'value-change', controlId: active.field.id, value })
       return
     }
@@ -899,7 +1177,7 @@ class CompiledSurface implements BlueEditorShellComponent {
       return
     }
     if (active.kind === 'submit') {
-      const values = Object.fromEntries(active.form.fields.map(field => [field.id, this.state.fieldValue(field, `${active.formPath}:field:${field.id}`)]))
+      const values = Object.fromEntries(active.form.fields.map(field => [field.id, this.state.fieldValue(field, controlKey('form-field', active.form.id, field.id))]))
       this.state.emit({ kind: 'submit', controlId: active.form.id, values })
       return
     }
@@ -911,7 +1189,7 @@ class CompiledSurface implements BlueEditorShellComponent {
     this.state.emit(active.event)
   }
 
-  invalidate(): void { this.root.invalidate?.() }
+  invalidate(): void { if (this.surfaceRuntime.current(this.generation)) this.root.invalidate?.() }
 }
 
 /** Passive facade that deliberately does not expose focus or input methods. */
@@ -936,8 +1214,10 @@ class StatusErrorComponent implements BlueStatusComponent {
   invalidate(): void { this.error.invalidate() }
 }
 
-function admittedSurface(node: CompilableNode, options: BlueUiCompilerOptions, mode: CompilerMode, editor?: BlueEditor): CompiledSurface {
-  return new CompiledSurface(node, options, mode, editor)
+function admittedSurface(node: CompilableNode, options: BlueUiCompilerOptions, mode: CompilerMode, editor?: BlueEditor, surfaceRuntime?: BlueUiSurfaceRuntime, refreshMode?: 'internal' | 'external'): CompiledSurface {
+  const rollback = surfaceRuntime?.checkpoint()
+  try { return new CompiledSurface(node, options, mode, editor, surfaceRuntime, refreshMode) }
+  catch (error) { rollback?.(); throw error }
 }
 
 function statusRowLimit(value: BlueStatusCompilerOptions['maxRows']): number {
@@ -952,6 +1232,22 @@ export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions
   }
   try {
     const surface = admittedSurface(admitted.value, options, 'ui')
+    const focusTarget = controlsForNode(admitted.value, options, '$', true).length === 0 ? null : surface
+    return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
+  } catch {
+    const message = 'Blue UI compilation failed safely'
+    return { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message, errorComponent: new ErrorComponent(message, options.colors) }
+  }
+}
+
+/** Compile one validated projection into a bridge-owned persistent runtime. */
+export function compileBlueUiSurfaceNode(value: unknown, options: BlueUiSurfaceCompilerOptions): BlueUiCompileResult {
+  const admitted = validateBlueUiNode(value)
+  if (!admitted.ok) {
+    return { ok: false, code: admitted.code, message: admitted.message, errorComponent: new ErrorComponent(admitted.message, options.colors) }
+  }
+  try {
+    const surface = admittedSurface(admitted.value, options, 'ui', undefined, options.surfaceRuntime, options.refreshMode)
     const focusTarget = controlsForNode(admitted.value, options, '$', true).length === 0 ? null : surface
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {

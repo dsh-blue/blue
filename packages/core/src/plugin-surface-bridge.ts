@@ -10,10 +10,11 @@ import {
   type BlueUiNode,
 } from '@dsh-blue/blue-api'
 import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { getLayoutNode, LAYOUT_NODE, type LayoutNode } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { ownDataErrorMessage } from './error-message.ts'
 import type { BlueTerminalRuntime } from './terminal.ts'
 import type { SurfaceLaneEntry, SurfaceRegistration } from './surface-manager.ts'
-import { compileBlueUiNode, type BlueCompiledUi, type BlueUiViewport } from './ui-compiler.ts'
+import { BlueUiSurfaceRuntime, compileBlueUiNode, compileBlueUiSurfaceNode, type BlueCompiledUi, type BlueUiViewport } from './ui-compiler.ts'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueOverlayHandle, BlueSemanticColors } from './types.ts'
 
 const EVENT_TIMEOUT_MS = 30_000
@@ -174,81 +175,180 @@ function compile(
     readonly emit: (event: BlueUiEvent) => void
     readonly onEscape: () => void
     readonly interactive: boolean
+    readonly runtime: BlueUiSurfaceRuntime
+    readonly refreshMode: 'internal' | 'external'
     readonly title?: string
   },
 ): BlueCompiledUi | null {
-  let node: BlueUiNode | null
-  try { node = render() } catch (error) { node = safeFailureNode(kind, error) }
-  if (node === null) {
-    if (kind === 'pane') return null
-    node = safeFailureNode(kind, 'overlay render returned no node')
-  }
-  const compileNode = (value: BlueUiNode) => compileBlueUiNode(options.title === undefined ? value : {
+  const framed = (value: BlueUiNode): BlueUiNode => options.title === undefined ? value : {
     kind: 'surface',
     chrome: 'overlay',
     title: options.title,
     padding: 1,
     child: value,
-  }, {
+  }
+  let node: BlueUiNode | null
+  try { node = render() } catch (error) {
+    options.runtime.deactivate()
+    const fallbackNode = safeFailureNode(kind, error)
+    const fallback = compileBlueUiNode(framed(fallbackNode), {
+      components: options.components,
+      colors: options.colors,
+      getViewport: options.viewport,
+      screenMode: options.mode,
+      emit: options.emit,
+      onUnhandledEscape: options.onEscape,
+    })
+    /* v8 ignore next -- the admitted constant fallback text cannot fail compilation. */
+    return fallback.ok ? fallback.value : { node: fallbackNode, component: fallback.errorComponent, focusTarget: null }
+  }
+  if (node === null) {
+    if (kind === 'pane') return null
+    options.runtime.deactivate()
+    const fallbackNode = safeFailureNode(kind, 'overlay render returned no node')
+    const fallback = compileBlueUiNode(framed(fallbackNode), {
+      components: options.components,
+      colors: options.colors,
+      getViewport: options.viewport,
+      screenMode: options.mode,
+      emit: options.emit,
+      onUnhandledEscape: options.onEscape,
+    })
+    /* v8 ignore next -- the admitted constant fallback text cannot fail compilation. */
+    return fallback.ok ? fallback.value : { node: fallbackNode, component: fallback.errorComponent, focusTarget: null }
+  }
+  const compilerOptions = {
     components: options.components,
     colors: options.colors,
     getViewport: options.viewport,
     screenMode: options.mode,
     emit: options.emit,
     onUnhandledEscape: options.onEscape,
+  }
+  if (!options.interactive) {
+    const candidate = compileBlueUiNode(framed(node), compilerOptions)
+    if (!candidate.ok || candidate.value.focusTarget !== null) {
+      options.runtime.deactivate()
+      const fallbackNode = safeFailureNode(kind, candidate.ok ? 'non-capturing overlays cannot contain interactive controls' : candidate.message)
+      const fallback = compileBlueUiNode(framed(fallbackNode), compilerOptions)
+      /* v8 ignore next -- the admitted constant fallback text cannot fail compilation. */
+      return fallback.ok ? fallback.value : { node: fallbackNode, component: fallback.errorComponent, focusTarget: null }
+    }
+  }
+  const result = compileBlueUiSurfaceNode(framed(node), {
+    ...compilerOptions,
+    surfaceRuntime: options.runtime,
+    refreshMode: options.refreshMode,
   })
-  let result = compileNode(node)
-  if (!result.ok) result = compileNode(safeFailureNode(kind, result.message))
-  if (!result.ok) return { node: safeFailureNode(kind, result.message), component: result.errorComponent, focusTarget: null }
-  if (!options.interactive && result.value.focusTarget !== null) {
-    result = compileNode(safeFailureNode(kind, 'non-capturing overlays cannot contain interactive controls'))
+  if (!result.ok) {
+    options.runtime.deactivate()
+    const fallbackNode = safeFailureNode(kind, result.message)
+    const fallback = compileBlueUiNode(framed(fallbackNode), compilerOptions)
     /* v8 ignore next -- the admitted constant fallback text cannot fail compilation. */
-    if (!result.ok) return { node: safeFailureNode(kind, result.message), component: result.errorComponent, focusTarget: null }
+    return fallback.ok ? fallback.value : { node: fallbackNode, component: fallback.errorComponent, focusTarget: null }
   }
   return result.value
 }
 
-class OverlayComponent implements BlueFocusable {
-  private targetValue: BlueCompiledUi
+function setCompiledFocus(compiled: BlueCompiledUi | null, focused: boolean): void {
+  const component = compiled?.component as BlueFocusable | undefined
+  const target = compiled?.focusTarget ?? (typeof component?.focused === 'boolean' ? component : null)
+  if (target !== undefined && target !== null) target.focused = focused
+}
+
+class PaneComponent implements BlueFocusable {
+  private targetValue: BlueCompiledUi | null = null
   private focusedValue = false
+  private live = true
+
+  get focused(): boolean { return this.live && this.focusedValue }
+  set focused(value: boolean) {
+    this.focusedValue = this.live && value
+    setCompiledFocus(this.targetValue, this.focusedValue)
+  }
+  [LAYOUT_NODE](): LayoutNode {
+    return !this.live || this.targetValue === null
+      ? { type: 'vstack', entries: [], gap: 0, align: 'stretch' }
+      : getLayoutNode(this.targetValue.component)!
+  }
+  replace(compiled: BlueCompiledUi | null): void {
+    /* v8 ignore next -- record/map identity fences prevent replacement after one disposal. */
+    if (!this.live) return
+    setCompiledFocus(this.targetValue, false)
+    this.targetValue = compiled
+    setCompiledFocus(compiled, this.focusedValue)
+  }
+  dispose(): void {
+    /* v8 ignore next -- every record is removed before another cleanup path can observe it. */
+    if (!this.live) return
+    this.live = false
+    setCompiledFocus(this.targetValue, false)
+    this.targetValue = null
+    this.focusedValue = false
+  }
+  render(width: number): string[] { return this.live ? this.targetValue?.component.render(width) ?? [] : [] }
+  invalidate(): void { if (this.live) this.targetValue?.component.invalidate() }
+  handleInput(data: string): void { if (this.live) this.targetValue?.focusTarget?.handleInput?.(data) }
+}
+
+class OverlayComponent implements BlueFocusable {
+  private targetValue: BlueCompiledUi | null
+  private focusedValue = false
+  private live = true
   constructor(
     compiled: BlueCompiledUi,
     private readonly viewport: () => BlueUiViewport,
     private readonly requestRender: () => void,
   ) { this.targetValue = compiled }
-  get focused(): boolean { return this.focusedValue }
+  get focused(): boolean { return this.live && this.focusedValue }
   set focused(value: boolean) {
-    this.focusedValue = value
-    if (this.targetValue.focusTarget !== null) this.targetValue.focusTarget.focused = value
+    this.focusedValue = this.live && value
+    setCompiledFocus(this.targetValue, this.focusedValue)
   }
   replace(compiled: BlueCompiledUi): void {
-    if (this.targetValue.focusTarget !== null) this.targetValue.focusTarget.focused = false
+    /* v8 ignore next -- record/map identity fences prevent replacement after one disposal. */
+    if (!this.live) return
+    setCompiledFocus(this.targetValue, false)
     this.targetValue = compiled
-    if (compiled.focusTarget !== null) compiled.focusTarget.focused = this.focusedValue
+    setCompiledFocus(compiled, this.focusedValue)
+  }
+  dispose(): void {
+    /* v8 ignore next -- every record is removed before another cleanup path can observe it. */
+    if (!this.live) return
+    this.live = false
+    setCompiledFocus(this.targetValue, false)
+    this.targetValue = null
+    this.focusedValue = false
   }
   render(width: number): string[] {
+    if (!this.live || this.targetValue === null) return []
     const rows = this.targetValue.component.render(width)
     const height = this.viewport().rows
     if (rows.length < height) return rows
     return renderLayoutFrame(this.targetValue.component, width, height, this.requestRender).lines
   }
-  invalidate(): void { this.targetValue.component.invalidate() }
-  handleInput(data: string): void { this.targetValue.component.handleInput?.(data) }
+  invalidate(): void { if (this.live) this.targetValue?.component.invalidate() }
+  handleInput(data: string): void { if (this.live) this.targetValue?.component.handleInput?.(data) }
 }
 
 interface PaneRecord {
   entry: BluePluginHostPaneEntry
   readonly events: SurfaceEventOwner
+  readonly runtime: BlueUiSurfaceRuntime
+  readonly component: PaneComponent
   registration: SurfaceRegistration | undefined
   renderScheduled?: boolean
+  renderMode: 'internal' | 'external' | undefined
 }
 
 interface OverlayRecord {
   entry: BluePluginHostOverlayEntry
   readonly events: SurfaceEventOwner
+  readonly runtime: BlueUiSurfaceRuntime
   readonly component: OverlayComponent
   readonly handle: BlueOverlayHandle
   renderScheduled?: boolean
+  renderMode: 'internal' | 'external' | undefined
 }
 
 function overlayAnchor(anchor: BluePluginHostOverlayEntry['request']['anchor']) {
@@ -293,7 +393,7 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
     return { columns: Math.max(1, columns), rows: Math.max(1, Math.min(runtime.rows, typeof height === 'string' ? percent(height, runtime.rows) : Math.floor(height))) }
   }
 
-  const renderPane = (record: PaneRecord): void => {
+  const renderPane = (record: PaneRecord, refreshMode: 'internal' | 'external'): void => {
     const entry = record.entry
     const compiled = compile(entry.contribution.render, 'pane', {
       components: ctx.blueComponents,
@@ -303,12 +403,17 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       emit: event => record.events.emit(event),
       onEscape: () => runtime.releaseSurfaceFocus(entry.id),
       interactive: true,
+      runtime: record.runtime,
+      refreshMode,
     })
     if (compiled === null) {
+      record.runtime.deactivate()
+      record.component.replace(null)
       record.registration?.dispose()
       record.registration = undefined
       return
     }
+    record.component.replace(compiled)
     if (record.registration === undefined) {
       record.registration = runtime.surfaces.register({
         id: entry.id,
@@ -317,37 +422,41 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
         ...(entry.contribution.priority === undefined ? {} : { priority: entry.contribution.priority }),
         ...(entry.contribution.size === undefined ? {} : { size: entry.contribution.size }),
         ...(entry.contribution.narrow === undefined ? {} : { narrow: entry.contribution.narrow }),
-        component: compiled.component,
-        focusTarget: compiled.focusTarget,
+        component: record.component,
+        focusTarget: compiled.focusTarget === null ? null : record.component,
       })
       record.registration.setHidden(entry.hidden)
-    } else record.registration.replace(compiled.component, compiled.focusTarget)
+    } else record.registration.replace(record.component, compiled.focusTarget === null ? null : record.component)
+    runtime.requestRender()
   }
 
-  const schedulePane = (record: PaneRecord, external: boolean): void => {
-    if (external) record.events.replaceExternally()
+  const schedulePane = (record: PaneRecord, mode: 'internal' | 'external'): void => {
+    if (mode === 'external' || record.renderMode === undefined) record.renderMode = mode
     if (record.renderScheduled === true) return
     record.renderScheduled = true
     queueMicrotask(() => {
       record.renderScheduled = false
+      const refreshMode = record.renderMode!
+      record.renderMode = undefined
       const retained = pending === undefined || pending.panes.includes(record.entry)
-      if (!disposed && retained && panes.get(record.entry.id) === record) renderPane(record)
+      if (!disposed && retained && panes.get(record.entry.id) === record) renderPane(record, refreshMode)
     })
   }
 
   const addPane = (entry: BluePluginHostPaneEntry): void => {
     let record!: PaneRecord
-    const events = new SurfaceEventOwner(lease, entry.id, 'panes', entry.contribution.onEvent, () => schedulePane(record, false), undefined)
-    record = { entry, events, registration: undefined }
+    const events = new SurfaceEventOwner(lease, entry.id, 'panes', entry.contribution.onEvent, () => schedulePane(record, 'internal'), undefined)
+    record = { entry, events, runtime: new BlueUiSurfaceRuntime(), component: new PaneComponent(), registration: undefined, renderMode: undefined }
     panes.set(entry.id, record)
-    schedulePane(record, true)
+    schedulePane(record, 'external')
   }
 
   const addOverlay = (entry: BluePluginHostOverlayEntry): void => {
     let record!: OverlayRecord
-    const events = new SurfaceEventOwner(lease, entry.id, 'overlays', entry.request.onEvent, () => scheduleOverlay(record, false), () => {
+    const events = new SurfaceEventOwner(lease, entry.id, 'overlays', entry.request.onEvent, () => scheduleOverlay(record, 'internal'), () => {
       lease.closeOverlay(record.entry)
     })
+    const surfaceRuntime = new BlueUiSurfaceRuntime()
     const compiled = compile(entry.request.render, 'overlay', {
       components: ctx.blueComponents,
       colors: ctx.blueTheme.colors,
@@ -356,6 +465,8 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       emit: event => events.emit(event),
       onEscape: () => { if (entry.request.capturing && entry.request.dismissible) events.emit({ kind: 'dismiss' }) },
       interactive: entry.request.capturing,
+      runtime: surfaceRuntime,
+      refreshMode: 'external',
       ...(entry.request.title === undefined ? {} : { title: entry.request.title }),
     })!
     const component = new OverlayComponent(compiled, () => overlayViewport(entry), runtime.requestRender)
@@ -367,11 +478,11 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       anchor: overlayAnchor(entry.request.anchor),
       nonCapturing: !entry.request.capturing,
     })
-    record = { entry, events, component, handle }
+    record = { entry, events, runtime: surfaceRuntime, component, handle, renderMode: undefined }
     overlays.set(entry.id, record)
   }
 
-  const renderOverlay = (record: OverlayRecord): void => {
+  const renderOverlay = (record: OverlayRecord, refreshMode: 'internal' | 'external'): void => {
     const entry = record.entry
     const compiled = compile(entry.request.render, 'overlay', {
       components: ctx.blueComponents,
@@ -381,20 +492,24 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       emit: event => record.events.emit(event),
       onEscape: () => { if (entry.request.capturing && entry.request.dismissible) record.events.emit({ kind: 'dismiss' }) },
       interactive: entry.request.capturing,
+      runtime: record.runtime,
+      refreshMode,
       ...(entry.request.title === undefined ? {} : { title: entry.request.title }),
     })!
     record.component.replace(compiled)
     runtime.requestRender()
   }
 
-  const scheduleOverlay = (record: OverlayRecord, external: boolean): void => {
-    if (external) record.events.replaceExternally()
+  const scheduleOverlay = (record: OverlayRecord, mode: 'internal' | 'external'): void => {
+    if (mode === 'external' || record.renderMode === undefined) record.renderMode = mode
     if (record.renderScheduled === true) return
     record.renderScheduled = true
     queueMicrotask(() => {
       record.renderScheduled = false
+      const refreshMode = record.renderMode!
+      record.renderMode = undefined
       const retained = pending === undefined || pending.overlays.includes(record.entry)
-      if (!disposed && retained && overlays.get(record.entry.id) === record) renderOverlay(record)
+      if (!disposed && retained && overlays.get(record.entry.id) === record) renderOverlay(record, refreshMode)
     })
   }
 
@@ -405,7 +520,11 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       const navigationPlacement = layout === undefined
         ? undefined
         : [layout.header, layout.left, layout.right, layout.bottom].find(lane => lane?.active.id === id)?.placement
-      record.events.dispose(); record.registration?.dispose(); panes.delete(id)
+      record.events.dispose()
+      record.runtime.dispose()
+      record.component.dispose()
+      record.registration?.dispose()
+      panes.delete(id)
       if (navigationId === id) {
         const layout = currentLayout()
         navigationId = navigationPlacement === undefined
@@ -417,27 +536,43 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
       const record = panes.get(entry.id)
       if (record === undefined) { addPane(entry); continue }
       if (record.entry.contribution !== entry.contribution) {
-        record.events.dispose(); record.registration?.dispose(); panes.delete(entry.id); addPane(entry); continue
+        record.events.dispose()
+        record.runtime.dispose()
+        record.component.dispose()
+        record.registration?.dispose()
+        panes.delete(entry.id)
+        addPane(entry)
+        continue
       }
       const renderChanged = ownerRevision(record.entry.revision) !== ownerRevision(entry.revision)
       record.entry = entry
       record.registration?.setHidden(entry.hidden)
-      if (renderChanged) schedulePane(record, true)
+      if (renderChanged) schedulePane(record, 'external')
     }
 
     const overlayIds = new Set(snapshot.overlays.map(entry => entry.id))
     for (const [id, record] of [...overlays].reverse()) if (!overlayIds.has(id)) {
-      record.events.dispose(); record.handle.hide(); overlays.delete(id)
+      record.events.dispose()
+      record.runtime.dispose()
+      record.component.dispose()
+      record.handle.hide()
+      overlays.delete(id)
     }
     for (const entry of [...snapshot.overlays].sort((left, right) => left.order - right.order)) {
       const record = overlays.get(entry.id)
       if (record === undefined) { addOverlay(entry); continue }
       if (record.entry.request !== entry.request) {
-        record.events.dispose(); record.handle.hide(); overlays.delete(entry.id); addOverlay(entry); continue
+        record.events.dispose()
+        record.runtime.dispose()
+        record.component.dispose()
+        record.handle.hide()
+        overlays.delete(entry.id)
+        addOverlay(entry)
+        continue
       }
       const renderChanged = ownerRevision(record.entry.revision) !== ownerRevision(entry.revision)
       record.entry = entry
-      if (renderChanged) scheduleOverlay(record, true)
+      if (renderChanged) scheduleOverlay(record, 'external')
     }
     appliedRevision = Math.max(appliedRevision, ownerRevision(snapshot.revision))
   }
@@ -515,9 +650,18 @@ export function mountPluginSurfaceBridge(ctx: OwnerContext, runtime: BlueTermina
     }
     for (const record of [...overlays.values()].reverse()) {
       record.events.dispose()
+      record.runtime.dispose()
+      record.component.dispose()
       record.handle.hide()
     }
-    for (const record of panes.values()) { record.events.dispose(); record.registration?.dispose() }
-    overlays.clear(); panes.clear(); pending = undefined
+    for (const record of panes.values()) {
+      record.events.dispose()
+      record.runtime.dispose()
+      record.component.dispose()
+      record.registration?.dispose()
+    }
+    overlays.clear()
+    panes.clear()
+    pending = undefined
   })
 }

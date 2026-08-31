@@ -5,6 +5,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BluePluginHostService, createBluePluginControl } from '../../api/src/host.ts'
 import type {
@@ -130,12 +131,12 @@ function createRuntime(mode: 'main' | 'alternate' = 'alternate', initialColumns 
   }
 }
 
-function mount(host: BluePluginHostService, runtime: BlueTerminalRuntime): { readonly scope: Scope, readonly keymap: KeymapHarness } {
+function mount(host: BluePluginHostService, runtime: BlueTerminalRuntime, compilerComponents: BlueComponents = components): { readonly scope: Scope, readonly keymap: KeymapHarness } {
   const scope = new Scope()
   const keymap = new KeymapHarness()
   Object.assign(scope, {
     bluePluginControl: createBluePluginControl(host),
-    blueComponents: components,
+    blueComponents: compilerComponents,
     blueTheme: { colors },
     blueKeymap: keymap,
   })
@@ -221,7 +222,12 @@ describe('plugin surface bridge panes', () => {
     const firstOwner = mount(host, runtime.runtime)
     const consumer = openPanes(host)
     let renders = 0
-    registerPane(consumer.api, { id: 'replay', render: () => { renders += 1; return ui.text('retained') } })
+    let eventCount = 0
+    registerPane(consumer.api, {
+      id: 'replay',
+      render: () => { renders += 1; return ui.actions({ id: 'replay-actions', items: [{ id: 'go', label: 'Go' }] }) },
+      onEvent: () => { eventCount += 1; return success() },
+    })
     await flushMicrotasks()
     expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['replay'])
     expect(renders).toBe(1)
@@ -235,9 +241,12 @@ describe('plugin surface bridge panes', () => {
     expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['replay'])
     expect(renders).toBe(2)
 
+    const staleComponent = entry(runtime.surfaces, 'replay').component
     consumer.scope.dispose()
+    staleComponent.handleInput?.('\r')
     await flushMicrotasks()
     expect(runtime.surfaces.empty).toBe(true)
+    expect(eventCount).toBe(0)
     secondOwner.scope.dispose()
   })
 
@@ -337,6 +346,9 @@ describe('plugin surface bridge panes', () => {
     expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['nullable', 'peer'])
     expect([nullableRenders, peerRenders]).toEqual([2, 1])
     expect(entry(runtime.surfaces, 'nullable').component.render(80)).toEqual(['mounted'])
+    const nullableComponent = entry(runtime.surfaces, 'nullable').component
+    nullableComponent.invalidate()
+    expect((nullableComponent as BlueFocusable).focused).toBe(false)
 
     expect(nullableHandle.setHidden(true)).toEqual(success())
     await flushMicrotasks()
@@ -357,6 +369,18 @@ describe('plugin surface bridge panes', () => {
     await flushMicrotasks()
     expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['peer'])
     expect(nullableRenders).toBe(3)
+    expect(nullableComponent.render(80)).toEqual([])
+    nullableComponent.invalidate()
+    ;(nullableComponent as BlueFocusable).focused = true
+    expect((nullableComponent as BlueFocusable).focused).toBe(true)
+    expect(renderLayoutFrame(nullableComponent, 80, 3, () => {}).root.children).toEqual([])
+
+    nullable = ui.text('mounted again')
+    now = 2_002
+    expect(nullableHandle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(entry(runtime.surfaces, 'nullable').component).toBe(nullableComponent)
+    expect(entry(runtime.surfaces, 'nullable').component.render(80)).toEqual(['mounted again'])
 
     consumer.scope.dispose()
     owner.scope.dispose()
@@ -386,12 +410,106 @@ describe('plugin surface bridge panes', () => {
     expect(entry(runtime.surfaces, 'thrown').component.render(80).join('\n')).toContain('pane exploded')
     expect(entry(runtime.surfaces, 'unknown-failure').component.render(80).join('\n')).toContain('render failed')
     expect(entry(runtime.surfaces, 'invalid').component.render(80).join('\n')).toContain('unknown Blue UI kind')
+    expect(renderLayoutFrame(entry(runtime.surfaces, 'invalid').component, 80, 4, () => {}).lines.join('\n')).toContain('unknown Blue UI kind')
 
     runtime.resize(40, 12)
     const narrow = runtime.surfaces.layout(40, 12)
     expect(narrow.right).toBeUndefined()
     expect(narrow.bottom?.entries.map(item => item.id)).toContain('responsive')
     expect(entry(runtime.surfaces, 'responsive').component.render(40)).toEqual(['bottom'])
+
+    consumer.scope.dispose()
+    owner.scope.dispose()
+  })
+
+  it('deactivates old pane input across render and validation fallback gaps, then restores its editor', async () => {
+    const host = new BluePluginHostService(new Context())
+    const runtime = createRuntime()
+    const editors: BlueFocusable[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createFakeEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const owner = mount(host, runtime.runtime, localComponents)
+    const consumer = openPanes(host)
+    const events: BlueUiEvent[] = []
+    let value = 'AB'
+    let mode: 'valid' | 'passive' | 'throw' | 'invalid' = 'valid'
+    const handle = registerPane(consumer.api, {
+      id: 'recoverable-form',
+      render: () => {
+        if (mode === 'throw') throw new Error('temporary render failure')
+        if (mode === 'invalid') return { kind: 'unknown' } as never
+        if (mode === 'passive') return ui.text('temporarily passive')
+        return ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
+      },
+      onEvent: event => {
+        events.push(event)
+        if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
+        return success()
+      },
+    })
+    await flushMicrotasks()
+    const component = entry(runtime.surfaces, 'recoverable-form').component
+    const target = entry(runtime.surfaces, 'recoverable-form').focusTarget!
+    runtime.runtime.setFocus(target)
+    component.render(80)
+    target.handleInput?.('X')
+    await flushMicrotasks()
+    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'ABX' })
+    expect(editors).toHaveLength(1)
+
+    mode = 'throw'
+    expect(handle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(component.render(80).join('\n')).toContain('temporary render failure')
+    expect(editors[0]!.focused).toBe(false)
+    expect((editors[0] as ReturnType<typeof createFakeEditor>).onChange).toBeUndefined()
+    target.handleInput?.('ignored')
+    expect(events).toHaveLength(1)
+
+    mode = 'valid'
+    expect(handle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(entry(runtime.surfaces, 'recoverable-form').component).toBe(component)
+    component.render(80)
+    expect(editors).toHaveLength(1)
+    runtime.runtime.setFocus(target)
+    component.render(80)
+    expect(editors[0]!.focused).toBe(true)
+    target.handleInput?.('Y')
+    await flushMicrotasks()
+    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'ABXY' })
+
+    mode = 'passive'
+    expect(handle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(component.render(80)).toEqual(['temporarily passive'])
+    expect(editors[0]!.focused).toBe(false)
+    expect(runtime.focused()).toBe(runtime.editor)
+    target.handleInput?.('ignored')
+    expect(events).toHaveLength(2)
+
+    mode = 'valid'
+    expect(handle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(editors).toHaveLength(1)
+
+    mode = 'invalid'
+    expect(handle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(component.render(80).join('\n')).toContain('unknown Blue UI kind')
+    target.handleInput?.('ignored')
+    expect(events).toHaveLength(2)
+
+    mode = 'valid'
+    expect(handle.refresh()).toEqual(success())
+    await flushMicrotasks()
+    expect(component.render(80).join('\n')).toContain('Name: ABXY')
 
     consumer.scope.dispose()
     owner.scope.dispose()
@@ -458,9 +576,106 @@ describe('plugin surface bridge panes', () => {
     await flushMicrotasks()
     expect(pending[3]!.context.signal.aborted).toBe(true)
     expect(renders).toBe(4)
+    expect(entry(runtime.surfaces, 'latest').component.render(80).join('\n')).not.toContain('First: d')
     pending[3]!.result.resolve(success())
     await flushMicrotasks()
     expect(renders).toBe(4)
+
+    consumer.scope.dispose()
+    owner.scope.dispose()
+  })
+
+  it('keeps one semantic field and editor draft across successful pane recompilation', async () => {
+    const host = new BluePluginHostService(new Context())
+    const runtime = createRuntime()
+    const owner = mount(host, runtime.runtime)
+    const consumer = openPanes(host)
+    let value = 'A'
+    let reordered = false
+    let renders = 0
+    registerPane(consumer.api, {
+      id: 'continuous-form',
+      render: () => {
+        renders += 1
+        const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
+        return reordered
+          ? ui.stack.column([ui.actions({ id: 'leading', items: [{ id: 'other', label: 'Other' }] }), form])
+          : ui.stack.column([form, ui.text('tail')])
+      },
+      onEvent: event => {
+        if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
+        reordered = true
+        return success()
+      },
+    })
+    await flushMicrotasks()
+    const target = entry(runtime.surfaces, 'continuous-form').focusTarget!
+    const component = entry(runtime.surfaces, 'continuous-form').component
+    const repaintBaseline = runtime.rendered()
+    runtime.runtime.setFocus(target)
+    target.handleInput?.('B')
+    await flushMicrotasks()
+    expect(value).toBe('AB')
+    expect(renders).toBe(2)
+    expect(runtime.rendered()).toBe(repaintBaseline + 1)
+    expect(entry(runtime.surfaces, 'continuous-form').component).toBe(component)
+    expect(entry(runtime.surfaces, 'continuous-form').focusTarget).toBe(target)
+
+    target.handleInput?.('C')
+    await flushMicrotasks()
+    expect(value).toBe('ABC')
+    expect(entry(runtime.surfaces, 'continuous-form').component.render(80).join('\n')).toContain('Name: ABC')
+    expect(runtime.rendered()).toBe(repaintBaseline + 2)
+
+    consumer.scope.dispose()
+    owner.scope.dispose()
+  })
+
+  it('keeps a form draft dormant across pane hide and show without stealing focus', async () => {
+    const host = new BluePluginHostService(new Context())
+    const runtime = createRuntime()
+    const owner = mount(host, runtime.runtime)
+    const consumer = openPanes(host)
+    const events: BlueUiEvent[] = []
+    let renders = 0
+    const handle = registerPane(consumer.api, {
+      id: 'dormant-form',
+      render: () => {
+        renders += 1
+        return ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'A' }] })
+      },
+      onEvent: event => { events.push(event); return success() },
+    })
+    await flushMicrotasks()
+    const component = entry(runtime.surfaces, 'dormant-form').component
+    const target = entry(runtime.surfaces, 'dormant-form').focusTarget!
+    runtime.runtime.setFocus(target)
+    target.handleInput?.('B')
+    await flushMicrotasks()
+    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AB' })
+    expect(component.render(80).join('\n')).toContain('Name: AB')
+    expect(renders).toBe(2)
+
+    expect(handle.setHidden(true)).toEqual(success())
+    await flushMicrotasks()
+    expect(entries(runtime.surfaces).map(item => item.id)).not.toContain('dormant-form')
+    expect(runtime.focused()).toBe(runtime.editor)
+    expect(renders).toBe(2)
+
+    expect(handle.setHidden(false)).toEqual(success())
+    await flushMicrotasks()
+    const restored = entry(runtime.surfaces, 'dormant-form')
+    expect(restored.component).toBe(component)
+    expect(restored.focusTarget).toBe(target)
+    expect(runtime.focused()).toBe(runtime.editor)
+    expect(component.render(80).join('\n')).toContain('Name: AB')
+    expect(renders).toBe(2)
+
+    runtime.runtime.setFocus(target)
+    target.handleInput?.('C')
+    await flushMicrotasks()
+    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'ABC' })
+    expect(component.render(80).join('\n')).toContain('Name: ABC')
 
     consumer.scope.dispose()
     owner.scope.dispose()
@@ -591,6 +806,7 @@ describe('plugin surface bridge panes', () => {
       },
     })
     await flushMicrotasks()
+    const component = entry(runtime.surfaces, 'defaults').component
     const target = entry(runtime.surfaces, 'defaults').focusTarget!
     target.handleInput?.('a')
     target.handleInput?.('\t')
@@ -607,8 +823,13 @@ describe('plugin surface bridge panes', () => {
     consumer.scope.dispose()
     await flushMicrotasks()
     target.handleInput?.('c')
+    component.invalidate()
+    ;(component as BlueFocusable).focused = true
     await flushMicrotasks()
     expect(renders).toBe(2)
+    expect(component.render(80)).toEqual([])
+    expect((component as BlueFocusable).focused).toBe(false)
+    expect(renderLayoutFrame(component, 80, 3, () => {}).root.children).toEqual([])
     owner.scope.dispose()
   })
 

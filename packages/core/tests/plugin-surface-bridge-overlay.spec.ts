@@ -12,6 +12,7 @@ import {
   type BluePluginApi,
   type BluePublicOverlayHandle,
   type BlueResult,
+  type BlueUiEvent,
   type BlueUiEventContext,
   type BlueUiNode,
   type BlueUserGesture,
@@ -97,7 +98,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   throw new Error('condition did not settle')
 }
 
-async function fixture(columns = 80, rows = 24): Promise<Fixture> {
+async function fixture(columns = 80, rows = 24, compilerComponents: BlueComponents = components): Promise<Fixture> {
   const root = new Context()
   const host = new BluePluginHostService(root)
   const terminal = new FakeTerminal(columns, rows)
@@ -105,7 +106,7 @@ async function fixture(columns = 80, rows = 24): Promise<Fixture> {
   const keyActions: BlueKeyAction[] = []
   const owner = effectOwner({
     bluePluginControl: createBluePluginControl(host),
-    blueComponents: components,
+    blueComponents: compilerComponents,
     blueTheme: { colors },
     blueKeymap: {
       register(actions: BlueKeyAction[]) {
@@ -418,6 +419,189 @@ describe('plugin surface bridge overlays', () => {
       await flush()
       expect(f.stack()).toHaveLength(0)
       expect(base.focused).toBe(true)
+      component.invalidate?.()
+      component.handleInput?.('\r')
+      ;(component as BlueFocusable).focused = true
+      expect(component.render(80)).toEqual([])
+      expect((component as BlueFocusable).focused).toBe(false)
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('keeps semantic form focus and editor draft across successful overlay recompilation', async () => {
+    const f = await fixture()
+    try {
+      let value = 'A'
+      let reordered = false
+      let renders = 0
+      const opened = await f.openCapturing({
+        id: 'continuous-form',
+        capturing: true,
+        render: () => {
+          renders += 1
+          const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
+          return reordered
+            ? ui.stack.column([ui.actions({ id: 'leading', items: [{ id: 'other', label: 'Other' }] }), form])
+            : ui.stack.column([form, ui.text('tail')])
+        },
+        onEvent: event => {
+          if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
+          reordered = true
+          return { ok: true, value: undefined }
+        },
+      })
+      expect(opened.ok).toBe(true)
+      await flush()
+      const component = f.stack()[0]!.component
+      await settleInput(component, 'B')
+      expect(value).toBe('AB')
+      expect(renders).toBe(2)
+      expect(f.stack()[0]!.component).toBe(component)
+
+      await settleInput(component, 'C')
+      expect(value).toBe('ABC')
+      expect(component.render(80).join('\n')).toContain('Name: ABC')
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('keeps the capturing runtime dormant across null and thrown overlay fallbacks', async () => {
+    const editors: ReturnType<typeof createFakeEditor>[] = []
+    const localComponents = {
+      ...components,
+      createEditor: () => {
+        const editor = createFakeEditor()
+        editors.push(editor)
+        return editor
+      },
+    } as BlueComponents
+    const f = await fixture(80, 24, localComponents)
+    try {
+      const events: BlueUiEvent[] = []
+      let value = 'AB'
+      let mode: 'valid' | 'actions' | 'null' | 'throw' = 'valid'
+      const opened = await f.openCapturing({
+        id: 'recoverable-overlay',
+        capturing: true,
+        render: () => {
+          if (mode === 'null') return null as never
+          if (mode === 'throw') throw new Error('temporary overlay failure')
+          if (mode === 'actions') return actionNode()
+          return ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
+        },
+        onEvent: event => {
+          events.push(event)
+          if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
+          return { ok: true, value: undefined }
+        },
+      })
+      expect(opened.ok).toBe(true)
+      await flush()
+      const component = f.stack()[0]!.component
+      component.render(80)
+      await settleInput(component, 'X')
+      expect(value).toBe('ABX')
+      expect(editors).toHaveLength(1)
+
+      mode = 'actions'
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect((component as BlueFocusable).focused).toBe(true)
+      expect(editors[0]!.focused).toBe(false)
+
+      mode = 'valid'
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(editors).toHaveLength(1)
+      component.render(80)
+      const fallbackChange = editors[0]!.onChange!
+      const fallbackSubmit = editors[0]!.onSubmit!
+
+      mode = 'null'
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(f.stack()[0]!.component).toBe(component)
+      expect(component.render(80).join('\n')).toContain('overlay render returned no node')
+      expect(editors[0]!.focused).toBe(false)
+      expect(editors[0]!.onChange).toBeUndefined()
+      await settleInput(component, 'ignored')
+      fallbackChange('ignored')
+      fallbackSubmit('ignored')
+      expect(events).toHaveLength(1)
+
+      mode = 'valid'
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      await settleInput(component, 'Y')
+      expect(value).toBe('ABXY')
+      expect(editors).toHaveLength(1)
+
+      mode = 'throw'
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(component.render(80).join('\n')).toContain('temporary overlay failure')
+      await settleInput(component, 'ignored')
+      expect(events).toHaveLength(2)
+
+      mode = 'valid'
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(component.render(80).join('\n')).toContain('Name: ABXY')
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('recovers one passive overlay after rejecting an interactive projection', async () => {
+    const f = await fixture()
+    try {
+      let interactive = false
+      const opened = f.api.overlays!.open({
+        id: 'passive-recovery',
+        render: () => interactive ? actionNode() : ui.text('passive projection'),
+      })
+      expect(opened.ok).toBe(true)
+      await flush()
+      const component = f.stack()[0]!.component
+      expect(component.render(80)).toEqual(['passive projection'])
+
+      interactive = true
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(f.stack()[0]!.component).toBe(component)
+      expect(component.render(80).join(' ')).toContain('non-capturing overlays cannot contain interactive controls')
+
+      interactive = false
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(f.stack()[0]!.component).toBe(component)
+      expect(component.render(80)).toEqual(['passive projection'])
+    } finally {
+      await f.dispose()
+    }
+  })
+
+  it('keeps the overlay shell but resets local draft on an external refresh', async () => {
+    const f = await fixture()
+    try {
+      const opened = await f.openCapturing({
+        id: 'external-form-refresh',
+        capturing: true,
+        render: () => ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'A' }] }),
+      })
+      expect(opened.ok).toBe(true)
+      await flush()
+      const component = f.stack()[0]!.component
+      await settleInput(component, 'B')
+      expect(component.render(80).join('\n')).toContain('Name: AB')
+
+      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await flush()
+      expect(f.stack()[0]!.component).toBe(component)
+      expect(component.render(80).join('\n')).toContain('Name: A')
+      expect(component.render(80).join('\n')).not.toContain('Name: AB')
     } finally {
       await f.dispose()
     }
@@ -808,6 +992,8 @@ describe('plugin surface bridge overlays', () => {
       const entry = f.stack()[0]!
       expect(entry.component).not.toBe(oldComponent)
       expect(entry.options).toMatchObject({ width: 60, anchor: 'right-center' })
+      oldComponent.handleInput?.('\r')
+      await flush()
       await settleInput(entry.component, '\r')
       expect(oldEvents).toBe(0)
       expect(newEvents).toBe(1)
