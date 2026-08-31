@@ -123,8 +123,10 @@ PlanReview, and form behavior through the canonical core compiler rather than
 interaction-owned terminal rows. Bundle e2e checks Plan decisions by stripped
 semantic text because core paint may place SGR boundaries inside a label/badge;
 the questionnaire VT golden owns the corresponding canonical overlay and
-editor-backed focused-input shape. These are composition acceptance assertions,
-not transcript renderer ownership.
+editor-backed focused-input shape. The real provider-add wizard confirms each
+text field with Enter before advancing; Up/Down remain editor-owned while that
+field is in edit mode. These are composition acceptance assertions, not
+transcript renderer ownership.
 
 VT snapshot fixtures use the shared tracked-temp helper for their fixed cwd as
 well as per-case settings and attachment roots, so a worker cannot leave one

@@ -189,6 +189,12 @@ function mentionTokenBeforeCursor(text: string): string | null {
   return text.charAt(start) === '@' ? text.slice(start) : null
 }
 
+function withoutFakeEditorCursor(row: string): string {
+  // pi-tui paints exactly one grapheme (or trailing space) in inverse video
+  // even while unfocused; form navigation needs the text without that caret.
+  return row.replace(/\x1b\[7m([\s\S]*?)\x1b\[0m/u, '$1')
+}
+
 /** Delegate exposing a pi-tui `Editor` through the Blue contract. */
 class EditorAdapter implements BlueEditor {
   /**
@@ -372,7 +378,9 @@ class EditorAdapter implements BlueEditor {
       this.editor.invalidate()
     }
     try {
-      return this.editor.render(Math.max(1, width)).slice(1, -1)
+      const rows = this.editor.render(Math.max(1, width)).slice(1, -1)
+      if (this.focused) return rows
+      return rows.map(withoutFakeEditorCursor)
     } finally {
       state.lines = original
       if (masked) this.editor.invalidate()

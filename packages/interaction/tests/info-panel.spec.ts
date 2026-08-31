@@ -34,6 +34,7 @@ function sections(count = 3): InfoSection[] {
 function mount(options: {
   sections?: readonly InfoSection[]
   maxVisible?: number
+  t?: (key: string) => string
 } = {}): { panel: InfoPanel; onClose: ReturnType<typeof vi.fn> } {
   const onClose = vi.fn()
   const panel = new InfoPanel({
@@ -43,6 +44,7 @@ function mount(options: {
     title: 'status',
     sections: options.sections ?? sections(),
     ...(options.maxVisible === undefined ? {} : { maxVisible: options.maxVisible }),
+    ...(options.t === undefined ? {} : { t: options.t }),
     onClose,
   })
   return { panel, onClose }
@@ -60,6 +62,12 @@ describe('InfoPanel', () => {
     expect(rows.join('\n')).toContain('dim tail')
     expect(rows.join('\n')).toContain('red tail')
     expect(rows.join('\n')).toContain('green')
+  })
+
+  it('translates contextual operation labels when supplied', () => {
+    const { panel } = mount({ t: key => `translated:${key}` })
+    panel.focused = true
+    expect(panel.render(80).join('\n')).toContain('Esc/Enter/q translated:close')
   })
 
   it('normalizes empty and unlabeled rows while merging adjacent semantic spans', () => {

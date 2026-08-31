@@ -161,6 +161,11 @@ describe('createEditor', () => {
     })
     if (!result.ok) throw new Error(result.message)
     result.value.focusTarget!.focused = true
+    const selected = result.value.component.render(40).join('')
+    expect(selected).not.toContain('\x1b[7m')
+
+    result.value.focusTarget!.handleInput?.('\r')
+    expect(result.value.component.render(40).join('')).toContain('\x1b[7m')
     for (const width of [40, 2]) {
       const frame = renderLayoutFrame(result.value.component as Component, width, 3, () => {}).lines.join('')
       expect(frame).not.toContain('\uf8ff')
@@ -170,6 +175,8 @@ describe('createEditor', () => {
       expect(replay).not.toContain('\uf8ff')
       expect(replay.match(new RegExp(CURSOR_MARKER, 'gu'))).toHaveLength(1)
     }
+    result.value.focusTarget!.handleInput?.('\x1b')
+    expect(result.value.component.render(40).join('')).not.toContain('\x1b[7m')
     stop()
   })
 
@@ -636,6 +643,20 @@ describe('createEditor', () => {
     expect(plain).toContain('a界🙂')
     expect(plain).toContain('z')
     expect(plain).not.toContain('•')
+    stop()
+  })
+
+  it('hides the form-field fake caret while the editor is not focused', () => {
+    const { tui, stop } = bootTui()
+    const editor = createSgrService(tui).createEditor()
+    editor.setText('Director notes stay readable without a trailing block')
+
+    const navigation = editor.renderContent(80).join('\n')
+    expect(navigation).toContain('Director notes stay readable')
+    expect(navigation).not.toContain('\x1b[7m')
+
+    editor.focused = true
+    expect(editor.renderContent(80).join('\n')).toContain('\x1b[7m \x1b[0m')
     stop()
   })
 

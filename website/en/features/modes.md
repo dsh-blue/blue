@@ -15,7 +15,8 @@ The default. Every tool call pops the four-option approval panel (allow once / a
 In plan mode the agent produces a plan before acting. When the plan is final, the harness's `exit_plan_mode` request surfaces as the **plan review panel** (editor-slot replacement, mounted like the approval panel):
 
 - the full plan renders as Markdown inside a bordered `plan` box;
-- beneath it a numbered decision list — number keys pick directly, or ↑↓ + `Enter`:
+- beneath it a numbered decision list — number keys pick directly, or ←→ +
+  `Enter`; ↑↓ / PageUp / PageDown scroll only the plan body:
 
 | Option | Effect |
 | --- | --- |

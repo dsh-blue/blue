@@ -687,8 +687,9 @@ describe('model-family commands', () => {
       const rows = screen.overlays[screen.overlays.length - 1]?.component.render?.(80) ?? []
       expect(rows.some(row => row.includes('Configure mock'))).toBe(true)
     })
-    overlay(screen).handleInput(KEY.tab)
-    overlay(screen).handleInput(KEY.tab)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.down)
+    overlay(screen).handleInput(KEY.enter)
     overlay(screen).handleInput(KEY.enter)
     await vi.waitFor(() => { expect(notices).toContain('provider "mock" updated') })
   })
@@ -882,8 +883,7 @@ describe('model-family commands', () => {
       const rows = (overlay(screen).render?.(60) ?? []).join('\n')
       expect(rows).toContain('Model defaults')
     })
-    overlay(screen).handleInput(KEY.enter)
-    overlay(screen).handleInput(KEY.enter)
+    for (let step = 0; step < 4; step += 1) overlay(screen).handleInput(KEY.enter)
     // The route registers ~120ms after the writes; the scoped picker waits
     // for it and opens over the fresh route.
     await vi.waitFor(() => {
@@ -928,8 +928,7 @@ describe('model-family commands', () => {
       const rows = (overlay(screen).render?.(60) ?? []).join('\n')
       expect(rows).toContain('Model defaults')
     })
-    overlay(screen).handleInput(KEY.enter)
-    overlay(screen).handleInput(KEY.enter)
+    for (let step = 0; step < 4; step += 1) overlay(screen).handleInput(KEY.enter)
     // Unload mid-poll: the wait exits quietly with no picker.
     await fiber.dispose()
     await new Promise(resolve => setTimeout(resolve, 150))

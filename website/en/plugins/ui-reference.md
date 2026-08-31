@@ -349,7 +349,15 @@ A form field is this discriminated union:
 While text is edited, Blue keeps a draft within the current surface generation
 and continuously emits `value-change`. The plugin must still write accepted
 values back to its view state. A recreated surface or an externally changed
-canonical value wins over the old draft.
+canonical value wins over the old draft. The first Enter enters a text field;
+the next Enter confirms and returns to that field's navigation state. Alt+Enter
+inserts a textarea newline.
+
+The first Enter on a select opens an adjustment state shown as
+`‹ value ›`. Left/Right changes only the renderer-local candidate; another
+Enter emits one confirmed `value-change`. Escape or Tab cancels and
+restores the value captured on entry. Up/Down changes form fields only outside
+the adjustment state.
 
 `submitActionId` adds a submit control. The current TUI uses the string as the
 button label, and activation emits:
@@ -389,6 +397,26 @@ current focus generation, and Escape first clears pending confirmation.
 `intent` communicates semantic priority; the theme owns its appearance. The
 outer `actions.id` identifies the group, while an event's `controlId` is the
 activated item's `id`.
+
+## Focus and contextual hints
+
+The TUI derives operations directly from canonical control roles. Plugins
+should not repeat generic keyboard teaching in a surface footer:
+
+- Tab/Shift-Tab switches semantic groups in tree order and remembers each
+  group's last focused item.
+- Left/Right moves inside tabs/actions; Up/Down moves inside lists/forms.
+- Tabs and single lists activate with Enter, multiple lists toggle with Space,
+  and actions accept Enter or Space.
+- Text/select editing changes the hint to finish, apply, newline, or cancel;
+  a pending action confirmation changes it to `Enter confirm · Esc cancel`.
+
+The row appears only while a plugin pane owns focus or a capturing overlay is
+open. Escape is advertised only for a surface that can actually close; passive
+panes and non-capturing overlays do not show a false operation. At most three
+semantic fragments are shown. Narrow layouts first use complete compact key
+tokens, then remove whole fragments rather than clipping half an instruction.
+Local counts, progress, risk, and business status still belong in the footer.
 
 ## Feedback and utility nodes
 

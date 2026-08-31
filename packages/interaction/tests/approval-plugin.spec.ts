@@ -70,18 +70,18 @@ describe('blue-approval answerer', () => {
   it('allows once on confirm of the default choice', async () => {
     const { ctx, screen, agent } = await mount()
     const pending = decide(ctx, request(agent, { reason: 'writes files' }))
+    const prompt = screen.overlays[0]!.component as unknown as {
+      focused: boolean
+      onEvent(event: { kind: string, controlId: string, value?: unknown }): void
+    }
+    prompt.focused = true
     const rendered = screen.overlays[0]?.component.render(60) ?? []
     expect(rendered.join('\n')).toContain('Approve bash?')
     expect(rendered.join('\n')).toContain('writes files')
     expect(rendered.join('\n')).toContain('Allow once')
     expect(rendered.join('\n')).toContain('Allow bash for this session')
     expect(rendered.join('\n')).toContain('Reject with feedback')
-    expect(rendered.join('\n')).toContain('1-4 choose')
-    const prompt = screen.overlays[0]!.component as unknown as {
-      focused: boolean
-      onEvent(event: { kind: string, controlId: string, value?: unknown }): void
-    }
-    prompt.focused = true
+    expect(rendered.join('\n')).toContain('↑↓/1-4 choose')
     expect(prompt.focused).toBe(true)
     prompt.onEvent({ kind: 'activate', controlId: 'other' })
     prompt.onEvent({ kind: 'value-change', controlId: 'other', value: 'ignored' })

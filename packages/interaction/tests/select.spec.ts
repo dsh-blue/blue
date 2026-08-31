@@ -13,6 +13,7 @@ function mount(entries: readonly BlueSelectItem[] = items(3)) {
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   const select = new CanonicalMultiSelectController({ keymap: new FakeKeymap(), theme: new FakeTheme(), components: new FakeBlueComponents(), items: entries, onConfirm, onCancel })
+  select.focused = true
   return { select, onConfirm, onCancel }
 }
 
@@ -63,16 +64,17 @@ describe('CanonicalMultiSelectController', () => {
     value.select.invalidate()
   })
 
-  it('falls back to action ids when the keymap has no labels', () => {
+  it('uses the canonical operation labels independently of keymap descriptions', () => {
     const select = new CanonicalMultiSelectController({ keymap: new FakeKeymap(false), theme: new FakeTheme(), components: new FakeBlueComponents(), items: items(1), onConfirm: () => {}, onCancel: () => {} })
-    expect(select.render(200).join('\n')).toContain('blue.interaction.submit confirm')
+    select.focused = true
+    expect(select.render(200).join('\n')).toContain('Space toggle · Enter confirm · Esc close')
   })
 
   it('maps compiler selection events, filters non-string ids, and bridges focus', () => {
     const value = mount()
     value.select.focused = true
     expect(value.select.focused).toBe(true)
-    ;(value.select as unknown as { adapter: { handleInput(data: string): void } }).adapter.handleInput(KEY.enter)
+    ;(value.select as unknown as { adapter: { handleInput(data: string): void } }).adapter.handleInput(KEY.space)
     expect(value.select.currentNode()).toMatchObject({ child: { selectedIds: ['v0'] } })
     ;(value.select as unknown as { onEvent(event: { kind: 'selection-change', controlId: string, value: unknown }): void })
       .onEvent({ kind: 'selection-change', controlId: 'blue-select', value: ['v1', 2] })

@@ -19,6 +19,7 @@ import { BlueScreenService } from './screen.ts'
 import { BlueTerminalInfoService } from './terminal-info.ts'
 import { startBlueTerminal } from './terminal.ts'
 import { mountPluginSurfaceBridge } from './plugin-surface-bridge.ts'
+import { contextHintTranslator, mountContextHintLocale } from './context-hint-locale.ts'
 import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
 export { BlueComponentsService, type BlueComponentsDeps } from './components.ts'
@@ -138,6 +139,7 @@ export async function apply(ctx: Context): Promise<void> {
   const runtime = await startBlueTerminal(undefined, undefined, (scheme) => {
     ctx.emit('blue/terminal-theme-changed', scheme)
   }, undefined, 'alternate', { stdout: process.stdout, stderr: process.stderr })
+  mountContextHintLocale(ctx, runtime.requestRender)
   // The keymap instantiates directly instead of as a class plugin so the
   // dispatcher below can close over the instance: the runtime predates the
   // service, and the Context proxy rejects service access without an inject
@@ -162,7 +164,7 @@ export async function apply(ctx: Context): Promise<void> {
     name: 'blue-plugin-surface-bridge',
     inject: ['bluePluginControl', 'blueComponents', 'blueTheme', 'blueKeymap'],
     apply(subCtx: Context) {
-      mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime)
+      mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime, contextHintTranslator(ctx))
     },
   })
   ctx.effect(() => () => runtime.stop())

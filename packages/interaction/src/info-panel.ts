@@ -8,6 +8,7 @@
 
 import type { BlueInlineSpan, BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_SUBMIT } from './keys.ts'
 
@@ -48,6 +49,7 @@ export interface InfoPanelOptions {
   readonly title: string
   readonly sections: readonly InfoSection[]
   readonly onClose: () => void
+  readonly t?: BlueTranslate
   /** Maximum post-wrap content rows visible in the editor slot. */
   readonly maxVisible?: number
 }
@@ -91,6 +93,16 @@ export class InfoPanel implements BlueFocusable {
       node: () => this.currentNode(),
       onEvent: PASSIVE_EVENT_SINK,
       onUnhandledEscape: options.onClose,
+      ...(options.t === undefined ? {} : { t: options.t }),
+      suppressAutomaticContextHints: true,
+      focusWithoutControls: true,
+      contextHints: () => [
+        ...(this.contentRows > this.contentLimit ? [
+          { id: 'navigate', keys: '↑↓', label: 'scroll', priority: 90 },
+          { id: 'page', keys: 'PgUp/PgDn', label: 'page', priority: 85 },
+        ] : []),
+        { id: 'dismiss', keys: 'Esc/Enter/q', label: 'close', priority: 100 },
+      ],
       maxLeafRows: this.contentLimit,
       leafRowWindowPath: INFO_LEAF_PATH,
       leafRowOffset: () => this.scrollTop,
@@ -156,7 +168,7 @@ export class InfoPanel implements BlueFocusable {
       chrome: 'overlay',
       title: this.options.title,
       child: { kind: 'rich-text', spans },
-      footer: { kind: 'divider', label: `${showing}Esc / Enter / q to cancel` },
+      ...(showing === '' ? {} : { footer: { kind: 'divider', label: showing.slice(0, -3) } as const }),
     }
   }
 }

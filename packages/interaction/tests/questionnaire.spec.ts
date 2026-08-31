@@ -20,6 +20,7 @@ function make(questions: readonly AskUserQuestionItem[]) {
     theme: new FakeTheme(), components: new FakeBlueComponents(), questions,
     onComplete: completed, onCancel: cancelled,
   })
+  questionnaire.focused = true
   return { questionnaire, completed, cancelled }
 }
 
@@ -59,7 +60,7 @@ describe('Questionnaire', () => {
     expect(rows).toContain('Setup')
     expect(rows).toContain('Choose one')
     expect(rows).toContain('Pick carefully')
-    expect(rows).toContain('1-9 choose')
+    expect(rows).toContain('↑↓/1-9')
   })
 
   it('wraps the cursor, confirms single choices, and supports numeric direct selection', () => {
@@ -74,6 +75,7 @@ describe('Questionnaire', () => {
 
   it('toggles and untoggles multi-select choices and falls back to focus', () => {
     const value = make([choice({ multiSelect: true })])
+    expect(value.questionnaire.render(80).join('\n')).toContain('Space/Enter toggle / choose')
     value.questionnaire.handleInput(KEY.space)
     expect(list(value.questionnaire).items[0]?.label).toBe('[x] Alpha')
     value.questionnaire.handleInput(KEY.space)

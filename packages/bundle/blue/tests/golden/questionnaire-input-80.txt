@@ -25,6 +25,6 @@
 │What should we call this project?                                             │
 │                                                                              │
 │ → Answer:                                                                    │
-│Enter save · Tab next · Esc cancel                                            │
+│  Enter save · Tab/Shift-Tab questions · Esc cancel                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

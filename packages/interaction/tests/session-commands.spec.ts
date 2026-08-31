@@ -460,10 +460,10 @@ describe('registerSessionCommands', () => {
     expect(execute).toHaveBeenCalledWith({ kind: 'context.refresh', sessionId: 'status-spec' })
     feature.model = { state: 'loading', panel: { title: 'Context', node: { kind: 'text', content: 'loading projection' } } } as never
     projected.invalidate()
-    expect(projected.currentNode()).toMatchObject({ footer: { content: 'Esc / q to cancel' } })
+    expect(projected.currentNode()).toMatchObject({ child: { children: [{ node: { kind: 'loader', message: 'loading projection' } }] } })
     feature.model = { state: 'error', panel: { title: 'Context', node: { kind: 'text', content: 'failed projection' } } } as never
     projected.invalidate()
-    expect(projected.currentNode()).toMatchObject({ footer: { tone: 'danger' } })
+    expect(projected.currentNode()).toMatchObject({ child: { children: [{ node: { kind: 'text', content: 'failed projection' } }] } })
     feature.model = undefined as never
     projected.invalidate()
     expect(plain(projected.render(80)).some(row => row.includes('context unavailable'))).toBe(true)

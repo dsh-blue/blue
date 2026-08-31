@@ -102,7 +102,7 @@ consumer-driven proposal.
 
 ## Canonical Bottom Panes
 
-Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Todo renders the projected whole list and keeps only its local expanded/collapsed view state. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
+Activity, todo, and agents consume `blueSessionFacts`. Activity derives its phase from projection facts and owns only its presentation timer. Its rotating pool teaches stable commands/features only; focus- and state-sensitive keyboard guidance belongs to the active interaction surface and must not be copied into the passive spinner. Todo renders the projected whole list and keeps only its local expanded/collapsed view state; its Ctrl-T expansion hint remains pane-local because it describes hidden pane content. Agents renders projected spawn-class facts plus bounded direct-child overlays; no child Session or event subscription enters the renderer.
 
 `BlueBottomPaneService` is package-private and accepts only Blue-owned bottom panes; it has no placement field or left/right lane. Each canonical `BlueUiNode` mounts independently through core's shared dock allocator, and `priority` controls both scarce-row allocation (larger first) and visual proximity to the fixed editor. Source/compiler/adapter failures fall back to a canonical danger node without changing priority or bottom placement. Public plugin panes do not enter this registry: core's canonical surface bridge owns their placement, compilation, events, and lifecycle.
 

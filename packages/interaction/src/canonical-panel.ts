@@ -15,6 +15,16 @@ import {
   type BlueTheme,
   type BlueUiCompileResult,
 } from '@dsh-blue/blue-core'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
+
+/** One interaction-private contextual operation merged by core. */
+export interface CanonicalContextHint {
+  readonly id: string
+  readonly keys: string
+  readonly label?: string
+  readonly compact?: string
+  readonly priority?: number
+}
 
 /** A controller that can expose its current canonical node. */
 export interface CanonicalNodeSource {
@@ -37,7 +47,19 @@ export interface CanonicalPanelAdapterOptions {
   readonly leafRowOffset?: () => number
   readonly onLeafRowOffset?: (offset: number, totalRows: number, limit: number) => void
   readonly onTextSubmit?: (controlId: string, value: string) => void
+  /** Dynamic translator for core-owned contextual operation labels. */
+  readonly t?: BlueTranslate
+  /** Controller-only operations that canonical control roles cannot infer. */
+  readonly contextHints?: () => readonly CanonicalContextHint[]
+  /** Complex controllers may replace the automatic control-role hints. */
+  readonly suppressAutomaticContextHints?: boolean
+  /** Controller-only overlays remain focusable even without canonical controls. */
+  readonly focusWithoutControls?: boolean
   readonly focusIndex?: () => number
+  /** Axis used to restore controller-owned selection after a rebuild. */
+  readonly focusAxis?: 'groups' | 'vertical'
+  /** Whether the restored text control is already in an explicit edit mode. */
+  readonly startEditing?: () => boolean
 }
 
 /** Compile canonical nodes lazily while preserving the outer focus identity. */
@@ -65,6 +87,11 @@ export class CanonicalPanelAdapter implements BlueFocusable {
       ? undefined
       : this.result.ok ? this.result.value.component : this.result.errorComponent
     component?.invalidate()
+    for (const editor of this.editors.values()) {
+      editor.focused = false
+      editor.onChange = undefined
+      editor.onSubmit = undefined
+    }
     this.revision += 1
     this.result = undefined
   }
@@ -116,6 +143,13 @@ export class CanonicalPanelAdapter implements BlueFocusable {
         return editor
       },
       ...(this.options.onTextSubmit === undefined ? {} : { onTextSubmit: this.options.onTextSubmit }),
+      contextHints: {
+        enabled: true,
+        ...(this.options.suppressAutomaticContextHints === true ? { suppressAuto: true } : {}),
+        ...(this.options.focusWithoutControls === true ? { focusWithoutControls: true } : {}),
+        ...(this.options.t === undefined ? {} : { translate: this.options.t }),
+        ...(this.options.contextHints === undefined ? {} : { extra: this.options.contextHints }),
+      },
       emit: this.options.onEvent,
       ...(this.options.onUnhandledEscape === undefined ? {} : { onUnhandledEscape: this.options.onUnhandledEscape }),
     })
@@ -125,7 +159,9 @@ export class CanonicalPanelAdapter implements BlueFocusable {
     if (target !== null) {
       target.focused = this.ownFocused
       const focusIndex = Math.max(0, Math.floor(this.options.focusIndex?.() ?? 0))
-      for (let index = 0; index < focusIndex; index += 1) target.handleInput?.('\t')
+      const focusInput = this.options.focusAxis === 'vertical' ? '\x1b[B' : '\t'
+      for (let index = 0; index < focusIndex; index += 1) target.handleInput?.(focusInput)
+      if (this.options.startEditing?.() === true) target.handleInput?.('\r')
     }
     return result
   }

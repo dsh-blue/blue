@@ -32,11 +32,11 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 `github:owner/repo@commit` 输入会在委托前归一化。所有 mutation 都委托给 `dsh plugin`，重启后生效，绝不替换 live tree。这份 TUI
 目录不表示另行暂停的 Website 插件市场已经开放。
 
-Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色和窄宽收容。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复 host 持有的 definition。私有 owner lease 会按 generation 约束 command dispatch 及 fulfilled/rejected settlement、editor callback 与 notification observation；保留的 stale handler 不会调用插件代码。Notification observer failure 与其它 observer、publisher result 相互隔离。
+Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色、窄宽收容与聚焦感知的操作提示行。Tab/Shift-Tab 在语义组之间切换，方向键留在当前组内；提示会随编辑、调整、二次确认、翻页或 controller 专有快捷键切换。Panel footer 不再重复通用按键教学，只保留计数、状态、风险与校验语境。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复 host 持有的 definition。私有 owner lease 会按 generation 约束 command dispatch 及 fulfilled/rejected settlement、editor callback 与 notification observation；保留的 stale handler 不会调用插件代码。Notification observer failure 与其它 observer、publisher result 相互隔离。
 
 Blue 自有 interaction chrome 支持英文与简体中文。`/settings` 首行显示“语言”，通过 Harness 的 `locale.preference` 在“跟随系统”“中文”“English”之间循环；切换时会原地刷新已打开的 settings、help、approval、questionnaire、command model 与 slash completion，不替换 controller/editor、不丢选择，也不丢弃已打开 form 的草稿。用户/model/tool 内容、路径、id、命令名、provider/model 名与上游错误详情不翻译。
 
-Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Enter 在字段间前进或提交最后一个字段；Tab/Down 前进，Shift-Tab/Up 后退。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。
+Form 将校验错误紧跟在失败字段下方，文本字段同时保留 Blue editor 的光标、IME 与 bracketed-paste 行为。Up/Down 只在导航态切换字段，编辑态仍由 editor 处理；直接输入会开始编辑，未编辑字段第一次 Enter 进入编辑，编辑态 Enter 才前进或提交最后一个字段。Tab 先退出编辑，并保留给语义控件组切换；Escape 第一次返回导航态，第二次取消。Question panel 显示有界的答题进度，free-text 与 `Other` 共用同一种 canonical input，在切换问题时保留草稿，并支持 1-9 数字直选。
 
 可读 export 在 flush 并读取 durable artifact 后使用官方 `blueConversation` projection；full export 则有意输出解码后的审计 event stream。`/copy` 使用官方 conversation 值与 OSC 52/native clipboard 管线。
 
