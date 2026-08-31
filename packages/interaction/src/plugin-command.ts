@@ -223,7 +223,11 @@ function pluginPanelModel(rows: readonly InstalledPluginRow[], state: PluginPane
             { id: 'details', label: t('Details'), action: { kind: 'plugin.catalog.details', entry } },
             {
               id: 'install',
-              label: installed ? t('Installed') : t('Install'),
+              label: installed
+                ? t('Installed')
+                : entry.state === 'needs-migration'
+                  ? t('Migration required')
+                  : t('Install'),
               disabled: !installable,
               ...(installSpec !== undefined && !installed ? { action: { kind: 'plugin.catalog.install', entry, spec: installSpec } } : {}),
             },

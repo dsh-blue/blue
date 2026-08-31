@@ -225,7 +225,8 @@ snapshot. No repository code is imported or executed while indexing. Only a
 canonical P1 manifest compatible with the current API/Blue/Harness/Node lines
 receives an Install variant, and its source is pinned to the resolved full
 40-character commit. Legacy `dsh-blue/blue-doudizhu` is therefore visible as
-Needs migration with Details available and Install disabled. This TUI catalog
+Needs migration with Details available and a disabled `[Migration required]`
+action instead of a misleading Install label. This TUI catalog
 is not the paused Website Marketplace and does not start P6 outreach or
 migration.
 

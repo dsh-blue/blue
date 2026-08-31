@@ -24,8 +24,9 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 依赖，标明 compatible/incompatible/invalid，并提供验证/移除动作；**插件目录**先立即
 显示随版本审核的内置快照，再后台刷新显式维护的 GitHub 索引，离线时保留快照。目录
 元数据不会执行；只有 canonical 且兼容的 manifest 才获得安装动作，来源锁到解析出的
-40 位 commit。`dsh-blue/blue-doudizhu` 等旧契约条目仍可查看，但显示“需要迁移”且
-禁用安装。`/plugin verify <package-or-directory>` 会真实运行公开静态校验器；直接安装
+40 位 commit。`dsh-blue/blue-doudizhu` 等旧契约条目仍可查看，但显示“需要迁移”，
+禁用动作也明确标成 Migration required。`/plugin verify <package-or-directory>` 会真实
+运行公开静态校验器；直接安装
 仍只接受已存在的本地目录/tarball、精确 npm `package@version` 或完整 commit 的 GitHub
 源。所有 mutation 都委托给 `dsh plugin`，重启后生效，绝不替换 live tree。这份 TUI
 目录不表示另行暂停的 Website 插件市场已经开放。

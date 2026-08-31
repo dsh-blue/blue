@@ -135,6 +135,7 @@ const zh: Readonly<Record<string, string>> = {
   'Catalog': '插件目录',
   'Compatible': '兼容',
   'Needs migration': '需要迁移',
+  'Migration required': '需要迁移',
   'Incompatible': '不兼容',
   'Invalid': '无效',
   'Verify': '验证',

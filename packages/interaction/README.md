@@ -27,7 +27,7 @@ bundled snapshot, then refreshes its explicit GitHub index in the background;
 an offline refresh keeps the snapshot. Catalog metadata is inert and only a
 canonical compatible manifest receives an Install action pinned to the resolved
 40-character commit. Legacy entries such as `dsh-blue/blue-doudizhu` remain
-inspectable as Needs migration with Install disabled. `/plugin verify
+inspectable as Needs migration with a disabled Migration required action. `/plugin verify
 <package-or-directory>` runs the published static validator. Direct installs
 still accept only an existing local path/tarball, an exact npm
 `package@version`, or a full-commit GitHub source. All mutations delegate to
