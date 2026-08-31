@@ -73,7 +73,7 @@ The deletion audit distinguishes renderer event folding from legitimate domain o
 
 - The locale-integrated branch's eleven release packages and website are closed at `0.1.1-rc.2`; the independent Harness line remains `0.1.1-rc.2`.
 - Validation-only packages remain outside the release/bundle closure; `packages/context/package.json` remains `0.1.0-rc.2`.
-- The bundle contains 33 Blue-owned rows: 2 host-support, 1 private-runtime composition group, 9 baseline, 15 enhancement and 6 assembly rows. The group wraps all 30 product rows and isolates `bluePluginControl`, `blueSessionReader`, `blueSessionProjections` and `blueSessionActions`; public `bluePluginHost` remains available across the boundary.
+- The bundle contains 34 Blue-owned rows: 3 host-support, 1 private-runtime composition group, 9 baseline, 15 enhancement and 6 assembly rows. The group wraps all 30 product rows and isolates `bluePluginControl`, `blueSessionReader`, `blueSessionProjections` and `blueSessionActions`; public `bluePluginHost` remains available across the boundary.
 - Locale runtime/settings adaptation, conversation projection and official transcript consumption are baseline rows. Context, remote, OpenPencil and Lark are validation-only, not bundle rows.
 - No operation may mutate the production `blue` profile.
 

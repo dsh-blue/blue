@@ -267,7 +267,7 @@ export type OfferResolution =
  * package-manager resolution, which silently rolls back inside the
  * cooldown window (R4).
  * @param packument - the normalized packument.
- * @param channel - the dist-tag to follow (`rc`).
+ * @param channel - the dist-tag to follow (`alpha`).
  * @param currentVersion - the running version.
  */
 export function resolveOffer(packument: Packument, channel: string, currentVersion: string): OfferResolution {
@@ -281,4 +281,3 @@ export function resolveOffer(packument: Packument, channel: string, currentVersi
   }
   return { kind: 'up-to-date', target }
 }
-

@@ -13,5 +13,5 @@
   "files": ["lib/**/*"],
   "license": "MIT",
   "peerDependencies": { "@dsh-blue/blue-ui": "workspace:*" },
-  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-core": "workspace:*", "@dsh-blue/blue-ui": "workspace:*" }
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.2", "@dsh-blue/blue-api": "workspace:*", "@dsh-blue/blue-core": "workspace:*", "@dsh-blue/blue-ui": "workspace:*" }
 }

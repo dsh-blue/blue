@@ -50,7 +50,7 @@ owner attach、aggregate snapshot/observe、notification observe、gesture mint 
 | transcript | `blueTranscriptModels`、`blueStatusEntries`、`blueStatusComposition`、`blueBottomPanes`、tool model service | transcript model + canonical node + effect-bound registration + selected-provider composition | semantic TUI components、default/provider footer、Blue-owned bottom panes |
 | interaction | `blueEditorHost`、`blueInteractionState` | frontend-tree-scoped editor slot、completion multiplexer、pre-clear submit barrier、public extension binding and mutable product state | input、plugin-host bridge and interaction child Fibers |
 | frontend | theme/notification/locale/provider hosts | renderer-neutral model registries and generation-scoped provider swap | renderer adapters |
-| bundle | `cordis.patch.yml` | 33 Blue-owned rows；`blue-runtime-private` 隔离 control 与 raw app backing services | dsh profile composition |
+| bundle | `cordis.patch.yml` | 34 Blue-owned rows；`blue-runtime-private` 隔离 control 与 raw app backing services | dsh profile composition |
 
 Session switch requests remain events such as `blue/request-resume`, `blue/request-new`, `blue/request-fork`, and `blue/request-rewind`. They are commands addressed to the app owner, not a raw session-fact broadcast. The deleted `blue/session-changed` and `blue/session-binding-changed` events must not be restored.
 
@@ -69,7 +69,7 @@ Session switch requests remain events such as `blue/request-resume`, `blue/reque
 
 ## 5. Bundle mapping
 
-The patch owns 33 Blue rows: two host-support rows, one private-runtime composition group, plus 30 product rows.
+The patch owns 34 Blue rows: three host-support rows, one private-runtime composition group, plus 30 product rows.
 
 - Baseline, 9 rows: API host, locale runtime/settings adapter, core/theme, banner, transcript model hosts/footer, conversation projection, official transcript consumer.
 - Enhancement, 15 rows: editor/attachment helpers, five status producers, five bottom panes, the public additive-status bridge, and the exclusive status-provider owner.

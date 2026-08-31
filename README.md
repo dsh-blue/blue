@@ -8,7 +8,7 @@
 
 English | [中文](README.zh.md)
 
-Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains sixteen workspace packages — twelve in the `0.1.1-rc.3` release set and four validation-only adapters — built and tested against the published Harness `0.1.1-rc.2` line.
+Blue is an interactive terminal UI (TUI) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`): a `pi-tui` renderer mounted as an out-of-tree [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) plugin bundle on top of the `dsh-base` bundle. This repository contains sixteen workspace packages — twelve in the `0.1.2-alpha.1` release set and four validation-only adapters — built and tested against the published Harness `0.1.2-alpha.2` line.
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue demo — streaming transcript, tool cards, and dock panes"></a>
@@ -29,22 +29,22 @@ The full story: [docs/blue-architecture.md](docs/blue-architecture.md) · decisi
 ## Usage
 
 > [!NOTE]
-> `0.1.1-rc.3` is the current Public Beta release line. The commands below use
-> the `rc` channel; plugin adapters and reproducible environments should pin
-> the exact `0.1.1-rc.3` version.
+> `0.1.2-alpha.1` is the current alpha release. The commands below use the
+> `alpha` channel; plugin adapters and reproducible environments should pin
+> Blue `0.1.2-alpha.1` and Harness `0.1.2-alpha.2`. RC Harness releases are not supported.
 
 Prerequisites: Node `^22.19 || >=24` and pnpm 11. The recommended launcher includes its tested dsh runtime.
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh plugin --profile blue add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@alpha
 dsh --profile blue
 ```
 
 Or use the recommended one-command `blue` launcher; it carries the tested Harness tree as common and platform archives, so npm never resolves that graph during installation:
 
 ```sh
-npm i -g @dsh-blue/blue-cli@rc
+npm i -g @dsh-blue/blue-cli@alpha
 blue
 ```
 
@@ -62,7 +62,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 34 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -94,7 +94,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-layers -->
 
-The runtime flow is `Harness domain -> projection/action boundary -> renderer-neutral models -> TUI feature plugins -> core`. Events state facts, projections hold current state, and actions are write requests with structured results; Blue never keeps a second agent truth, and Agent/Session objects never cross into renderers. The row-by-row bundle composition (33 Blue-owned rows over `dsh-base`) is documented in [the bundle guide](https://dsh-blue.dev/en/plugins/builtins/), and the feature tour is on [the website](https://dsh-blue.dev/en/features/).
+The runtime flow is `Harness domain -> projection/action boundary -> renderer-neutral models -> TUI feature plugins -> core`. Events state facts, projections hold current state, and actions are write requests with structured results; Blue never keeps a second agent truth, and Agent/Session objects never cross into renderers. The row-by-row bundle composition (34 Blue-owned rows over `dsh-base`) is documented in [the bundle guide](https://dsh-blue.dev/en/plugins/builtins/), and the feature tour is on [the website](https://dsh-blue.dev/en/features/).
 
 ## Documentation
 

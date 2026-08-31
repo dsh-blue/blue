@@ -9,6 +9,11 @@ export interface MarketplaceInstall {
   spec: string
 }
 
+// 收录状态：verified 通过兼容性验证（/plugin 可装）、unverified 仅 CLI 可装、
+// adapting 正与开发者合作适配当前 Harness 线。registry 未迁移前可省略，
+// 由 load() 从旧 verified 布尔推导。
+export type MarketplaceStatus = 'verified' | 'unverified' | 'adapting'
+
 export interface MarketplaceEntry {
   id: string
   package: string
@@ -22,6 +27,9 @@ export interface MarketplaceEntry {
   categories: string[]
   license: string
   verified: boolean
+  status: MarketplaceStatus
+  // 适配中条目的跟踪 issue URL（与开发者合作的适配进度），无则为 null
+  adaptingIssue: string | null
   npm: string | null
   image: string | null
   added: string
@@ -55,7 +63,14 @@ export default {
     try {
       const registry = JSON.parse(readFileSync(registryFile, 'utf8'))
       const categories: MarketplaceCategory[] = JSON.parse(readFileSync(categoriesFile, 'utf8'))
-      const plugins: MarketplaceEntry[] = Array.isArray(registry?.plugins) ? registry.plugins : []
+      const raw: MarketplaceEntry[] = Array.isArray(registry?.plugins) ? registry.plugins : []
+      // 归一化：registry 尚未带 status 字段时按旧 verified 布尔推导，
+      // 保证组件拿到的每条 entry 状态确定。
+      const plugins = raw.map((p) => ({
+        ...p,
+        status: p.status ?? (p.verified ? 'verified' : 'unverified'),
+        adaptingIssue: p.adaptingIssue ?? null,
+      }))
       return { available: true, plugins, categories }
     } catch {
       return { available: false, plugins: [], categories: [] }

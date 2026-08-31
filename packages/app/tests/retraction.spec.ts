@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { createBlueRequestController } from '../src/request-lifecycle.ts'
 import { installRetractionService } from '../src/retraction.ts'
@@ -96,7 +96,7 @@ describe('message retraction', () => {
     test.session.append('tool/call', {
       turn: 1,
       step: 1,
-      callId: CallId('call-1'),
+      callId: ToolCallId('call-1'),
       name: 'bash',
       arguments: '{}',
     })
@@ -140,7 +140,7 @@ describe('message retraction', () => {
         id: 'assistant-tool' as never,
         role: 'assistant',
         source: { kind: 'model', provider: 'mock', model: 'mock-model' },
-        content: [{ type: 'tool-call', id: CallId('call-2'), name: 'bash', arguments: '{}' }],
+        content: [{ type: 'tool-call', id: ToolCallId('call-2'), name: 'bash', arguments: '{}' }],
       },
     }, { surfaceOp: 'append' })
     expect(test.service.tryRetract(String(message.id))).toBe(false)

@@ -17,7 +17,7 @@ const packageDir = dirname(fileURLToPath(import.meta.url))
 describe('@dsh-blue/blue-api', () => {
   it('exports the public version owners', () => {
     expect(BLUE_API_VERSION).toBe('1.0.0-beta.1')
-    expect(BLUE_VERSION).toBe('0.1.1-rc.3')
+    expect(BLUE_VERSION).toBe('0.1.2-alpha.1')
   })
 
   it('accepts namespaced manifests and rejects malformed declarations', () => {

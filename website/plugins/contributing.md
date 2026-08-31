@@ -3,7 +3,7 @@
 面向 **Blue 仓库贡献者**的本地开发安装:从源码检出、link 安装进 dsh profile、迭代回路与冒烟检查。在自己的仓库里写 Blue 插件的下游开发者请看[开发手册](/plugins/)（从[快速开始](/plugins/quickstart)入手）——那条路径不需要本页。
 
 ::: info
-用户安装路径是 npm——`dsh plugin --profile blue add @dsh-blue/blue@rc`,见[快速上手](/guide/)。本页只服务改 Blue 本体的贡献者。
+用户安装路径是 npm——`dsh plugin --profile blue add @dsh-blue/blue@alpha`，见[快速上手](/guide/)。本页只服务改 Blue 本体的贡献者。
 :::
 
 ## 前置条件
@@ -12,7 +12,7 @@
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11 |
-| dsh CLI | `>=0.1.1-rc.2`（`npm i -g @deepseek-ai/dsh`） |
+| dsh CLI | 精确 `0.1.2-alpha.2`（不支持 RC） |
 
 ## 一键安装
 
@@ -50,7 +50,7 @@ dsh --profile blue-dev --resume <id>    # 恢复一个已持久化的会话
 **为什么 link 12 个包**：bundle 的本地 `workspace:*` closure 在 workspace 外需要显式 link，OpenPencil/Lark 同时进入 dogfood validation lane。十一个非 bundle 链接会出现 `declares no dsh.bundle` 警告，属预期行为。`script/install-dev.sh` 是列表权威来源；context/remote 用独立 fixture，不装入产品 profile。
 
 ::: tip 三条泳道，别混
-- **`blue`** = 生产 profile,**只走 npm 安装**（`@dsh-blue/blue@rc` / 精确版本号）。永远不要往里 `link:`——后续 npm 升级只会覆盖点名的包，残留的链接悬空后启动即 `ERR_MODULE_NOT_FOUND`（且 `pnpm add` 对混装零告警）。
+- **`blue`** = 生产 profile,**只走 npm 安装**（`@dsh-blue/blue@alpha` / 精确版本号）。永远不要往里 `link:`——后续 npm 升级只会覆盖点名的包，残留的链接悬空后启动即 `ERR_MODULE_NOT_FOUND`（且 `pnpm add` 对混装零告警）。
 - **`blue-dev`** = 本检出（主仓 master）的 link 开发 profile，`script/install-dev.sh` 的默认目标。
 - **`blue-<tag>`** = worktree 验收 profile（`PROFILE=blue-<tag> script/install-dev.sh` 从 worktree 内跑）；分支合并后连同 profile 目录一起删。
 

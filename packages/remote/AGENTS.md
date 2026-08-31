@@ -5,8 +5,8 @@ not import pi-tui, ANSI, DOM, React, or raw terminal APIs.
 
 This validation-only package keeps its own `0.1.0-rc.2` version outside the
 product release set. Its Blue peers use the explicit preview window
-`>=0.1.1-rc.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
-`0.1.1` product line and breaks independent packed installs.
+`>=0.1.2-alpha.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
+`0.1.2` alpha product line and breaks independent packed installs.
 
 `tests/adversarial.spec.ts` covers cancellation during a projection baseline load and asserts that an aborted attach cannot leave a session slot behind.
 The remote adapter accepts the legacy dsh-remote v1 health shape and the authenticated v2 `system.describe`/`system.negotiate` contract. `DshRemoteTransport` maps v2 capability aliases, `host.events` SSE chunks, `session.prompt`/`session.cancel`, and `lease.acquire`/`lease.release` to Blue's narrow transport and `WriteLease` contracts. v2 callers pass `acceptedAbis` to the constructor; an empty or omitted list preserves health-only probing for legacy clients. `requestTimeoutMs` bounds official list/history/prompt/cancel calls; upstream mutation deadlines may return `OUTCOME_UNKNOWN`, so callers must not retry a write as if it definitely failed.

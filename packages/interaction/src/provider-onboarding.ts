@@ -9,7 +9,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@dsh-blue/blue-app'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-credentials'
@@ -37,7 +36,7 @@ interface Llm {
 }
 
 interface Settings {
-  get(ns: object): unknown
+  get(ns: string): unknown
 }
 
 /** Read credential references advertised by active provider profiles. */
@@ -49,7 +48,7 @@ function credentialRefs(ctx: Context): string[] {
   }
   const settings = ctx.get('settings') as Settings | undefined
   if (settings !== undefined) {
-    const section = settings.get(settingsNamespace('llm-pi-ai'))
+    const section = settings.get('llm-pi-ai')
     const providers = typeof section === 'object' && section !== null
       ? (section as { providers?: Record<string, unknown> }).providers
       : undefined

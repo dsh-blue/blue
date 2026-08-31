@@ -144,7 +144,7 @@ jobs:
           grep -q $'\033\[?2004l' "$RUNNER_TEMP/blue-candidate.typescript"
 
   promote:
-    name: promote rc/latest
+    name: promote release channel
     needs: [candidate, registry-install]
     if: ${{ always() && !contains(inputs.version || github.ref_name, '-test.') && (inputs.promote_only == true || needs.registry-install.result == 'success') }}
     runs-on: ubuntu-latest

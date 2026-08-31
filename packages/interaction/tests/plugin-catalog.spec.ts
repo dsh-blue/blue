@@ -32,8 +32,8 @@ function canonicalManifest(overrides: Readonly<Record<string, unknown>> = {}): R
     entry: '.',
     api: '^1.0.0-beta.1',
     compatibility: {
-      blue: '>=0.1.1-rc.3 <0.1.2',
-      harness: '>=0.1.1-rc.1 <=0.1.1-rc.2',
+      blue: '>=0.1.2-alpha.1 <0.1.2',
+      harness: '0.1.2-alpha.2',
       node: '^22.19.0 || >=24.0.0',
     },
     capabilities: {
@@ -50,7 +50,7 @@ afterEach(() => {
 })
 
 describe('plugin catalog admission', () => {
-  it('ships the migrated doudizhu snapshot as a commit-pinned compatible entry', () => {
+  it('keeps the commit-pinned rc snapshot visible but incompatible on the alpha line', () => {
     const result = bundledPluginCatalog()
     expect(result.source).toBe('bundled')
     expect(result.entries).toHaveLength(1)
@@ -59,9 +59,9 @@ describe('plugin catalog admission', () => {
       version: '0.3.0',
       repository: 'dsh-blue/blue-doudizhu',
       commit: 'fc99a3b0d634b6288ef89bb528d635ced3537932',
-      state: 'compatible',
+      state: 'incompatible',
       capabilities: ['commands', 'overlays', 'notifications.publish'],
-      installSpec: 'github:dsh-blue/blue-doudizhu#fc99a3b0d634b6288ef89bb528d635ced3537932',
+      reason: expect.stringContaining('Harness 0.1.2-alpha.2'),
     })
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.entries)).toBe(true)

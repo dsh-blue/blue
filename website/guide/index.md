@@ -1,7 +1,7 @@
 # 快速上手
 
 ::: info 当前发布线
-`v0.1.1-rc.3` 是当前 Public Beta。普通安装可使用 **`rc`** 通道；插件适配、CI 和可复现环境应锁定精确的 `0.1.1-rc.3`。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
+`v0.1.2-alpha.1` 是当前 alpha。普通安装使用 **`alpha`** 通道；插件适配、CI 和可复现环境应锁定 Blue `0.1.2-alpha.1` 与 Harness `0.1.2-alpha.2`，不兼容 Harness RC。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
 :::
 
 ## 前置条件
@@ -10,14 +10,14 @@
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11（首次装配、升级和 `plugin` 管理需要；日常启动已校准的 profile 不会重复检查。推荐先执行 `npm i -g pnpm@11`，或 `corepack enable && corepack prepare pnpm@11.7.0 --activate`） |
-| dsh CLI | 推荐的 `blue` 启动器已内含精确版本 `0.1.1-rc.2`；只有下方“dsh 直装”路径需要单独安装 |
+| dsh CLI | 推荐的 `blue` 启动器已内含精确版本 `0.1.2-alpha.2`；只有下方“dsh 直装”路径需要单独安装 |
 
 ## 安装（预览版）
 
 **推荐：一体化 `blue` 启动器。** 它把固定的 Harness 闭包封装为公共层和平台层归档，npm 安装时只处理一个无依赖包，不解析 Harness 图，也不运行其中的安装脚本：
 
 ```sh
-npm i -g @dsh-blue/blue-cli@rc
+npm i -g @dsh-blue/blue-cli@alpha
 blue
 ```
 
@@ -39,14 +39,14 @@ npm config set registry https://registry.npmmirror.com   # /update 的新版检�
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh plugin --profile blue add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@alpha
 dsh --profile blue
 ```
 
 安装完成后，按下方「开跑前配一个 key」与「首次运行」两节启动；模型、Provider、主题与密钥的详细配置见[配置：模型、Provider 与主题](/guide/config)。
 
-- `@rc` 是文档约定的安装通道：预览版只按 `rc` dist-tag 发布，`latest` 为稳定线保留。注意 npm 在首个稳定版发布前不允许包没有 `latest`（注册表拒绝删除），所以它目前同样指向最新 rc——那只是占位，不是契约。
-- 升级到更新的预览版：壳包用户重跑 `npm i -g @dsh-blue/blue-cli@rc`（重装即升级——壳按自身版本校准 profile 里的 Blue，宿主线随之固定）；dsh 直装用户在 Blue 中输入 `/update`（应用内安全升级：预检、快照、装机冒烟、失败自动回滚），或重跑同一条 `plugin add`。
+- `@alpha` 是当前安装通道；`latest` 保留给 stable，`rc` 不属于本次 Harness 兼容范围。
+- 升级到更新的 alpha：壳包用户重跑 `npm i -g @dsh-blue/blue-cli@alpha`（重装即升级——壳按自身版本校准 profile 里的 Blue，宿主线随之固定）；dsh 直装用户在 Blue 中输入 `/update`（应用内安全升级：预检、快照、装机冒烟、失败自动回滚），或重跑同一条 `plugin add`。
 
 ## 开跑前配一个 key
 

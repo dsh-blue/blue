@@ -1,6 +1,6 @@
 # Plugin package specification
 
-A canonical `0.1.1-rc.3` plugin package ships `blue.plugin.json` at its root.
+A canonical `0.1.2-alpha.1` plugin package ships `blue.plugin.json` at its root.
 Package discovery reads only the `package.json.blue.manifest` pointer:
 
 ```json
@@ -53,7 +53,7 @@ blue-plugin catalog --json
 blue-plugin create ./my-plugin --name @acme/my-plugin
 blue-plugin validate ./my-plugin
 blue-plugin conformance ./my-plugin
-blue-plugin conformance ./my-plugin --harness-line 0.1.1-rc.1
+blue-plugin conformance ./my-plugin --harness-line 0.1.2-alpha.2
 ```
 
 See [Debugging and validation](/en/plugins/testing) for report details and

@@ -105,7 +105,8 @@ if (mode === 'publish' || mode === 'verify') {
 }
 
 if (mode === 'promote') {
-  const tags = version.includes('-') ? ['rc', 'latest'] : ['latest']
+  const prereleaseChannel = /-(alpha|rc)(?:\.|$)/.exec(version)?.[1]
+  const tags = prereleaseChannel === 'alpha' ? ['alpha'] : prereleaseChannel === 'rc' ? ['rc', 'latest'] : ['latest']
   for (const pkg of packages) {
     for (const tag of tags) {
       const current = npmView(pkg.name, `dist-tags.${tag}`)
@@ -119,7 +120,7 @@ if (mode === 'promote') {
       try {
         execFileSync('npm', ['dist-tag', 'rm', pkg.name, 'candidate'], { cwd: ROOT, stdio: 'inherit' })
       } catch {
-        // npm may forbid deleting dist-tags; candidate is harmless after rc/latest converge.
+        // npm may forbid deleting dist-tags; candidate is harmless after the release tags converge.
         console.warn(`${pkg.name}: candidate cleanup was refused; leaving it at ${version}`)
       }
     }

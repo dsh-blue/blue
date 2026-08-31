@@ -1082,9 +1082,9 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
     },
     permissionPreset() {
       const agent = active()
-      const presets = ctx.get('permissionPresets') as unknown as { current(events: readonly unknown[]): string } | undefined
-      const events = (agent as unknown as { session?: { events?: readonly unknown[] } } | undefined)?.session?.events
-      return presets === undefined || events === undefined ? undefined : presets.current(events)
+      const presets = ctx.get('permissionPresets') as unknown as { current(session: unknown): string } | undefined
+      const session = (agent as unknown as { session?: unknown } | undefined)?.session
+      return presets === undefined || session === undefined ? undefined : presets.current(session)
     },
     sessionDetails() {
       const agent = active()

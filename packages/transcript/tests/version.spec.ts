@@ -1,6 +1,6 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * current release line, `0.1.1-rc.3` — the number the website's tagline and
+ * current release line, `0.1.2-alpha.1` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
@@ -29,13 +29,13 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.1-rc.3'
+const RELEASE_VERSION = '0.1.2-alpha.1'
 /** The compatibility window used by validation-only packages. */
-const BLUE_PEER_RANGE = '>=0.1.1-rc.1 <0.1.2'
+const BLUE_PEER_RANGE = '>=0.1.2-alpha.1 <0.1.2'
 /** Validation-only package versions remain outside the product lockstep. */
 const VALIDATION_VERSION = '0.1.0-rc.2'
 /** The harness prerelease line the dsh pins ride. */
-const HARNESS_LINE = '0.1.1-rc.2'
+const HARNESS_LINE = '0.1.2-alpha.2'
 
 /** One workspace package manifest. */
 interface Manifest {
@@ -142,7 +142,7 @@ describe('the harness dependency line', () => {
     for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.dependencies)) {
-        expect(spec, `${pkg.name} dependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
+        expect(spec, `${pkg.name} dependencies ${name}`).toMatch(/^0\.1\.[0-9]+-alpha\.[0-9]+$/)
         specs.add(spec)
       }
     }
@@ -155,7 +155,7 @@ describe('the harness dependency line', () => {
     for (const rel of HARNESS_MANIFESTS) {
       const pkg = manifest(rel)
       for (const [name, spec] of dshEntries(pkg.devDependencies)) {
-        expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.[0-9]+-rc\.[0-9]+$/)
+        expect(spec, `${pkg.name} devDependencies ${name}`).toMatch(/^0\.1\.[0-9]+-alpha\.[0-9]+$/)
         specs.add(spec)
       }
     }
@@ -196,7 +196,7 @@ describe('the harness dependency line', () => {
   it('the author fixture carries the same Harness line', () => {
     const source = readFileSync(new URL('../../plugin-kit/src/index.ts', import.meta.url), 'utf8')
     expect(source).toContain(`BLUE_PLUGIN_HARNESS_LINE = '${HARNESS_LINE}'`)
-    expect(source).toContain("BLUE_PLUGIN_PREVIOUS_HARNESS_LINE = '0.1.1-rc.1'")
+    expect(source).toContain('BLUE_PLUGIN_SUPPORTED_HARNESS_LINES = [BLUE_PLUGIN_HARNESS_LINE]')
     const fixture = readFileSync(new URL('../../plugin-kit/runtime/conformance.mjs', import.meta.url), 'utf8')
     expect(fixture).toContain(`const pinnedHarnessLine = '${HARNESS_LINE}'`)
   })

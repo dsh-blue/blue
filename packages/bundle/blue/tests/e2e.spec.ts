@@ -3553,7 +3553,7 @@ describe('blue whole-tree e2e', () => {
     const frame = stripSgr(await fullFrame(tree.terminal))
     expect(frame).toContain(`v${BLUE_VERSION}`)
     expect(frame).toContain('harness')
-    expect(frame).toContain('0.1.1-rc.3')
+    expect(frame).toContain('0.1.2-alpha.2')
     // The panel is version-only: no model section even with a live session.
     expect(frame).not.toContain('mock (mock)')
     // Escape restores the editor: the panel leaves the next full frame
@@ -3568,15 +3568,15 @@ describe('blue whole-tree e2e', () => {
   it('loads Blue creative-mode metadata and persona into a real model request', async () => {
     const tree = await bootBlue(['what mode are you in?'], {
       script: [textResponse('Blue creative mode')],
-      presetFixtures: [{ id: 'cordis' }],
+      presetFixtures: [{ id: 'blue-cordis' }],
       creativePersonaOnly: true,
     })
     const agent = await currentAgent(tree)
     await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
-    const preset = await tree.ctx.agentPresets.resolve('cordis')
-    expect(preset.name).toBe('创造模式')
+    const preset = await tree.ctx.agentPresets.resolve('blue-cordis')
+    expect(preset.name).toBe('Blue Cordis')
     expect(preset.description).toContain('Blue')
-    expect(tree.ctx.agentPresets.composedPreset(agent.ctx)).toBe('cordis')
+    expect(tree.ctx.agentPresets.composedPreset(agent.ctx)).toBe('blue-cordis')
     const request = JSON.stringify(tree.adapter.requests[0]!)
     expect(request).toContain('BLUE CREATIVE MODE')
     expect(request).toContain('never describe this preset as ordinary')
@@ -4095,12 +4095,9 @@ describe('blue whole-tree e2e', () => {
     // unregisters with the same fiber disposal.
     expect(tree.ctx.get('blueTheme')).toBeUndefined()
     expect(tree.ctx.get('blueKeymap')).toBeUndefined()
-    // The user-questions provider went with the fiber: re-registering does
-    // not trip the single-provider guard.
-    const unregister = questions.registerProvider({
-      ask: () => Promise.resolve({ answers: [] }),
-    })
-    unregister()
+    // The user-questions waterfall answerer went with the fiber.
+    await expect(questions.ask({ questions: [{ id: 'disposed', question: 'Disposed?' }] }))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
     // The built-in commands went too.
     expect(commands.list(agent).map(command => command.name)).toEqual([])
   })

@@ -4,8 +4,8 @@ This optional Interaction adapter consumes only the official dsh-tools `tools/re
 
 This validation-only package keeps its own `0.1.0-rc.2` version outside the
 product release set. Its Blue peers use the explicit preview window
-`>=0.1.1-rc.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
-`0.1.1` product line and breaks independent packed installs.
+`>=0.1.2-alpha.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
+`0.1.2` alpha product line and breaks independent packed installs.
 
 The execution's Agent scope is used only for the synchronous official lookup and is never stored. `ToolExecutionResult.meta` is deliberately removed before `presentResult` because OpenPencil may place a signed editor capability there. No browser route, React/canvas state, file state, bearer value, or package-internal API crosses this package.
 
@@ -13,4 +13,4 @@ Every subscription, model registration, and notification disposer belongs to the
 
 Deletion condition: replace this package when dsh-openpencil publishes a stable renderer-neutral Blue/frontend provider that owns the same bounded result projection and capability elision contract.
 
-Packed acceptance: `script/blue-plugin-fixture.mjs packages/openpencil --install` executes seven shared runtime scenarios plus presentation/meta-elision and dedupe/retention/unload scenarios. Run the same 9/9 contract with `--harness-line <previous-version>` for compatibility; the 2026-08-23 baseline passed on Harness `0.1.1-rc.2` and `0.1.1-rc.1`.
+Packed acceptance: `script/blue-plugin-fixture.mjs packages/openpencil --install` executes seven shared runtime scenarios plus presentation/meta-elision and dedupe/retention/unload scenarios. The release gate runs the 9/9 contract on exact Harness `0.1.2-alpha.2`; older RC results are historical evidence, not current compatibility.

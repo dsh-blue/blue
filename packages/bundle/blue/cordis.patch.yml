@@ -62,6 +62,9 @@
 - id: tool-skill
   disabled: true
 
+- id: command-goal
+  disabled: true
+
 - id: tool-goal
   disabled: true
 
@@ -119,20 +122,24 @@
   disabled: true
 
 - insert:
-    # Blue's preset roster (S39): the bundle carries standard/code/minimal in
-    # lockstep with the pinned harness plus its Blue-specific cordis payload.
-    # Its row id deliberately differs from `agent-presets`, because dsh forces
-    # the host installation's shared preset root onto that upstream id during
-    # profile boot. The Blue provider instead resolves its immutable root from
-    # this package, so both `blue` and plain `dsh --profile` launches receive
-    # the same creative persona without modifying another profile's files.
-    - id: blue-agent-presets
+    # The shipped standard/cordis/PTC presets opt their delegation tools into
+    # host-owned model selection. Keep the provider in Host scope, matching the
+    # upstream web-app composition, so the preset rows can mount unchanged.
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
+    # The upstream roster owns the alpha.2 shipped root (`standard`, `minimal`,
+    # `ptc`, and `cordis`) and the user's writable root. Blue adds one immutable
+    # system root containing only `blue-cordis`; no upstream preset is copied,
+    # aliased, or shadowed by this bundle.
+    - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
       config:
         default: standard
         roots:
           - path: !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dsh-blue/blue/package.json')), 'presets')"
             trust: system
+        includeShippedRoot: true
         includeUserRoot: true
 
     # The dynamic-cordis host runner, host plane, mirroring the web-app's
@@ -141,7 +148,8 @@
     # or plan services from this realm; `bluePluginHost` deliberately stays
     # inherited as the only Blue UI route. The runner itself still resolves
     # the host `tools` and Agent ownership plane it requires. Without the
-    # nested runner the shipped `cordis` preset fails its activation audit.
+    # nested runner the shipped `cordis` and `blue-cordis` presets fail their
+    # activation audit.
     - id: blue-creative-host
       name: cordis:group
       group: true

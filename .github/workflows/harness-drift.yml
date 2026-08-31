@@ -1,5 +1,5 @@
-# Harness drift monitor: watches the upstream @deepseek-ai/* `next`
-# dist-tags daily and, when the whole watched set moves to a newer
+# Harness drift monitor: watches the upstream @deepseek-ai/* release channel
+# (`alpha` for alpha, `next` for rc, `latest` for stable) daily and, when the whole watched set moves to a newer
 # same-minor line, performs the bump automatically:
 #
 #   detect (script/harness-drift.mjs, deterministic, free)
@@ -174,8 +174,8 @@ jobs:
           target="${{ needs.detect.outputs.target }}"
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           case "$state" in
-            minor-jump) note="The registry \`next\` tags moved to ${target}, past the pinned ${current}'s minor (or rolled back). R1 ruling: never chase it automatically — human ruling required." ;;
-            partial) note="The watched packages' \`next\` tags disagree (pinned ${current}). Upstream ships in lockstep, so this is usually a publish-window transient; the next daily run retries. If a package stays stuck, prune its exclude entry or shrink the watch set in script/harness-drift.mjs." ;;
+            minor-jump) note="The monitored registry tags moved to ${target}, past the pinned ${current}'s minor (or rolled back). R1 ruling: never chase it automatically — human ruling required." ;;
+            partial) note="The watched packages' monitored tags disagree (pinned ${current}). Upstream ships in lockstep, so this is usually a publish-window transient; the next daily run retries. If a package stays stuck, prune its exclude entry or shrink the watch set in script/harness-drift.mjs." ;;
             *) note="The harness-drift run failed (state=${state:-unknown}, detect=${{ needs.detect.result }}, bump=${{ needs.bump.result }}). See the run log; a failed gate means the bump agent's tree did not pass and no PR was opened." ;;
           esac
           title="harness drift: ${state:-failure} (pinned ${current}, registry ${target})"

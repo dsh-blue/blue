@@ -2,7 +2,6 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as onboardingPlugin from '../src/provider-onboarding.ts'
 import { setSharedEditor } from '../src/editor-instance.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
@@ -57,7 +56,7 @@ async function mount(options: {
   }
   if (options.settings !== false) {
     base.ctx.provide('settings', {
-      get: (ns: object) => String(ns) === String(settingsNamespace('llm-pi-ai'))
+      get: (ns: string) => ns === 'llm-pi-ai'
         ? options.section ?? { providers: options.profiles ?? {} }
         : undefined,
     } as never)

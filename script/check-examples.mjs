@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-/** Run static and current/previous packed gates for the ecosystem examples. @module script/check-examples */
+/** Run static and supported-line packed gates for the ecosystem examples. @module script/check-examples */
 import { execFileSync } from 'node:child_process'
 import { ECOSYSTEM_PACKAGE_DIRS, ROOT } from './package-contract.mjs'
 import { harnessLine } from './smoke-lib.mjs'
 
-const previousHarnessLine = '0.1.1-rc.1'
 const scenarios = [
   'user-kit.public-component',
   'header.pane-lifecycle',
@@ -47,7 +46,5 @@ function fixtureReport(line) {
 for (const directory of ECOSYSTEM_PACKAGE_DIRS) {
   execFileSync(process.execPath, ['script/blue-plugin-validate.mjs', directory], { cwd: ROOT, stdio: 'inherit' })
 }
-for (const line of [harnessLine, previousHarnessLine]) {
-  if (line === undefined) throw new Error('current Harness line is unavailable')
-  fixtureReport(line)
-}
+if (harnessLine === undefined) throw new Error('supported Harness line is unavailable')
+fixtureReport(harnessLine)

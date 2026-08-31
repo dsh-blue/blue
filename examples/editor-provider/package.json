@@ -12,6 +12,6 @@
   "blue": { "manifest": "./blue.plugin.json" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": { "@dsh-blue/blue-api": "workspace:*" },
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
-  "devDependencies": { "@deepseek-ai/cordis": "4.0.1" }
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.2" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.2" }
 }

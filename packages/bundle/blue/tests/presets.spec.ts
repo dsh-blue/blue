@@ -1,6 +1,6 @@
 /**
- * Blue's bundle-local preset roster: it carries all four modes, exposes the
- * Blue creative metadata, and never points at the host's shipped root.
+ * Blue's bundle-local preset root: upstream owns its shipped roster while
+ * this package contributes exactly one uniquely named creative preset.
  *
  * @module @dsh-blue/blue/tests/presets
  */
@@ -17,6 +17,7 @@ interface SkillFrontmatter {
 
 interface AuthorSkillEvals {
   readonly skill?: unknown
+  readonly preset?: unknown
   readonly cases?: readonly { readonly id?: unknown }[]
 }
 
@@ -33,26 +34,40 @@ function skillFrontmatter(source: string): SkillFrontmatter {
 }
 
 describe('Blue preset roster', () => {
-  it('ships all four metadata rows with a Blue-specific creative mode', () => {
+  it('ships exactly one bundle-local preset named blue-cordis', () => {
     const blueRoot = new URL('../presets/', import.meta.url)
-    const metadata = ['standard', 'code', 'minimal', 'cordis'].map(id => readFileSync(new URL(`${id}/preset.yml`, blueRoot), 'utf8'))
-    expect(metadata).toHaveLength(4)
-    expect(metadata[3]).toContain('name: 创造模式')
-    expect(metadata[3]).toContain('Blue')
+    const ids = readdirSync(blueRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+    expect(ids).toEqual(['blue-cordis'])
+    const metadata = readFileSync(new URL('blue-cordis/preset.yml', blueRoot), 'utf8')
+    expect(metadata).toContain('name: Blue Cordis')
+    expect(metadata).toContain('order: 5')
   })
 
-  it('keeps the non-creative presets byte-for-byte on the pinned harness line', () => {
-    const harnessRoot = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'config', 'agent-presets')
+  it('uses alpha.2 shipped presets and adds blue-cordis without aliases', () => {
+    const harnessRoot = join(dirname(require.resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets')
     const blueRoot = new URL('../presets/', import.meta.url)
-    for (const id of ['standard', 'code', 'minimal']) {
-      for (const file of ['agent.cordis.yml', 'preset.yml']) {
-        expect(readFileSync(new URL(`${id}/${file}`, blueRoot), 'utf8')).toBe(readFileSync(join(harnessRoot, id, file), 'utf8'))
-      }
+    const shipped = readdirSync(harnessRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+    expect(shipped).toEqual(['cordis', 'minimal', 'ptc', 'standard'])
+    expect([...shipped, 'blue-cordis'].sort()).toEqual(['blue-cordis', 'cordis', 'minimal', 'ptc', 'standard'])
+    expect(shipped).not.toContain('code')
+
+    const upstream = readFileSync(join(harnessRoot, 'cordis', 'agent.cordis.yml'), 'utf8')
+    const blue = readFileSync(new URL('blue-cordis/agent.cordis.yml', blueRoot), 'utf8')
+    for (const alphaRow of ['- id: command-goal', 'modelSelectionSettings: true', 'fetch: true']) {
+      expect(upstream).toContain(alphaRow)
+      expect(blue).toContain(alphaRow)
     }
+    expect(blue).toContain('agent preset id `blue-cordis`')
   })
 
   it('ships discoverable creative skills with valid frontmatter', () => {
-    const skillsRoot = new URL('../presets/cordis/skills/', import.meta.url)
+    const skillsRoot = new URL('../presets/blue-cordis/skills/', import.meta.url)
     const directories = readdirSync(skillsRoot, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name)
@@ -72,7 +87,7 @@ describe('Blue preset roster', () => {
   })
 
   it('ships the machine-driven author skill and its four authority evals', () => {
-    const skillRoot = new URL('../presets/cordis/skills/blue-plugin-development/', import.meta.url)
+    const skillRoot = new URL('../presets/blue-cordis/skills/blue-plugin-development/', import.meta.url)
     const source = readFileSync(new URL('SKILL.md', skillRoot), 'utf8')
     const evals = JSON.parse(readFileSync(new URL('evals.json', skillRoot), 'utf8')) as AuthorSkillEvals
 
@@ -83,6 +98,7 @@ describe('Blue preset roster', () => {
     expect(source).toContain('DSH_BLUE_PLUGIN_BIN')
     expect(source).not.toContain('commands, status, panes, overlays, notifications.publish')
     expect(evals.skill).toBe('blue-plugin-development')
+    expect(evals.preset).toBe('blue-cordis')
     expect(evals.cases?.map(value => value.id)).toEqual([
       'accepted-new-local-plugin',
       'existing-harness-plugin-entry',

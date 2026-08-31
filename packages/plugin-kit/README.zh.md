@@ -8,7 +8,7 @@ npx @dsh-blue/blue-plugin-kit catalog --json
 npx @dsh-blue/blue-plugin-kit create ./my-blue-plugin --name @acme/my-blue-plugin
 npx @dsh-blue/blue-plugin-kit validate ./my-blue-plugin
 npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin
-npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin --harness-line 0.1.1-rc.1
+npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin --harness-line 0.1.2-alpha.2
 ```
 
 全局安装或作为项目工具安装后可以使用更短的 `blue-plugin` 命令。
@@ -17,5 +17,6 @@ npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin --harness-line 0.1.1-
 
 这些命令不会发布包、创建仓库或修改 dsh profile。Conformance 禁用 lifecycle
 scripts 后打包，以正常 peer resolution 安装到临时项目，并验证公开入口、Host
-准入、20/40/80/120 宽度、Fiber unload 与 capability-absent fallback。它验证兼容性，
-不是安全沙箱。
+准入、20/40/80/120 宽度、Fiber unload 与 capability-absent fallback。Blue
+`0.1.2-alpha.1` 只支持 Harness `0.1.2-alpha.2`；显式参数只能在该支持集合内用于诊断，
+RC 版本会被拒绝。它验证兼容性，不是安全沙箱。

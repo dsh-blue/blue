@@ -13,7 +13,7 @@ import {
 } from '@dsh-blue/blue-api/protocol/v1'
 import { getBlueCapabilityDefinition } from '@dsh-blue/blue-api/capabilities/v1'
 import { BLUE_API_VERSION, BLUE_VERSION } from '@dsh-blue/blue-api'
-import { BLUE_PLUGIN_HARNESS_LINE, BLUE_PLUGIN_PREVIOUS_HARNESS_LINE } from './index.ts'
+import { BLUE_PLUGIN_HARNESS_LINE } from './index.ts'
 
 interface CreateOptions {
   readonly directory: string
@@ -24,7 +24,7 @@ type CreateResult =
   | { readonly ok: true, readonly directory: string }
   | { readonly ok: false, readonly message: string }
 
-const HARNESS_RANGE = `>=${BLUE_PLUGIN_PREVIOUS_HARNESS_LINE} <=${BLUE_PLUGIN_HARNESS_LINE}`
+const HARNESS_RANGE = BLUE_PLUGIN_HARNESS_LINE
 const NODE_RANGE = '^22.19.0 || >=24.0.0'
 const STATUS_VERSION = getBlueCapabilityDefinition('status')!.version
 

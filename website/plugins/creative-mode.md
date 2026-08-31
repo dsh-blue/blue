@@ -1,9 +1,9 @@
 # 创造模式实战：从会话原型到可分发插件
 
-创造模式（agent preset `cordis`）适合把一个想法先做成当前会话可见的动态原型，再在验收后决定是否持久化。它不是修改 Blue 源码的快捷入口：动态插件只存在于当前 dsh 进程，重启后会消失；需要长期维护的功能必须最终落成普通 npm 插件包。
+创造模式（agent preset `blue-cordis`）适合把一个想法先做成当前会话可见的动态原型，再在验收后决定是否持久化。上游 `cordis` 保持原样，Blue 只维护这个唯一自定义 ID。动态插件只存在于当前 dsh 进程，重启后会消失；需要长期维护的功能必须最终落成普通 npm 插件包。
 
 ::: info P5 已交付，历史案例仍不是新模板
-`0.1.1-rc.3` 已提供正式 `blue-plugin-development` skill、发布的免 checkout 作者命令
+`0.1.2-alpha.1` 已提供正式 `blue-plugin-development` skill、发布的免 checkout 作者命令
 与本地持久包闭环。下方斗地主案例早于 canonical contract，只用于解释原型迭代；
 新包以 machine catalog、生成器和 conformance 结果为准。
 :::
@@ -15,7 +15,7 @@
 ```text
 澄清需求 -> inspect 了解可用服务 -> cordis_define -> cordis_run 热挂载
        -> 在当前会话迭代并验收 -> 选择 ephemeral/local/GitHub/npm
-       -> catalog -> create/修改 -> validate -> 双线 conformance -> 人工验收
+       -> catalog -> create/修改 -> validate -> 支持线 conformance -> 人工验收
 ```
 
 原型阶段使用 `cordis-plugin-development` skill。它要求先通过 `cordis_inspect_list` 和 `cordis_inspect_query` 读取真实的 Provider、Service、Event 和 Tool 形状，再写 `code.host`；`cordis_define` 只保存一个不可变 Package，`cordis_run` 才会激活它。需要改版时追加新 Package 并用 `update` 切换，失败时用 `inspect_self` 查看诊断，不能覆盖旧版本。
@@ -29,7 +29,7 @@ blue-plugin catalog --json
 blue-plugin create ./my-plugin --name @acme/my-plugin
 blue-plugin validate ./my-plugin
 blue-plugin conformance ./my-plugin
-blue-plugin conformance ./my-plugin --harness-line 0.1.1-rc.1
+blue-plugin conformance ./my-plugin --harness-line 0.1.2-alpha.2
 ```
 
 若需求无法由 catalog 表达，skill 会停止写文件并输出 renderer-neutral capability
@@ -130,8 +130,8 @@ dsh plugin --profile blue-dev add /path/to/blue-doudizhu
 dsh --profile blue-dev
 ```
 
-进入 scratch profile 前先运行 `blue-plugin validate` 和当前/上一 Harness
-`blue-plugin conformance`。通过后再安装本地目录，覆盖卸载、重启、120/80/40 列与
+进入 scratch profile 前先运行 `blue-plugin validate` 和唯一支持的 Harness
+`0.1.2-alpha.2` `blue-plugin conformance`。通过后再安装本地目录，覆盖卸载、重启、120/80/40 列与
 真实终端 dogfood。conformance 已用 script-disabled pack 检查 tarball 中的公开入口、
 canonical manifest、`cordis.patch.yml` 和依赖闭包。
 
@@ -143,5 +143,5 @@ commit/tag 或发布 artifact。插件市场保持暂停；本地持久化和直
 
 历史会话确实调用过同名的早期 `blue-plugin-development` 和
 `cordis-plugin-development`，但那份记录早于 canonical contract。当前 P5 交付由正式
-skill 的四类 eval、发布 CLI 的 no-checkout pack gate、教程的双 Harness conformance
+skill 的四类 eval、发布 CLI 的 no-checkout pack gate、教程的支持线 conformance
 和独立 profile 人工验收证明；斗地主历史本身仍不算这些证据。

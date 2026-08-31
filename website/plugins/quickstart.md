@@ -6,7 +6,7 @@
 先安装作者工具并读取当前机器 catalog，再生成 canonical 本地包：
 
 ```sh
-npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+npm install --global @dsh-blue/blue-plugin-kit@0.1.2-alpha.1
 blue-plugin catalog --json
 blue-plugin create ./blue-workspace-header --name @acme/blue-workspace-header
 ```
@@ -37,8 +37,8 @@ blue-workspace-header/
   "blue": { "manifest": "./blue.plugin.json" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
-    "@dsh-blue/blue-api": "0.1.1-rc.3",
-    "@dsh-blue/blue-ui": "0.1.1-rc.3"
+    "@dsh-blue/blue-api": "0.1.2-alpha.1",
+    "@dsh-blue/blue-ui": "0.1.2-alpha.1"
   },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
@@ -59,8 +59,8 @@ blue-workspace-header/
   "entry": ".",
   "api": "^1.0.0-beta.1",
   "compatibility": {
-    "blue": ">=0.1.1-rc.3 <0.1.2",
-    "harness": ">=0.1.1-rc.1 <0.1.2",
+    "blue": ">=0.1.2-alpha.1 <0.1.2",
+    "harness": "0.1.2-alpha.2",
     "node": "^22.19.0 || >=24.0.0"
   },
   "capabilities": {
@@ -85,8 +85,8 @@ blue-workspace-header/
 ```
 
 manifest `id` 必须等于 npm package name；`entry` 是 `package.json.exports` 的公开 subpath，不是 `lib/` 文件路径。Cordis 入口 `name` 和 loader row `id` 是独立命名空间；教程为便于排错选择同名，但协议不强制它们与包名相等。
-compatibility 范围覆盖 rc.3 Blue 与本仓 packed fixture 验证的当前/上一 Harness line；
-若插件实际使用了更窄的 Host 能力，应把范围收紧到真实测试矩阵。
+compatibility 范围覆盖 Blue alpha 系列与唯一验证的 Harness `0.1.2-alpha.2`；
+RC 不在兼容范围。若插件实际使用了更窄的 Host 能力，应把范围收紧到真实测试矩阵。
 
 ## 插件入口
 
@@ -151,12 +151,12 @@ dsh --profile blue-header-dev
 不要对独立插件使用 `link:`：pnpm 不会为链接目录安装依赖，Node 又从源码真实路径解析
 import，源码目录外的 profile 依赖不会成为它的模块解析父级。
 
-安装前先关闭静态与双 Harness packed gate：
+安装前先关闭静态与受支持 Harness packed gate：
 
 ```sh
 blue-plugin validate ./blue-workspace-header
 blue-plugin conformance ./blue-workspace-header
-blue-plugin conformance ./blue-workspace-header --harness-line 0.1.1-rc.1
+blue-plugin conformance ./blue-workspace-header --harness-line 0.1.2-alpha.2
 ```
 
 确认 header 出现后，删除插件行或执行 `/plugin remove` 并重启；header 必须完全

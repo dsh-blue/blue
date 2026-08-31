@@ -4,7 +4,7 @@
 
 ## Cordis 树与 Fiber 生命周期
 
-dsh 进程里只有一棵 Cordis 插件树。Harness domain 插件（agents、sessions、tools、approval）、Blue 的 33 条自有行（含 private runtime group）、你的插件，都是这棵树上的组合行：
+dsh 进程里只有一棵 Cordis 插件树。Harness domain 插件（agents、sessions、tools、approval）、Blue 的 34 条自有行（含 private runtime group）、你的插件，都是这棵树上的组合行：
 
 ```text
 dsh process 进程（one Cordis tree 一棵 Cordis 树）

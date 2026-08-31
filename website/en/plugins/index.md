@@ -12,8 +12,8 @@ A minimal new plugin starts with a canonical `blue.plugin.json`:
   "entry": ".",
   "api": "^1.0.0-beta.1",
   "compatibility": {
-    "blue": ">=0.1.1-rc.3 <0.1.2",
-    "harness": ">=0.1.1-rc.1 <0.1.2",
+    "blue": ">=0.1.2-alpha.1 <0.1.2",
+    "harness": "0.1.2-alpha.2",
     "node": "^22.19.0 || >=24.0.0"
   },
   "capabilities": {
@@ -26,10 +26,10 @@ A minimal new plugin starts with a canonical `blue.plugin.json`:
 The entry passes this validated manifest to `open()`, then registers through the granted `status` facade. To run a complete package end to end from scratch, see the [quickstart](/en/plugins/quickstart).
 
 ::: warning Preview-stage caveat
-The executable protocol is `1.0.0-beta.1`, not Stable v1. `0.1.1-rc.3` delivers P1–P5: the machine contract, catalog/Host negotiation, five UI capabilities, two read-only session capabilities, and the no-checkout author commands, creative-mode skill, and tutorial fixture. It does not promote capabilities to Stable, reopen the marketplace, or authorize GitHub/npm publication automatically.
+The executable protocol is `1.0.0-beta.1`, not Stable v1. `0.1.2-alpha.1` delivers P1–P5 and moves the host contract to the sole supported Harness `0.1.2-alpha.2` line: the machine contract, catalog/Host negotiation, five UI capabilities, two read-only session capabilities, and the no-checkout author commands, creative-mode skill, and tutorial fixture. It does not promote capabilities to Stable, reopen the marketplace, or authorize GitHub/npm publication automatically.
 :::
 
-## The `0.1.1-rc.3` Public Beta boundary
+## The `0.1.2-alpha.1` alpha boundary
 
 | Phase | Delivered |
 | --- | --- |
@@ -37,7 +37,7 @@ The executable protocol is `1.0.0-beta.1`, not Stable v1. `0.1.1-rc.3` delivers 
 | P2 | atomic required/optional admission, exact resource grants, structured denials, protected owner generations, and owner-gap restore |
 | P3 | quotas, refresh, unload/reload, and stale-result fences for `commands`, `status`, `panes`, `overlays`, and `notifications.publish` |
 | P4 | exact-field `session.read` and exact-key `session.projections.read` with epoch/revision/seq, consistent cuts, JSON/size bounds, and late-result rejection |
-| P5 | `blue-plugin catalog/create/validate/conformance`, the formal author skill, local persistence loop, dual-Harness tutorial fixture, and bilingual drift gate |
+| P5 | `blue-plugin catalog/create/validate/conformance`, the formal author skill, local persistence loop, supported-Harness tutorial fixture, and bilingual drift gate |
 
 These capabilities are ready for plugin adaptation but remain Public Beta until ecosystem consumers, author tooling, and the P7 evidence gates close. The machine entry points are `@dsh-blue/blue-api/protocol/v1` and the public [schema](/schema/blue.plugin.v1.schema.json). New plugins use canonical `blue.plugin.json`; do not start from the flat transition manifest.
 
@@ -92,5 +92,5 @@ Generic `session.act` has been removed; writes use the owning Harness service or
 **Reference**
 
 - [Seam reference](/en/plugins/seams) — the complete list of the Beta plugin host and Blue's internal boundaries;
-- [Built-in plugins](/en/plugins/builtins) — the bundle's 33 Blue-owned rows, the most complete set of plugin examples;
+- [Built-in plugins](/en/plugins/builtins) — the bundle's 34 Blue-owned rows, the most complete set of plugin examples;
 - [Contributing to Blue](/en/plugins/contributing) — the local development flow for contributing code to Blue itself.
