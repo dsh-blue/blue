@@ -423,6 +423,62 @@ describe('blue plugin validator script', () => {
     })
   }, 180_000)
 
+  it('runs packed conformance for a canonical plugin that requests no capability', () => {
+    const apiPackage = JSON.parse(readFileSync(join(repositoryRoot, 'packages/api/package.json'), 'utf8')) as { version: string }
+    const base = JSON.parse(readFileSync(join(repositoryRoot, 'packages/api/schema/blue.plugin.v1.corpus.json'), 'utf8')).cases[0].manifest as Record<string, unknown>
+    const distribution = {
+      ...base,
+      id: '@fixture/capability-free',
+      entry: './blue',
+      compatibility: {
+        blue: `>=${apiPackage.version} <0.1.2`,
+        harness: '0.1.2-alpha.2',
+        node: '^22.19.0 || >=24.0.0',
+      },
+      capabilities: { required: [], optional: [] },
+    }
+    const root = v1Fixture('blue-fixture-capability-free-', distribution, `import { validateBluePluginManifestV1 } from '@dsh-blue/blue-api/protocol/v1'
+import manifestSource from '../blue.plugin.json' with { type: 'json' }
+export const name = 'fixture-capability-free'
+export const inject = ['bluePluginHost']
+const parsed = validateBluePluginManifestV1(manifestSource)
+if (!parsed.ok) throw new TypeError('invalid fixture manifest')
+export function apply(ctx) {
+  const opened = ctx.bluePluginHost.open(ctx, parsed.value)
+  if (!opened.ok) throw new Error(opened.message)
+}
+`)
+    const packageManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    packageManifest.dependencies = { '@dsh-blue/blue-api': apiPackage.version }
+    writeFileSync(join(root, 'package.json'), JSON.stringify(packageManifest))
+
+    const result = spawnSync(process.execPath, [pluginFixture, root, '--install', '--harness-line', '0.1.2-alpha.2'], { encoding: 'utf8', timeout: 180_000 })
+    expect(result.signal).toBeNull()
+    expect(result.stderr).toBe('')
+    const report = JSON.parse(result.stdout)
+    expect(result.status, result.stdout).toBe(0)
+    expect(report).toMatchObject({
+      package: '@fixture/capability-free',
+      harnessLine: '0.1.2-alpha.2',
+      peerResolution: 'normal',
+      declared: ['plugin.public-entry-packed-load', 'plugin.host-admission-width-unload-and-fallback'],
+      executed: ['plugin.public-entry-packed-load', 'plugin.host-admission-width-unload-and-fallback'],
+      skipped: [],
+      failures: [],
+      fixtureCleaned: true,
+      valid: true,
+    })
+    expect(report.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scenario: 'plugin.host-admission-width-unload-and-fallback',
+        capabilities: [],
+        nodes: 0,
+        unloaded: true,
+        fallback: 'capability-absent',
+      }),
+    ]))
+  }, 180_000)
+
   it('follows exact runtime and declaration self-reference exports', () => {
     const base = JSON.parse(readFileSync(join(repositoryRoot, 'packages/api/schema/blue.plugin.v1.corpus.json'), 'utf8')).cases[1].manifest as Record<string, unknown>
     const root = v1Fixture('blue-validator-self-reference-', base, "import '@acme/full-plugin/private-runtime'\nexport const name = 'fixture-entry'\nexport function apply(ctx) { ctx.effect(() => () => undefined) }\n")

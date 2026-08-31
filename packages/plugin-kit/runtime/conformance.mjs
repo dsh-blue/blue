@@ -359,7 +359,7 @@ const requested = [...manifestSource.capabilities.required, ...manifestSource.ca
 const owned = requested.filter(value => ['commands', 'status', 'panes', 'overlays', 'notifications.publish'].includes(value))
 const ctx = new Context()
 await ctx.plugin(api)
-const lease = ctx.bluePluginControl.attachCapabilities(ctx, owned)
+const lease = owned.length === 0 ? undefined : ctx.bluePluginControl.attachCapabilities(ctx, owned)
 if (requested.includes('session.read')) {
   ctx.bluePluginControl.attachSessionReader(ctx, {
     current: () => ({ revision: 1, sessionEpoch: 1, id: 'fixture', cwd: '/fixture', status: 'idle', mode: 'normal' }),
@@ -372,15 +372,19 @@ if (requested.includes('session.projections.read')) {
     subscribe: () => ({ disposed: false, dispose() { this.disposed = true } }),
   })
 }
-const before = lease.snapshot()
-if (!before.ok) throw new Error(before.message)
+const snapshot = () => {
+  if (lease === undefined) return { commands: [], status: [], panes: [], overlays: [] }
+  const result = lease.snapshot()
+  if (!result.ok) throw new Error(result.message)
+  return result.value
+}
+const before = snapshot()
 const fiber = await ctx.plugin(plugin)
-const mounted = lease.snapshot()
-if (!mounted.ok) throw new Error(mounted.message)
+const mounted = snapshot()
 const components = new core.BlueComponentsService(ctx, { theme: { colors: DARK_COLORS }, tui: {} })
 const nodes = [
-  ...mounted.value.status.map(value => value.render()),
-  ...mounted.value.panes.map(value => value.contribution.render()),
+  ...mounted.status.map(value => value.render()),
+  ...mounted.panes.map(value => value.contribution.render()),
 ]
 for (const width of [20, 40, 80, 120]) {
   for (const node of nodes) {
@@ -398,10 +402,9 @@ for (const width of [20, 40, 80, 120]) {
   }
 }
 await fiber.dispose()
-const unloaded = lease.snapshot()
-if (!unloaded.ok) throw new Error(unloaded.message)
+const unloaded = snapshot()
 for (const key of ['commands', 'status', 'panes', 'overlays']) {
-  if (unloaded.value[key].length !== before.value[key].length) throw new Error(\`plugin \${key} survived Fiber unload\`)
+  if (unloaded[key].length !== before[key].length) throw new Error(\`plugin \${key} survived Fiber unload\`)
 }
 await ctx.fiber.dispose()
 
