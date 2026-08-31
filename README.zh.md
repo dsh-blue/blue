@@ -100,7 +100,7 @@ flowchart TB
 
 - **用户手册**——[快速上手](https://dsh-blue.dev/guide/) · [功能](https://dsh-blue.dev/features/) · [键位与命令参考](https://dsh-blue.dev/reference/commands/)（English: [guide](https://dsh-blue.dev/en/guide/) · [features](https://dsh-blue.dev/en/features/) · [reference](https://dsh-blue.dev/en/reference/commands/)）
 - **插件市场**——[浏览与安装插件](https://dsh-blue.dev/marketplace/) · [收录指南](https://dsh-blue.dev/marketplace/submit)（English: [marketplace](https://dsh-blue.dev/en/marketplace/) · [submission guide](https://dsh-blue.dev/en/marketplace/submit)）
-- **开发手册**——[编写插件](https://dsh-blue.dev/plugins/) · [Seam 参考](https://dsh-blue.dev/plugins/seams/) · [贡献指南](https://dsh-blue.dev/plugins/contributing/)
+- **开发手册**——[编写插件](https://dsh-blue.dev/plugins/) · [公共 UI Kit](https://dsh-blue.dev/plugins/ui-kit/) · [Seam 参考](https://dsh-blue.dev/plugins/seams/) · [贡献指南](https://dsh-blue.dev/plugins/contributing/)
 - **Harness 手册**——[dsh 概念、profile、工具、MCP](https://dsh-blue.dev/dsh/)
 - **设计文档**（仓库内部）——living/archived 索引见 [docs/README.md](docs/README.md)；仓库级约定见 [AGENTS.md](AGENTS.md) 与各包自己的 `AGENTS.md`。
 
