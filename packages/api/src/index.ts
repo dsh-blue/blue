@@ -42,4 +42,4 @@ export type * from './contracts.ts'
 export const BLUE_API_VERSION = '1.0.0-beta.1'
 
 /** Blue's release version, kept here as the public version owner. */
-export const BLUE_VERSION = '0.1.1-rc.3'
+export const BLUE_VERSION = '0.1.2-alpha.1'

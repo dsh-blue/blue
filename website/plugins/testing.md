@@ -7,12 +7,12 @@
 ## 安装并读取机器契约
 
 ```sh
-npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+npm install --global @dsh-blue/blue-plugin-kit@0.1.2-alpha.1
 blue-plugin catalog --json
 ```
 
-catalog 是能力名、版本、resource、quota、当前 Blue/API 版本和当前/上一 Harness
-线的事实来源。新建包时先读 catalog，再运行生成器：
+catalog 是能力名、版本、resource、quota、当前 Blue/API 版本和支持 Harness
+线的事实来源。本版只列 `0.1.2-alpha.2`，不含 RC。新建包时先读 catalog，再运行生成器：
 
 ```sh
 blue-plugin create ./my-blue-plugin --name @acme/my-blue-plugin
@@ -58,13 +58,13 @@ blue-plugin validate /path/to/my-plugin
 
 ```sh
 blue-plugin conformance /path/to/my-plugin
-blue-plugin conformance /path/to/my-plugin --harness-line 0.1.1-rc.1
+blue-plugin conformance /path/to/my-plugin --harness-line 0.1.2-alpha.2
 ```
 
 `conformance` 会在一次性 npm 项目中 script-disabled pack 插件，以正常 peer resolver
 安装并从公开 exports 装载，然后验证 Host 准入、20/40/80/120 宽度、Fiber unload、
 capability-absent fallback、输出/超时隔离与临时目录清理。默认运行 catalog 声明的
-当前 Harness 线；第二条命令补齐上一条线。
+唯一 Harness 线；显式形式用于在报告中固定同一精确版本。
 
 通过报告必须满足：
 
@@ -93,7 +93,7 @@ dsh --profile blue-my-plugin
 必须全部消失；若仍有残留，通常是注册绕过了 `open()` 返回的 Fiber-owned API，或把
 可变状态放进了 module singleton。
 
-发布前依次关闭：`catalog --json` 复核、`validate`、当前/上一 Harness
+发布前依次关闭：`catalog --json` 复核、`validate`、受支持 Harness
 `conformance`、卸载检查、无头冒烟和真实终端人工验收。分发目的地仍要由用户明确选择；
 验证通过不会自动授权创建 GitHub 仓库或发布 npm。插件市场继续暂停，详见
 [发布插件](/plugins/publishing)。

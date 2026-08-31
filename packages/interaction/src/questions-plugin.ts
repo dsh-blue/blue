@@ -11,7 +11,8 @@
  * decision rows and the feedback editor; malformed intent asks fall
  * back to the generic questionnaire. The panel replaces the editor in
  * its dock slot (D30), so below it only the footer remains.
- * Registration is effect-bound, so HMR disposal unregisters the provider.
+ * The waterfall listener is effect-bound, so HMR disposal unregisters the
+ * answerer and lets the next composed answerer handle future requests.
  *
  * @module @dsh-blue/blue-interaction/questions-plugin
  */
@@ -30,14 +31,11 @@ export const name = 'blue-questions'
 export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'userQuestions']
 
 /**
- * Register the overlay-backed user-questions provider; the fiber's disposal
- * unregisters it.
+ * Register the overlay-backed user-questions waterfall answerer.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.userQuestions.registerProvider({
-    ask: request => askAll(ctx, request),
-  }))
+  ctx.on('user-questions/request', request => askAll(ctx, request))
 }
 
 /**

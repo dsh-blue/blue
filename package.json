@@ -38,7 +38,7 @@
     "marketplace:fetch": "node script/marketplace-fetch.mjs"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-llm-mock-server": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm-mock-server": "0.1.2-alpha.2",
     "@types/node": "^22.20.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@xterm/headless": "6.0.0",

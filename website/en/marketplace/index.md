@@ -1,15 +1,14 @@
 # Plugin marketplace
 
-::: warning Marketplace migration for rc.3
-The marketplace registry still uses the transition contract from before P1–P4,
-but the first explicitly indexed plugin, `dsh-blue/blue-doudizhu@0.3.0`, has
-completed its canonical manifest and dual-Harness fixture migration. Bare
-`/plugin` labels it Compatible and offers an Install action pinned to the full
-commit. This page still hides install cards and does not treat the existing
-`verified` flag as rc.3 compatibility evidence.
+::: warning Marketplace migration for alpha.1
+The marketplace registry still uses the transition contract from before P1–P4.
+The pinned `dsh-blue/blue-doudizhu@0.3.0` commit has the earlier RC canonical
+manifest but does not declare Harness `0.1.2-alpha.2`, so `/plugin` correctly
+marks it incompatible pending its own migration. This page still hides install
+cards and does not treat the existing `verified` flag as alpha compatibility evidence.
 :::
 
-`0.1.1-rc.3` provides the machine contract and Host admission for seven Public
+`0.1.2-alpha.1` provides the machine contract and Host admission for seven Public
 Beta capabilities: `commands`, `status`, `panes`, `overlays`,
 `notifications.publish`, `session.read`, and `session.projections.read`. The
 marketplace will reopen after two migrations are complete:

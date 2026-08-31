@@ -19,6 +19,6 @@
     "@dsh-blue-example/status-provider": "workspace:*",
     "@dsh-blue-example/editor-provider": "workspace:*"
   },
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@dsh-blue/blue": "workspace:*" },
-  "devDependencies": { "@deepseek-ai/cordis": "4.0.1", "@dsh-blue/blue": "workspace:*" }
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.2", "@dsh-blue/blue": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.2", "@dsh-blue/blue": "workspace:*" }
 }

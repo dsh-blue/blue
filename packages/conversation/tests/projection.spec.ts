@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   MessageId,
   type AssistantMessage,
   type ContentBlock,
@@ -70,8 +70,8 @@ function toolResultMessage(callId: string, content: readonly ContentBlock[], isE
   return {
     id: MessageId(`result-${String(nextSeq)}`),
     role: 'user',
-    content: [{ type: 'tool-result', toolCallId: CallId(callId), content: [...content], isError }],
-    source: { kind: 'tool', callId: CallId(callId) },
+    content: [{ type: 'tool-result', toolCallId: ToolCallId(callId), content: [...content], isError }],
+    source: { kind: 'tool', callId: ToolCallId(callId) },
   }
 }
 
@@ -97,15 +97,15 @@ describe('blueConversation projection', () => {
           { type: 'text', text: 'final answer' },
         ]),
       }, { append: true }),
-      event('tool/call', { turn: 2, step: 0, callId: CallId('call-1'), name: 'read', arguments: '{"path":"a"}' }, { time: 100 }),
+      event('tool/call', { turn: 2, step: 0, callId: ToolCallId('call-1'), name: 'read', arguments: '{"path":"a"}' }, { time: 100 }),
       event('tool/result', {
         turn: 2,
         step: 0,
         message: toolResultMessage('call-1', [{ type: 'text', text: 'line one' }]),
         meta: 'presented result',
       }, { append: true, time: 160 }),
-      event('tool/call', { turn: 2, step: 0, callId: CallId('todo-1'), name: 'todo_write', arguments: '{}' }),
-      event('tool/call', { turn: 2, step: 0, callId: CallId('agent-1'), name: 'subagent_fork', arguments: '{}' }),
+      event('tool/call', { turn: 2, step: 0, callId: ToolCallId('todo-1'), name: 'todo_write', arguments: '{}' }),
+      event('tool/call', { turn: 2, step: 0, callId: ToolCallId('agent-1'), name: 'subagent_fork', arguments: '{}' }),
       event('turn/end', { turn: 2, reason: { kind: 'completed' } }),
     ]
 
@@ -283,7 +283,7 @@ describe('blueConversation projection', () => {
       turn: 6, step: 0, message: assistantMessage([{ type: 'text', text: 'late final' }]),
     }, { append: true }))
     state = foldConversationProjection(state, event('tool/call', {
-      turn: 6, step: 0, callId: CallId('late-tool'), name: 'read', arguments: '{}',
+      turn: 6, step: 0, callId: ToolCallId('late-tool'), name: 'read', arguments: '{}',
     }))
     state = foldConversationProjection(state, event('turn/end', {
       turn: 6, reason: { kind: 'interrupted' },
@@ -312,7 +312,7 @@ describe('blueConversation projection', () => {
       event('step/start', { turn: 8, step: 0 }),
       event('assistant/chunk', { turn: 8, step: 0, chunk: { type: 'reasoning-delta', index: 0, text: 'kept thought' } }),
       event('assistant/chunk', { turn: 8, step: 0, chunk: { type: 'text-delta', index: 1, text: 'kept answer' } }),
-      event('tool/call', { turn: 8, step: 0, callId: CallId('kept-tool'), name: 'read', arguments: '{}' }),
+      event('tool/call', { turn: 8, step: 0, callId: ToolCallId('kept-tool'), name: 'read', arguments: '{}' }),
     ])
     const retracted = foldConversationProjection(active, event('assistant/message', {
       turn: 7, step: 0, message: assistantMessage([]), interrupted: true,
@@ -332,7 +332,7 @@ describe('blueConversation projection', () => {
       event('step/start', { turn: 9, step: 0 }),
       event('assistant/chunk', { turn: 9, step: 0, chunk: { type: 'reasoning-delta', index: 0, text: 'thought' } }),
       event('assistant/chunk', { turn: 9, step: 0, chunk: { type: 'text-delta', index: 1, text: 'answer' } }),
-      event('tool/call', { turn: 9, step: 0, callId: CallId('removed-tool'), name: 'read', arguments: '{}' }),
+      event('tool/call', { turn: 9, step: 0, callId: ToolCallId('removed-tool'), name: 'read', arguments: '{}' }),
     ])
     const retracted = foldConversationProjection(active, event('assistant/message', {
       turn: 9, step: 0, message: assistantMessage([]), interrupted: true,
@@ -427,7 +427,7 @@ describe('blueConversation projection', () => {
       step: 1,
       message: toolResultMessage('nested', [{
         type: 'tool-result',
-        toolCallId: CallId('inner'),
+        toolCallId: ToolCallId('inner'),
         content: [{ type: 'text', text: 'nested text' }],
         isError: false,
       }]),

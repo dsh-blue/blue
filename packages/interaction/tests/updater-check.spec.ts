@@ -36,11 +36,11 @@ afterEach(() => {
 })
 
 /** A synthetic future release that remains ahead across preview bumps. */
-const OFFER_VERSION = '0.1.2-rc.1'
+const OFFER_VERSION = '0.1.2-alpha.2'
 
-/** A packument whose `rc` tag offers a release over the running version. */
+/** A packument whose `alpha` tag offers a release over the running version. */
 const OFFER_JSON = JSON.stringify({
-  'dist-tags': { rc: OFFER_VERSION, latest: BLUE_VERSION },
+  'dist-tags': { alpha: OFFER_VERSION, latest: BLUE_VERSION },
   versions: {
     '0.1.0-rc.6': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
     [BLUE_VERSION]: { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
@@ -55,7 +55,7 @@ const OFFER_JSON = JSON.stringify({
 
 /** A packument already at the running version. */
 const CURRENT_JSON = JSON.stringify({
-  'dist-tags': { rc: BLUE_VERSION },
+  'dist-tags': { alpha: BLUE_VERSION },
   versions: { [BLUE_VERSION]: {} },
   time: { [BLUE_VERSION]: '2026-08-22T00:00:00.000Z' },
 })
@@ -293,7 +293,7 @@ describe('updater/check runUpdateCheck', () => {
 
   it('records the offer without a publish stamp when the registry recorded none', async () => {
     const timeless = JSON.stringify({
-      'dist-tags': { rc: OFFER_VERSION },
+      'dist-tags': { alpha: OFFER_VERSION },
       versions: { [OFFER_VERSION]: {} },
       time: {},
     })

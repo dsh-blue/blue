@@ -24,8 +24,8 @@ afterEach(() => {
 })
 
 /** The shell's own manifest version — the pin every fixture calibrates to. */
-const PIN = '0.1.1-rc.3'
-const AHEAD = '0.1.1-rc.199'
+const PIN = '0.1.2-alpha.1'
+const AHEAD = '0.1.2-alpha.199'
 
 /** One captured write or exit. */
 const captures: { out: string[], err: string[], exits: number[] } = { out: [], err: [], exits: [] }
@@ -48,11 +48,11 @@ const OK: SpawnOutcome = { code: 0, signal: null, stdout: '', stderr: '', timedO
 function fixtureLauncher(): { calls: { once: Call[], inherit: Call[] }, root: string, hostBin: string } {
   const home = mkdtempTracked('blue-cli-main-home-')
   const root = join(home, 'profiles', 'blue')
-  const host = join(home, 'cache', 'blue-cli-runtime', `${PIN}-0.1.1-rc.2`, 'node_modules', '@deepseek-ai', 'dsh')
+  const host = join(home, 'cache', 'blue-cli-runtime', `${PIN}-0.1.2-alpha.2`, 'node_modules', '@deepseek-ai', 'dsh')
   const hostBin = join(host, 'lib', 'bin.js')
   mkdirSync(root, { recursive: true })
   mkdirSync(host, { recursive: true })
-  writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.1-rc.2', bin: { dsh: 'lib/bin.js' } }))
+  writeFileSync(join(host, 'package.json'), JSON.stringify({ version: '0.1.2-alpha.2', bin: { dsh: 'lib/bin.js' } }))
   cliInternals.env = { DSH_HOME: home }
   captures.out = []
   captures.err = []
@@ -75,7 +75,7 @@ describe('main', () => {
   it('answers -V with the shell, Blue pin, and harness line in one line', async () => {
     fixtureLauncher()
     await main(['-V'])
-    expect(captures.out).toEqual([`blue ${PIN} (Blue @dsh-blue/blue@${PIN} · harness @deepseek-ai/dsh@0.1.1-rc.2)\n`])
+    expect(captures.out).toEqual([`blue ${PIN} (Blue @dsh-blue/blue@${PIN} · harness @deepseek-ai/dsh@0.1.2-alpha.2)\n`])
     expect(captures.exits).toEqual([])
   })
 
@@ -122,7 +122,7 @@ describe('main', () => {
     await main(['task'])
     expect(once).toBe(false)
     expect(captures.err).toEqual([
-      `blue: profile 'blue' is at @dsh-blue/blue@${AHEAD}, ahead of this shell (${PIN}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@rc\n`,
+      `blue: profile 'blue' is at @dsh-blue/blue@${AHEAD}, ahead of this shell (${PIN}) — reinstall to advance: npm i -g @dsh-blue/blue-cli@alpha\n`,
     ])
     expect(calls.inherit).toHaveLength(1)
     expect(captures.exits).toEqual([0])

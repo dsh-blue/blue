@@ -1,5 +1,6 @@
 {
   "skill": "blue-plugin-development",
+  "preset": "blue-cordis",
   "cases": [
     {
       "id": "accepted-new-local-plugin",
@@ -7,7 +8,7 @@
       "must": [
         "run the profile-installed blue-plugin catalog through its trusted shell facts before choosing capabilities",
         "run the profile-installed blue-plugin create only after the local outcome is explicit",
-        "run validate and current/previous Harness conformance",
+        "run validate and conformance on every exact catalog supportedHarnessLines entry",
         "stop before repository, npm publication, or production-profile mutation"
       ]
     },
@@ -18,7 +19,7 @@
         "preserve the existing package and add a public Blue entry instead of overwriting it",
         "consume the existing public service rather than package internals or storage",
         "add canonical discovery, exports, files, patch row, and package closure",
-        "run the same validator and dual-Harness packed gate"
+        "run the same validator and supported-Harness packed gate"
       ]
     },
     {

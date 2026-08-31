@@ -28,7 +28,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueInlineSpan, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
-import type { TodoItem } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import type { BlueBottomPaneNode } from './dock-model.ts'
 import type { SessionFactsService } from './session-facts.ts'

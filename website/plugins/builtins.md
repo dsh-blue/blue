@@ -1,16 +1,16 @@
 # 内置插件
 
-Blue 的 installable bundle 含 33 条 Blue 自有行：2 条宿主支撑行、1 条 private runtime composition group，以及按基线、增强、装配三段组织并被该 group 包住的 30 条产品行。外部插件通过 renderer-neutral public Beta API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
+Blue 的 installable bundle 含 34 条 Blue 自有行：3 条宿主支撑行、1 条 private runtime composition group，以及按基线、增强、装配三段组织并被该 group 包住的 30 条产品行。外部插件通过 renderer-neutral public Beta API 接入；内部 row 之间用显式 `inject` 和 model/action seam 连接。
 
-patch 里另外还有 1 条 Harness insert 行 `session-title-all-prompts-llm`（标题节奏 swap：禁用 base 的 `session-title-llm` 首条消息定标题，换成每条用户消息重拟标题、歪标题下条自纠）。它不是 Blue 自有行，因此不计入上面的 33 条。
+patch 里另外还有 1 条 Harness insert 行 `session-title-all-prompts-llm`（标题节奏 swap：禁用 base 的 `session-title-llm` 首条消息定标题，换成每条用户消息重拟标题、歪标题下条自纠）。它不是 Blue 自有行，因此不计入上面的 34 条。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 33 Blue-owned rows · 33 条 Blue 自有行"]
-        subgraph host["host support 宿主支撑 - 2 rows"]
-            presets["blue-agent-presets"]
+    subgraph bundle["cordis.patch.yml - 34 Blue-owned rows · 34 条 Blue 自有行"]
+        subgraph host["host support 宿主支撑 - 3 rows"]
+            presets["subagent model settings · agent-presets<br/>upstream shipped + blue-cordis"]
             creative["blue-creative-host"]
         end
         subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
@@ -51,7 +51,7 @@ flowchart TB
 
 | 插件 | 说明 |
 |---|---|
-| `blue-agent-presets` | Blue 自有 preset root，组成 standard/code/minimal agent plane |
+| `agent-presets` | 直接装载上游 shipped `standard/minimal/ptc/cordis` 与 user root；Blue 只追加唯一 `blue-cordis` preset，不复制上游目录，也不提供 `code` alias |
 | `blue-creative-host` | 隔离的 dynamic Cordis host；只经 public plugin host 向 UI 贡献 |
 
 ## 私有运行时组合（1 条 group row）

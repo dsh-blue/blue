@@ -21,7 +21,7 @@ import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-mod
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {
   BlueRegistration,
   BlueResult,
@@ -173,7 +173,7 @@ interface SessionCommandSource {
 
 /** Effective-permission projection face consumed only inside the app boundary. */
 interface PermissionPresetSource {
-  current(events: readonly SessionEvent[]): string
+  current(session: Session): string
 }
 
 /** Upstream plan controller face kept inside the app boundary. */
@@ -606,7 +606,7 @@ export function apply(ctx: Context, config: Config): void {
     permissionPreset() {
       const active = session.current
       const presets = ctx.get('permissionPresets') as unknown as PermissionPresetSource | undefined
-      return active === null || presets === undefined ? undefined : presets.current(active.session.events)
+      return active === null || presets === undefined ? undefined : presets.current(active.session)
     },
     sessionDetails() {
       const active = session.current

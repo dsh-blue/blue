@@ -3,7 +3,7 @@
 Blue is the terminal interface for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (**dsh**) — understanding a few core dsh concepts makes Blue much easier to use well. This handbook distills the dsh knowledge Blue users need; the complete engineering docs live at the [official reference site](https://deepseek-harness.github.io/deepseek-harness/reference/).
 
 ::: info Version basis
-This handbook tracks the Harness npm release line `0.1.1-rc.2` (`npm i -g @deepseek-ai/dsh`). Parts of the official reference site run ahead of the published releases — when in doubt, trust your installed `dsh --version` and `--dump-config`.
+This handbook currently tracks Harness npm release `0.1.2-alpha.2`. Blue `0.1.2-alpha.1` does not support Harness RC releases; when in doubt, trust your installed `dsh --version` and `--dump-config`.
 :::
 
 ## What dsh is
@@ -14,7 +14,7 @@ Three keywords:
 
 - **Bundle** — a set of plugins shipped with their own mount code, declaring its plugin rows through the package's `cordis.patch.yml`; `dsh-base` is the first layer of every profile.
 - **Profile** — a named assembly: the bundles it layers, its own patch overrides, and its independently installed plugins. See [Profiles & directories](/en/dsh/profiles).
-- **Blue** — is a bundle: it inserts 33 Blue-owned rows over `dsh-base` (including the private-runtime group that isolates management authority and raw app services) and takes over the terminal interface (see the [features overview](/en/features/)).
+- **Blue** — is a bundle: it inserts 34 Blue-owned rows over `dsh-base` (including the private-runtime group that isolates management authority and raw app services) and takes over the terminal interface (see the [features overview](/en/features/)).
 
 ## CLI cheat sheet
 

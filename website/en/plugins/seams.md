@@ -39,7 +39,7 @@ These are product-composition seams, not a route for third-party code to bypass 
 | transcript | transcript model, private status/bottom-pane registries, and tool model service | readonly models/canonical nodes into the TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor, completion, submit barrier, draft/settings/paste state |
 | API composition | `bluePluginControl` | owner attach, aggregate/notification observation, gestures, and semantic close; private-realm only |
-| bundle | `cordis.patch.yml` | 33 Blue-owned rows: 2 host-support, 1 private group, and 30 product rows |
+| bundle | `cordis.patch.yml` | 34 Blue-owned rows: 3 host-support, 1 private group, and 30 product rows |
 
 The default bundle's `blue-runtime-private` group wraps the complete product segment and isolates `bluePluginControl`, `blueSessionReader`, `blueSessionProjections`, and `blueSessionActions` from ordinary siblings. Public `bluePluginHost` still crosses the isolation boundary to provide manifest-scoped facades. Ordinary plugins cannot obtain management authority through service injection or Cordis proxy unwrapping.
 

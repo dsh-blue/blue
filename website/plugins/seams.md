@@ -39,7 +39,7 @@ Provider/editor facet 只保留为 Experimental/reference runtime，不属于 St
 | transcript | transcript model、private status/bottom-pane registries、tool model service | readonly model/canonical node 到 TUI renderer |
 | interaction | `blueEditorHost` / `blueInteractionState` | frontend-tree-scoped editor、completion、submit barrier、draft/settings/paste state |
 | API composition | `bluePluginControl` | owner attach、aggregate/notification observe、gesture、semantic close；只在 private realm 中可用 |
-| bundle | `cordis.patch.yml` | 33 条 Blue 自有行：2 条 host-support、1 条 private group、30 条 product row |
+| bundle | `cordis.patch.yml` | 34 条 Blue 自有行：3 条 host-support、1 条 private group、30 条 product row |
 
 默认 bundle 的 `blue-runtime-private` 包住完整 product segment，把 `bluePluginControl`、`blueSessionReader`、`blueSessionProjections` 与 `blueSessionActions` 隔离在普通 sibling 之外；public `bluePluginHost` 仍跨过隔离边界供 manifest-scoped facade 使用。普通插件不能通过 service injection 或 Cordis proxy unwrap 获取 management authority。
 

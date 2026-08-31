@@ -1,6 +1,6 @@
 # 插件包规范
 
-`0.1.1-rc.3` 的 canonical 插件包在包根目录提供 `blue.plugin.json`；package
+`0.1.2-alpha.1` 的 canonical 插件包在包根目录提供 `blue.plugin.json`；package
 discovery 只读取 `package.json.blue.manifest` 指针：
 
 ```json
@@ -45,14 +45,14 @@ Canonical `open()` 对 required 请求原子准入，对 optional 请求返回 e
 
 发布的 `@dsh-blue/blue-plugin-kit` 直接提供 machine catalog、canonical 生成器、共享
 validator 与 packed-install conformance，不需要 Blue checkout。先读取 catalog，再生成或
-修改包，最后关闭当前/上一 Harness 线：
+修改包，最后关闭 catalog 声明的唯一 Harness 线：
 
 ```sh
 blue-plugin catalog --json
 blue-plugin create ./my-plugin --name @acme/my-plugin
 blue-plugin validate ./my-plugin
 blue-plugin conformance ./my-plugin
-blue-plugin conformance ./my-plugin --harness-line 0.1.1-rc.1
+blue-plugin conformance ./my-plugin --harness-line 0.1.2-alpha.2
 ```
 
 详细报告与验收条件见[调试与验证](/plugins/testing)。conformance 会导入待测插件；

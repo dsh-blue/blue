@@ -1,6 +1,6 @@
 /**
  * Generate the Website tutorial package through the built author bin, then
- * close static and current/previous Harness packed conformance gates.
+ * close static and supported-Harness packed conformance gates.
  *
  * @module script/blue-plugin-tutorial-fixture
  */
@@ -29,19 +29,20 @@ function assertReport(report, line) {
 
 try {
   const catalog = JSON.parse(run(['catalog', '--json']))
-  if (typeof catalog.harnessLine !== 'string' || typeof catalog.previousHarnessLine !== 'string') {
-    throw new Error('author catalog has no current/previous Harness lines')
+  if (typeof catalog.harnessLine !== 'string' || !Array.isArray(catalog.supportedHarnessLines) ||
+      catalog.supportedHarnessLines.length !== 1 || catalog.supportedHarnessLines[0] !== catalog.harnessLine) {
+    throw new Error('author catalog does not declare exactly one supported Harness line')
   }
   run(['create', pluginRoot, '--name', '@dsh-blue-tutorial/status'])
   const validation = JSON.parse(run(['validate', pluginRoot]))
   if (validation.valid !== true || validation.package !== '@dsh-blue-tutorial/status') {
     throw new Error(`tutorial validation failed: ${JSON.stringify(validation)}`)
   }
-  for (const line of [catalog.harnessLine, catalog.previousHarnessLine]) {
+  for (const line of catalog.supportedHarnessLines) {
     const report = JSON.parse(run(['conformance', pluginRoot, '--harness-line', line]))
     assertReport(report, line)
   }
-  console.log(`tutorial fixture: generated, validated, and packed on Harness ${catalog.harnessLine} / ${catalog.previousHarnessLine}`)
+  console.log(`tutorial fixture: generated, validated, and packed on Harness ${catalog.harnessLine}`)
 } finally {
   rmSync(fixtureRoot, { recursive: true, force: true })
 }

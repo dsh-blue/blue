@@ -4,8 +4,8 @@ This optional Interaction compatibility adapter exists because dsh-lark currentl
 
 This validation-only package keeps its own `0.1.0-rc.2` version outside the
 product release set. Its Blue peers use the explicit preview window
-`>=0.1.1-rc.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
-`0.1.1` product line and breaks independent packed installs.
+`>=0.1.2-alpha.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
+`0.1.2` alpha product line and breaks independent packed installs.
 
 GET reads only `revision`, redacted credential availability, and runtime state. Retry POST sends only `expectedRevision`, which triggers dsh-lark's official reconciliation path. The adapter never stores a settings snapshot, secret, credential reference, or domain runtime. DELETE is deliberately not exposed.
 
@@ -13,4 +13,4 @@ Operation ids deduplicate concurrent/replayed commands, are bounded to 100 entri
 
 Deletion condition: remove the HTTP compatibility client when dsh-lark publishes a stable renderer-neutral service/event for runtime description and reconciliation.
 
-Packed acceptance: `script/blue-plugin-fixture.mjs packages/lark --install` executes seven shared runtime scenarios plus command/notification/retry and route-absent/abort/unload scenarios. Run the same 9/9 contract with `--harness-line <previous-version>` for compatibility; the 2026-08-23 baseline passed on Harness `0.1.1-rc.2` and `0.1.1-rc.1`.
+Packed acceptance: `script/blue-plugin-fixture.mjs packages/lark --install` executes seven shared runtime scenarios plus command/notification/retry and route-absent/abort/unload scenarios. The release gate runs the 9/9 contract on exact Harness `0.1.2-alpha.2`; older RC results are historical evidence, not current compatibility.

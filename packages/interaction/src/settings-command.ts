@@ -52,7 +52,7 @@ import type { CommandResult } from '@deepseek-ai/dsh-commands'
 // Empty type import carries the `settings` Context merge and the
 // 'settings/document-updated' Events merge this module subscribes to.
 import type {} from '@deepseek-ai/dsh-settings'
-import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
@@ -121,7 +121,7 @@ const ROWS: readonly SettingRow[] = [
   },
   {
     id: 'blue.updateChannel', ns: 'blue', key: 'updateChannel', label: 'Update channel',
-    description: 'dist-tag the boot check follows', kind: 'string', values: ['rc'],
+    description: 'dist-tag the boot check follows', kind: 'string', values: ['alpha'],
   },
   {
     id: 'blue.theme', ns: 'blue', key: 'theme', label: 'Theme',
@@ -855,7 +855,7 @@ export function registerSettingsCommand(ctx: Context): () => void {
         display: string,
         pushToList: boolean,
       ): Promise<void> => {
-        const ns = settingsNamespace(row.ns)
+        const ns = row.ns
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const descriptor = settings.describe().find(entry => String(entry.ns) === row.ns)
           if (descriptor === undefined) return

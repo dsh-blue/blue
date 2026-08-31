@@ -2,14 +2,14 @@
 
 ## 为什么不直接 `npm install @dsh-blue/blue`？
 
-Blue 是装进 dsh profile 的插件包，不是独立应用——裸装只把包放进 node_modules，没有宿主与 profile 装配，跑不起来。正确路径：装 `blue` 壳包，或用 `dsh plugin --profile blue add`，见[快速上手](/guide/)。当前发布线是 `v0.1.1-rc.3`；普通用户可使用 `rc` 通道，插件适配与 CI 应锁定精确版本。`0.1.0-rc.1` 因打包缺失文件不可用，装到请升级。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+Blue 是装进 dsh profile 的插件包，不是独立应用——裸装只把包放进 node_modules，没有宿主与 profile 装配，跑不起来。正确路径：装 `blue` 壳包，或用 `dsh plugin --profile blue add`，见[快速上手](/guide/)。当前发布线是 `v0.1.2-alpha.1`；普通用户使用 `alpha` 通道，插件适配与 CI 应锁定 Blue `0.1.2-alpha.1` 与 Harness `0.1.2-alpha.2`。不支持 Harness RC。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
-## `@rc` 装到的不是最新预览版？
+## `@alpha` 装到的不是最新 alpha？
 
-pnpm 11 默认开启 `minimumReleaseAge` 冷却期：dist-tag 解析会静默跳过冷却窗口内刚发布的版本、回退到旧版。若 `dsh plugin --profile blue add @dsh-blue/blue@rc` 装到的版本偏旧，两个办法：
+pnpm 11 默认开启 `minimumReleaseAge` 冷却期：dist-tag 解析会静默跳过冷却窗口内刚发布的版本、回退到旧版。若 `dsh plugin --profile blue add @dsh-blue/blue@alpha` 装到的版本偏旧，两个办法：
 
-- 立即安装当前已发布的 rc：先用 `npm view @dsh-blue/blue dist-tags.rc` 查询精确版本，再执行 `dsh plugin --profile blue add @dsh-blue/blue@<已发布版本>`；
-- 或等冷却窗口过去后重跑同一条 `@rc` 命令（升级 = 重跑同一条 `plugin add`）。
+- 立即安装当前已发布的 alpha：先用 `npm view @dsh-blue/blue dist-tags.alpha` 查询精确版本，再执行 `dsh plugin --profile blue add @dsh-blue/blue@<已发布版本>`；
+- 或等冷却窗口过去后重跑同一条 `@alpha` 命令（升级 = 重跑同一条 `plugin add`）。
 
 用 `/update` 升级的用户不受此坑影响：它按 registry 元数据解析目标、始终精确钉版，冷却窗口内会直接给出可重试的时间（ETA）而不是装到旧版。
 
@@ -46,10 +46,10 @@ export BLUE_MARKETPLACE_GITHUB_PROXY='https://gh-proxy.com/'
 
 两条路：
 
-- **壳包用户**：重跑 `npm i -g @dsh-blue/blue-cli@rc`——重装即升级（壳按自身版本把 profile 里的 Blue 校准到同一版，宿主线随之固定），之后照常 `blue` 启动。
+- **壳包用户**：重跑 `npm i -g @dsh-blue/blue-cli@alpha`——重装即升级（壳按自身版本把 profile 里的 Blue 校准到同一版，宿主线随之固定），之后照常 `blue` 启动。
 - **dsh 直装用户**：
   - **应用内（推荐）**：会话里输入 `/update`——先做安全预检（profile 健康度、当前 dsh 运行时是否满足目标版本的 harness 线、冷却期窗口），打字 `y` 确认后自动执行：快照当前安装 → 精确版本单事务安装 → 装后整套包的版本校验 → 装机冒烟（模块导入扫描 + 真实启动）→ 任一失败**自动回滚**到原版本，全程有进度面板与日志路径。`/update <版本号>` 可显式指定目标版本；不带参数的 `/update` 兼作只读检查。升级完成后当前会话继续运行旧版，重启后生效。
-  - **手工**：重跑同一条 `dsh plugin --profile blue add @dsh-blue/blue@rc`（或上一条 FAQ 的精确版本号形式）。
+  - **手工**：重跑同一条 `dsh plugin --profile blue add @dsh-blue/blue@alpha`（或上一条 FAQ 的精确版本号形式）。
 
 此外 Blue 启动后会后台检查一次新版（每 24h 至多一次、失败静默、只读 registry 元数据、不做任何上报），有新版时在会话流中（横幅下方）追加两行提示。不想要启动检查，在 `~/.dsh/settings.yaml` 写入：
 

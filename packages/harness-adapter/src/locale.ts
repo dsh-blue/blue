@@ -13,7 +13,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Carries the optional settings service and settings/updated event merges.
 import type {} from '@deepseek-ai/dsh-settings'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { BLUE_LOCALE_IDS, BlueLocaleService, type BlueLocaleId } from '@dsh-blue/blue-frontend'
 
@@ -83,7 +82,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => () => locale.dispose())
 
   ctx.inject(['settings'], (settingsCtx) => {
-    const namespace = settingsNamespace(LOCALE_SETTINGS_NAMESPACE)
+    const namespace = LOCALE_SETTINGS_NAMESPACE
     settingsCtx.settings.register(namespace, LocaleSettingsSchema)
     const sync = (): void => {
       const section = settingsCtx.settings.get(namespace) as LocaleSettings | undefined

@@ -9,7 +9,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { Session, SessionEvent, TodoItem } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import * as todo from '../src/pane-todo.ts'
 import { event, resetSeq, userEvent } from './helpers.ts'
 import { bootPanePlugin } from './pane-fakes.ts'

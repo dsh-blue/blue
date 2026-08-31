@@ -53,8 +53,8 @@ jobs:
       - run: pnpm check:lib
       - run: pnpm check:plugin-authoring-docs
       - run: pnpm fixture:plugin-tutorial
-      # W5-C ecosystem contract: static package boundaries plus one-project
-      # packed installs on the current and previous Harness lines.
+      # W5-C ecosystem contract: static package boundaries plus a one-project
+      # packed install on this release's sole supported Harness line.
       - run: pnpm check:examples
       - run: pnpm test:coverage
       # The real-process width smoke (D45): boots the built plugin tree

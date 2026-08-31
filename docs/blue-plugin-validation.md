@@ -69,12 +69,12 @@ an external package path is not yet the published, no-clone author runner
 required by the R2 exit gate; that distribution remains pending and must be
 closed no later than P4.
 
-Run the current and previous supported Harness contracts without changing the
-repository pins:
+Run the release's supported Harness contract without changing the repository
+pins:
 
 ```sh
 node script/blue-plugin-fixture.mjs <package> --install
-node script/blue-plugin-fixture.mjs <package> --install --harness-line 0.1.1-rc.1
+node script/blue-plugin-fixture.mjs <package> --install --harness-line 0.1.2-alpha.2
 ```
 
 The compatibility form discovers every `@deepseek-ai/dsh-*` dependency, peer,
@@ -92,7 +92,7 @@ must be `true`.
 The `blue-harness-adapter` target adds an eighth installed-package scenario,
 `locale.preference-live-reload-unload`. It verifies persisted preference boot,
 live updates, settings-provider unload/reload, and final locale-service unload
-on both supported Harness lines.
+on the supported Harness line.
 
 W5-C's downstream ecosystem has a whole-suite gate in addition to the generic
 single-package fixture:
@@ -103,8 +103,8 @@ pnpm check:examples
 
 It validates the user kit, six runnable plugins, and their composition bundle,
 then packs the complete Blue host runtime dependency closure plus the full
-example closure into one independent npm project on both the current and
-previous Harness lines. The composition's packed `@dsh-blue/blue` peer must be
+example closure into one independent npm project on Harness `0.1.2-alpha.2`.
+The composition's packed `@dsh-blue/blue` peer must be
 an exact installed tarball version and resolve from a resolver rooted at the
 installed composition, including the host's public entry; a fixture-root
 import or `--legacy-peer-deps` is not evidence of peer closure.

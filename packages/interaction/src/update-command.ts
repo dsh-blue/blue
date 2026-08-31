@@ -17,7 +17,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { BLUE_VERSION, type BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import { join } from 'node:path'
@@ -226,10 +225,10 @@ async function runSwapPanel(
 
 /** The channel the command follows: the `blue` settings section's value. */
 function updateChannelOf(ctx: Context): string {
-  const value = ctx.get('settings')?.get(settingsNamespace('blue')) as Partial<UpdateSettings> | undefined
+  const value = ctx.get('settings')?.get('blue') as Partial<UpdateSettings> | undefined
   return typeof value?.updateChannel === 'string' && value.updateChannel !== ''
     ? value.updateChannel
-    : 'rc'
+    : 'alpha'
 }
 
 /** Probe the installed dsh CLI's version output; `undefined` when unreadable. */
@@ -334,7 +333,7 @@ async function runUpdateFlow(ctx: Context, requested: string): Promise<CommandRe
   let target: string
   if (requested !== '') {
     if (!isVersion(requested)) {
-      return { kind: 'error', text: `"${requested}" is not a version (try /update 0.1.0-rc.3)` }
+      return { kind: 'error', text: `"${requested}" is not a version (try /update 0.1.2-alpha.1)` }
     }
     target = requested
   } else {

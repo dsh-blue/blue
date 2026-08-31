@@ -12,7 +12,7 @@ import { BLUE_CAPABILITY_CATALOG_V1 } from '@dsh-blue/blue-api/capabilities/v1'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { BLUE_PLUGIN_USAGE, type AuthorRuntime, runBluePluginCli } from '../src/cli.ts'
 import { bluePluginRuntimePath } from '../src/index.ts'
-import { BLUE_PLUGIN_HARNESS_LINE, BLUE_PLUGIN_PREVIOUS_HARNESS_LINE } from '../src/index.ts'
+import { BLUE_PLUGIN_HARNESS_LINE, BLUE_PLUGIN_SUPPORTED_HARNESS_LINES } from '../src/index.ts'
 
 registerTempDirCleanup()
 
@@ -58,7 +58,7 @@ describe('runBluePluginCli', () => {
       productVersion: BLUE_VERSION,
       apiVersion: BLUE_API_VERSION,
       harnessLine: BLUE_PLUGIN_HARNESS_LINE,
-      previousHarnessLine: BLUE_PLUGIN_PREVIOUS_HARNESS_LINE,
+      supportedHarnessLines: BLUE_PLUGIN_SUPPORTED_HARNESS_LINES,
       capabilities: BLUE_CAPABILITY_CATALOG_V1,
     })
     expect(result.stderr).toBe('')
@@ -130,12 +130,9 @@ describe('runBluePluginCli', () => {
       status: 0,
       runtimes: [{ name: 'conformance', args: ['/tmp/plugin', '--install'] }],
     })
-    await expect(run(['conformance', '/tmp/plugin', '--harness-line', '0.1.1-rc.1'], 3)).resolves.toMatchObject({
+    await expect(run(['conformance', '/tmp/plugin', '--harness-line', '0.1.2-alpha.2'], 3)).resolves.toMatchObject({
       status: 3,
-      runtimes: [{ name: 'conformance', args: ['/tmp/plugin', '--install', '--harness-line', '0.1.1-rc.1'] }],
-    })
-    await expect(run(['conformance', '/tmp/plugin', '--harness-line=0.1.1-rc.2'])).resolves.toMatchObject({
-      runtimes: [{ name: 'conformance', args: ['/tmp/plugin', '--install', '--harness-line', '0.1.1-rc.2'] }],
+      runtimes: [{ name: 'conformance', args: ['/tmp/plugin', '--install', '--harness-line', '0.1.2-alpha.2'] }],
     })
     for (const args of [
       ['conformance'],
@@ -145,6 +142,7 @@ describe('runBluePluginCli', () => {
       ['conformance', 'one', '--harness-line', '--bad'],
       ['conformance', 'one', '--harness-line='],
       ['conformance', 'one', '--harness-line', 'latest'],
+      ['conformance', 'one', '--harness-line', '0.1.1-rc.2'],
     ]) await expect(run(args)).resolves.toMatchObject({ status: 2, stderr: BLUE_PLUGIN_USAGE, runtimes: [] })
   })
 })

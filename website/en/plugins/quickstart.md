@@ -8,7 +8,7 @@ Install the author tool, read the current machine catalog, then generate the
 canonical local package:
 
 ```sh
-npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+npm install --global @dsh-blue/blue-plugin-kit@0.1.2-alpha.1
 blue-plugin catalog --json
 blue-plugin create ./blue-workspace-header --name @acme/blue-workspace-header
 ```
@@ -40,8 +40,8 @@ Declare the Blue packages as dependencies and host-provided Cordis as a peer:
   "blue": { "manifest": "./blue.plugin.json" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
-    "@dsh-blue/blue-api": "0.1.1-rc.3",
-    "@dsh-blue/blue-ui": "0.1.1-rc.3"
+    "@dsh-blue/blue-api": "0.1.2-alpha.1",
+    "@dsh-blue/blue-ui": "0.1.2-alpha.1"
   },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
 }
@@ -63,8 +63,8 @@ build tool is acceptable as long as `exports` points to the emitted
   "entry": ".",
   "api": "^1.0.0-beta.1",
   "compatibility": {
-    "blue": ">=0.1.1-rc.3 <0.1.2",
-    "harness": ">=0.1.1-rc.1 <0.1.2",
+    "blue": ">=0.1.2-alpha.1 <0.1.2",
+    "harness": "0.1.2-alpha.2",
     "node": "^22.19.0 || >=24.0.0"
   },
   "capabilities": {
@@ -93,8 +93,8 @@ The manifest `id` must equal the npm package name. `entry` is a public
 and loader-row `id` are separate namespaces; this tutorial keeps them aligned
 for easier diagnostics, but the protocol does not require either to equal the
 package name.
-The compatibility ranges cover rc.3 Blue plus the current and previous Harness
-lines exercised by this repository's packed fixture. Narrow them when a plugin
+The compatibility ranges cover the Blue alpha series plus the sole verified
+Harness `0.1.2-alpha.2` line; RC is unsupported. Narrow them when a plugin
 uses a Host feature that has a smaller verified matrix.
 
 ## Plugin entry
@@ -166,12 +166,12 @@ for an independent plugin: pnpm does not install dependencies for a linked
 directory, while Node resolves imports from the source directory's real path,
 outside the profile's module ancestry.
 
-Close the static and dual-Harness packed gates before installation:
+Close the static and supported-Harness packed gates before installation:
 
 ```sh
 blue-plugin validate ./blue-workspace-header
 blue-plugin conformance ./blue-workspace-header
-blue-plugin conformance ./blue-workspace-header --harness-line 0.1.1-rc.1
+blue-plugin conformance ./blue-workspace-header --harness-line 0.1.2-alpha.2
 ```
 
 After confirming the header appears, remove the plugin row or run

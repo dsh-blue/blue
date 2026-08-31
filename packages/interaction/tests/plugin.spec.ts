@@ -2,7 +2,7 @@
  * REAL-composition test: boot blue-core, the real command runtime and
  * user-questions service, and the blue-interaction plugin through the real
  * Loader from a cordis.yml in a temp directory. Asserts the key batch, the
- * built-in commands, and the user-questions provider register, and that
+ * built-in commands, and the user-questions answerer register, and that
  * unloading the tree removes every contribution.
  */
 
@@ -121,16 +121,20 @@ function lookupAgent(): Agent {
 }
 
 describe('blue-interaction through the real Loader', () => {
-  it('registers the key batch, the built-in commands, and the questions provider', async () => {
+  it('registers the key batch, the built-in commands, and the questions answerer', async () => {
     const { ctx } = await bootInteraction()
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.submit')).toEqual(['enter'])
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.interrupt')).toEqual(['ctrl+c'])
     expect(ctx.get('blueKeymap')?.getKeys('blue.interaction.steer')).toEqual(['ctrl+s'])
     expect(ctx.commands.find(lookupAgent(), 'quit')).toBeDefined()
     expect(ctx.commands.find(lookupAgent(), 'sessions')).toBeDefined()
-    // The provider occupies the single user-questions slot.
-    expect(() => ctx.userQuestions.registerProvider({ ask: () => Promise.resolve({ answers: [] }) }))
-      .toThrow(/already registered/u)
+    const controller = new AbortController()
+    const pending = ctx.userQuestions.ask({
+      questions: [{ id: 'loaded', question: 'Loaded?' }],
+      signal: controller.signal,
+    })
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'ASK_ABORTED' })
   })
 
   it('removes every contribution when the tree unloads', async () => {

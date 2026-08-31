@@ -53,8 +53,8 @@ the built-in implementation. Plugins must never write those settings.
 pnpm check:examples
 ```
 
-The gate runs the compatibility validator on all eight packages, then on both the current and
-previous Harness line it:
+The gate runs the compatibility validator on all eight packages, then on the sole supported
+Harness `0.1.2-alpha.2` line it:
 
 - packs API, UI, core, kit, six plugins, and composition with `pnpm pack`;
 - installs every tarball into one temporary npm project without workspace links;

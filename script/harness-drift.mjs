@@ -1,22 +1,22 @@
-// Harness drift detector: watches the npm `next` dist-tags of every
+// Harness drift detector: watches the release-line npm dist-tag of every
 // @deepseek-ai/dsh-* package this tree pins and classifies the tree's
 // harness line against the registry.
 //
 // Division of labour: packages/transcript/tests/version.spec.ts owns
 // INTERNAL consistency (every pin in this repo agrees with HARNESS_LINE);
-// this script owns EXTERNAL freshness (that line vs the registry `next`
-// tag — the rc line rides `next`; `latest` lags on old public lines and is
-// reported for information only). The spec cannot see the registry; this
+// this script owns EXTERNAL freshness (that line vs the registry channel:
+// alpha -> `alpha`, rc -> `next`, stable -> `latest`). The other tags are
+// reported for information only. The spec cannot see the registry; this
 // script never edits a file. The bump itself is performed by the headless
 // agent (script/harness-drift-task.mjs) and gated deterministically by the
 // harness-drift workflow.
 //
 // Exit codes are the workflow contract:
-//    0  SYNC        every watched package's next == the pinned line
-//   10  BUMP_READY  every next == V, same major.minor, V > pinned -> auto bump
-//   20  MINOR_JUMP  every next == V but crossing minor/major, or rolled back
+//    0  SYNC        every watched package's selected tag == the pinned line
+//   10  BUMP_READY  every selected tag == V, same major.minor, V > pinned -> auto bump
+//   20  MINOR_JUMP  every selected tag == V but crossing minor/major, or rolled back
 //                  (R1 ruling: never chase jumps past the minor) -> issue
-//   30  PARTIAL     next values disagree with each other -> wait, never mix
+//   30  PARTIAL     selected-tag values disagree -> wait, never mix
 //                  (version.spec forbids a split tree, so a bump ships only
 //                  when the whole watched set moves together)
 //    1  ERROR       registry lookups failed after retries — the monitor is
@@ -113,13 +113,21 @@ export function compareVersions(a, b) {
   return 0
 }
 
+/** Registry channel corresponding to the pinned Harness release phase. */
+export function distTagForHarnessLine(line) {
+  const prerelease = parseVersion(line)?.prerelease[0]
+  if (prerelease === 'alpha') return 'alpha'
+  if (prerelease === 'rc') return 'next'
+  return 'latest'
+}
+
 /**
  * The state machine over the observed tags. Pure: the workflow maps the
  * exit code, local checks can feed fixtures directly.
  */
-export function classify(current, tags) {
-  if (tags.some(tag => tag.next === undefined)) return { state: 'PARTIAL' }
-  const values = new Set(tags.map(tag => tag.next))
+export function classify(current, tags, distTag = distTagForHarnessLine(current)) {
+  if (tags.some(tag => tag[distTag] === undefined)) return { state: 'PARTIAL' }
+  const values = new Set(tags.map(tag => tag[distTag]))
   if (values.size > 1) return { state: 'PARTIAL' }
   const target = [...values][0]
   if (target === current) return { state: 'SYNC' }
@@ -143,7 +151,7 @@ async function viewTags(name) {
         })
       })
       const tags = JSON.parse(stdout)
-      return { name, next: tags.next, latest: tags.latest }
+      return { name, alpha: tags.alpha, next: tags.next, latest: tags.latest }
     } catch (error) {
       lastError = error
     }
@@ -174,7 +182,8 @@ async function main() {
     process.exit(1)
   }
   const names = watchedPackages()
-  console.log(`harness-drift: pinned line ${harnessLine}, watching ${names.length} packages' next tags`)
+  const distTag = distTagForHarnessLine(harnessLine)
+  console.log(`harness-drift: pinned line ${harnessLine}, watching ${names.length} packages' ${distTag} tags`)
   let tags
   try {
     tags = await queryAll(names)
@@ -182,18 +191,19 @@ async function main() {
     console.error(`harness-drift: ERROR — ${error instanceof Error ? error.message : String(error)}`)
     process.exit(1)
   }
-  const { state, target } = classify(harnessLine, tags)
-  const lagging = tags.filter(tag => tag.next !== harnessLine)
+  const { state, target } = classify(harnessLine, tags, distTag)
+  const lagging = tags.filter(tag => tag[distTag] !== harnessLine)
   const summary = [
     `### harness-drift: ${state}`,
     '',
     `- pinned line: \`${harnessLine}\``,
-    target === undefined ? '' : `- registry next: \`${target}\``,
+    `- registry tag: \`${distTag}\``,
+    target === undefined ? '' : `- registry target: \`${target}\``,
     `- watched: ${tags.length} packages (${lagging.length} off-line)`,
     '',
-    '| package | next | latest |',
-    '|---|---|---|',
-    ...tags.map(tag => `| \`${tag.name}\` | \`${tag.next ?? '—'}\` | \`${tag.latest ?? '—'}\` |`),
+    '| package | alpha | next | latest |',
+    '|---|---|---|---|',
+    ...tags.map(tag => `| \`${tag.name}\` | \`${tag.alpha ?? '—'}\` | \`${tag.next ?? '—'}\` | \`${tag.latest ?? '—'}\` |`),
   ].join('\n')
   console.log(summary)
   const summaryPath = process.env.GITHUB_STEP_SUMMARY

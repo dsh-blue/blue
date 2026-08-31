@@ -15,8 +15,9 @@ independent install scenario.
 implementations. The repository `script/blue-plugin-*.mjs` files are thin
 compatibility entries. Validation is static and script-disabled packing is
 mandatory. Conformance uses a throwaway npm project, normal peer resolution,
-exact current/previous Harness lines, native ESM exports, and always reports
-cleanup. Neither command is a security sandbox.
+the exact lines listed by `supportedHarnessLines`, native ESM exports, and
+always reports cleanup. `0.1.2-alpha.1` lists only Harness `0.1.2-alpha.2`;
+no RC line is implied or tested. Neither command is a security sandbox.
 
 The generator refuses a non-empty destination and never creates a repository,
 commit, tag, profile installation, or npm release. Keep `README.md` and

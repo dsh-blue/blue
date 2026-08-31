@@ -8,13 +8,13 @@ repository checkout is required.
 ## Install the tool and read the machine contract
 
 ```sh
-npm install --global @dsh-blue/blue-plugin-kit@0.1.1-rc.3
+npm install --global @dsh-blue/blue-plugin-kit@0.1.2-alpha.1
 blue-plugin catalog --json
 ```
 
 The catalog is authoritative for capability names, versions, resources,
-quotas, Blue/API versions, and the current/previous Harness lines. Read it
-before generating a package:
+quotas, Blue/API versions, and the supported Harness lines. This release lists
+only `0.1.2-alpha.2`, with no RC line. Read it before generating a package:
 
 ```sh
 blue-plugin create ./my-blue-plugin --name @acme/my-blue-plugin
@@ -62,15 +62,15 @@ executes the plugin nor acts as a security review.
 
 ```sh
 blue-plugin conformance /path/to/my-plugin
-blue-plugin conformance /path/to/my-plugin --harness-line 0.1.1-rc.1
+blue-plugin conformance /path/to/my-plugin --harness-line 0.1.2-alpha.2
 ```
 
 `conformance` script-disables and packs the plugin, installs it with normal
 peer resolution in a throwaway npm project, and loads only public exports. It
 then verifies Host admission, widths 20/40/80/120, Fiber unload,
 capability-absent fallback, output/timeout fencing, and cleanup. The default is
-the catalog's current Harness line; the second command closes the previous-line
-gate.
+the catalog's sole Harness line; the explicit form pins that same exact version
+in the report.
 
 A passing report requires:
 
@@ -102,7 +102,7 @@ command, status item, pane, and overlay must disappear. Residue usually means a
 registration bypassed the Fiber-owned API returned by `open()`, or mutable
 state escaped into a module singleton.
 
-Before release, close `catalog --json`, `validate`, current/previous Harness
+Before release, close `catalog --json`, `validate`, supported-Harness
 `conformance`, unload, headless smoke, and live-terminal acceptance. The user
 must still choose the distribution destination; green validation never
 authorizes creating a GitHub repository or publishing to npm. The marketplace

@@ -50,7 +50,7 @@ import {
  * while {@link BLUE_VERSION} is Blue's first-release number. Guarded by
  * the global version spec against the dsh pins.
  */
-const HARNESS_LINE = '0.1.1-rc.2'
+const HARNESS_LINE = '0.1.2-alpha.2'
 
 /** The model facts the `/status` panel lists. */
 export interface StatusModelFacts {

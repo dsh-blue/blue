@@ -17,7 +17,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 // Empty type import carries the `settings` Context merge and the
 // 'settings/updated' Events merge the emit below uses.
 import type {} from '@deepseek-ai/dsh-settings'
-import SettingsProvider, { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 // Empty type import carries the app-owned `blueSession` Context merge and
 // the 'test/session-changed' Events merge the attach helper emits.
 import type {} from '@dsh-blue/blue-app'
@@ -140,7 +140,7 @@ describe('blue-settings schema and registration', () => {
     expect(settingsPlugin.Config({})).toEqual(settingsPlugin.DEFAULT_SETTINGS)
     expect(settingsPlugin.DEFAULT_SETTINGS).toEqual({
       updateCheck: true,
-      updateChannel: 'rc',
+      updateChannel: 'alpha',
       theme: 'dark',
       statusProvider: 'blue.default',
       editorProvider: 'blue.default',
@@ -167,7 +167,7 @@ describe('blue-settings schema and registration', () => {
     const blue = settings.describe().filter(descriptor => String(descriptor.ns) === 'blue')
     expect(blue).toHaveLength(1)
     // The namespace is taken: a second registration fails loud upstream.
-    expect(() => settings.register(settingsNamespace('blue'), settingsPlugin.Config)).toThrow(/already registered/u)
+    expect(() => settings.register('blue', settingsPlugin.Config)).toThrow(/already registered/u)
     // The thunk resolves schema defaults layered with the user document.
     expect(settingsPlugin.currentBlueSettings(ctx)).toEqual({
       updateCheck: false,
@@ -195,7 +195,7 @@ describe('blue-settings schema and registration', () => {
     // installing or reloading their provider can satisfy the stored choice.
     const updated: string[] = []
     ctx.on('settings/updated', ns => updated.push(String(ns)))
-    await settings.update(settingsNamespace('blue'), { editorProvider: 'still.missing' })
+    await settings.update('blue', { editorProvider: 'still.missing' })
     expect(settingsPlugin.currentBlueSettings(ctx).editorProvider).toBe('still.missing')
     expect(updated).toContain('blue')
   })
@@ -232,22 +232,22 @@ describe('blue-settings theme applier', () => {
 
     // An unrelated blue commit leaves the live provider alone: the session
     // pick (or here, the just-applied persisted theme) survives.
-    await settings.update(settingsNamespace('blue'), { updateCheck: false })
+    await settings.update('blue', { updateCheck: false })
     await settle()
     expect(themeMock.calls).toEqual(['ocean'])
 
     // A foreign-namespace commit is filtered out entirely.
-    ctx.emit('settings/updated', settingsNamespace('shell'), {}, {}, 'update')
+    ctx.emit('settings/updated', 'shell' as SettingsNamespace, {}, {}, 'update')
     await settle()
     expect(themeMock.calls).toEqual(['ocean'])
 
     // A committed theme change swaps the provider.
-    await settings.update(settingsNamespace('blue'), { theme: 'paper' })
+    await settings.update('blue', { theme: 'paper' })
     await vi.waitFor(() => {
       expect(ctx.get('blueTheme')?.colors).toBe(themePaper.PAPER_COLORS)
     })
     // Back to the baseline: later cases start from dark.
-    await settings.update(settingsNamespace('blue'), { theme: 'dark' })
+    await settings.update('blue', { theme: 'dark' })
     await vi.waitFor(() => {
       expect(ctx.get('blueTheme')?.colors).toBe(themeDark.DARK_COLORS)
     })
@@ -259,7 +259,7 @@ describe('blue-settings theme applier', () => {
     const { ctx, settings, attach } = await mount({ blue: { theme: 'ocean' } })
     // The settings/updated handler is gated on the attach: this commit
     // moves the persisted theme without any swap.
-    await settings.update(settingsNamespace('blue'), { theme: 'paper' })
+    await settings.update('blue', { theme: 'paper' })
     await settle()
     expect(themeMock.calls).toEqual([])
     // The attach-time sync reads the current value, covering the commit.
@@ -269,7 +269,7 @@ describe('blue-settings theme applier', () => {
     })
     expect(themeMock.calls).toEqual(['paper'])
     // Back to the baseline: later cases start from dark.
-    await settings.update(settingsNamespace('blue'), { theme: 'dark' })
+    await settings.update('blue', { theme: 'dark' })
     await vi.waitFor(() => {
       expect(ctx.get('blueTheme')?.colors).toBe(themeDark.DARK_COLORS)
     })
@@ -288,7 +288,7 @@ describe('blue-settings theme applier', () => {
     })
     expect(themeMock.calls).toEqual(['ocean'])
     // Back to the baseline: later cases start from dark.
-    await ctx.get('settings')!.update(settingsNamespace('blue'), { theme: 'dark' })
+    await ctx.get('settings')!.update('blue', { theme: 'dark' })
     await vi.waitFor(() => {
       expect(ctx.get('blueTheme')?.colors).toBe(themeDark.DARK_COLORS)
     })

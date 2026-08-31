@@ -12,7 +12,7 @@ Command-line startup (`src/startup.ts`): `[task]` positional, `--resume <id>`.
 
 `src/plugin-host-session-bridge.ts` is the independent Interaction adapter for public `session.read` and `session.projections.read`. It waits for the composition-private `bluePluginControl`, `blueSessionReader`, and `blueSessionProjections`, then attaches both owner sources for the bridge Fiber lifetime. It maps an online reader with no current session to a null projection cut and wraps the internal unsubscribe function in an idempotent `BlueRegistration`. The projection-owner source remains composition-private: the bridge receives its shape through `bluePluginControl.attachSessionProjections` contextual typing and does not import that owner type from the public API package root. The API host owns exact field/key grants, JSON validation/detachment, size bounds, epoch/sequence fencing, owner replay, and consumer unload; the bridge never exposes `blueSessionActions`, the unscoped projection reader, Agent, or Session. Generic public `session.act` has no replacement: writes remain with their domain action owner.
 
-Packed acceptance runs `node script/blue-plugin-fixture.mjs packages/app --install` on the current Harness line and again with `--harness-line 0.1.1-rc.1`. Its `app.session-data-v1-scope-epoch-replay-unload` scenario imports only installed public API/app exports and proves exact field/key scope, detached freezing, same-id epoch restart, owner replay, stale callback rejection, consumer fencing, and the continued absence of generic `session.act`; both lines must execute all eight declared scenarios without skips or failures.
+Packed acceptance runs `node script/blue-plugin-fixture.mjs packages/app --install` on this release's sole supported Harness `0.1.2-alpha.2` line. Its `app.session-data-v1-scope-epoch-replay-unload` scenario imports only installed public API/app exports and proves exact field/key scope, detached freezing, same-id epoch restart, owner replay, stale callback rejection, consumer fencing, and the continued absence of generic `session.act`; all eight declared scenarios must execute without skips or failures.
 
 The driver answers the payload-less `'blue/request-new'` and `'blue/request-fork'` events (fork: idle-guarded, seeded with the full event log plus `meta.{cwd,parentSession,seedLength}`), and `'blue/request-rewind'(sessionId, boundarySeq)`. Rewind rejects stale ids, non-idle agents, and prefixes with an open turn/step/tool call; the parent log is never mutated. All switches serialize on one queue and share the commit point: create/resume replacement → dispose old → assign internal current → publish the reader snapshot. No raw-session change event exists.
 
@@ -29,6 +29,11 @@ Inbox mutations publish a coalesced `'blue/queue-changed'` notification instead 
 ## Model selection (S23, D38)
 
 Every setup installs a three-tier selection reference (`src/model-ref.ts` — an in-session pick, the session log's last request header, then the process default; the harness web host's precedence). `blueSessionActions.modelSelection()` and `selectModel()` are its readonly/write boundaries, so a resumed session keeps the model it was already using without exporting the mutable reference.
+
+The optional permission read stays inside the app boundary. Harness
+`0.1.2-alpha.2` changed `PermissionPresetService.current` to accept the live
+`Session` rather than a detached event array; `blueSessionActions.permissionPreset()`
+passes the private current Session and returns only the resulting preset id.
 
 ## Preset mount (S28, D37)
 

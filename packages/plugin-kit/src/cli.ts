@@ -8,7 +8,7 @@ import { BLUE_CAPABILITY_CATALOG_V1 } from '@dsh-blue/blue-api/capabilities/v1'
 import { BLUE_API_VERSION, BLUE_VERSION } from '@dsh-blue/blue-api'
 import { valid } from 'semver'
 import { createPluginPackage } from './create.ts'
-import { BLUE_PLUGIN_HARNESS_LINE, BLUE_PLUGIN_PREVIOUS_HARNESS_LINE } from './index.ts'
+import { BLUE_PLUGIN_HARNESS_LINE, BLUE_PLUGIN_SUPPORTED_HARNESS_LINES } from './index.ts'
 
 /** Runtime programs shipped beside the compiled CLI entry. */
 export type AuthorRuntime = 'validate' | 'conformance'
@@ -74,7 +74,7 @@ function parseConformance(args: readonly string[]): ParsedConformance {
     } else if (value.startsWith('-') || directory !== undefined) invalid = true
     else directory = value
   }
-  if (harnessLine !== undefined && valid(harnessLine) === null) invalid = true
+  if (harnessLine !== undefined && (valid(harnessLine) === null || !BLUE_PLUGIN_SUPPORTED_HARNESS_LINES.includes(harnessLine as typeof BLUE_PLUGIN_HARNESS_LINE))) invalid = true
   return { ...(directory === undefined ? {} : { directory }), ...(harnessLine === undefined ? {} : { harnessLine }), invalid }
 }
 
@@ -95,7 +95,7 @@ export async function runBluePluginCli(args: readonly string[], io: BluePluginCl
       productVersion: BLUE_VERSION,
       apiVersion: BLUE_API_VERSION,
       harnessLine: BLUE_PLUGIN_HARNESS_LINE,
-      previousHarnessLine: BLUE_PLUGIN_PREVIOUS_HARNESS_LINE,
+      supportedHarnessLines: BLUE_PLUGIN_SUPPORTED_HARNESS_LINES,
       capabilities: BLUE_CAPABILITY_CATALOG_V1,
     }, null, 2) + '\n')
     return 0

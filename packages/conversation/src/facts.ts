@@ -9,6 +9,7 @@
 
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import { z } from 'zod'
 import type { ConversationFactsState } from './types.ts'
 

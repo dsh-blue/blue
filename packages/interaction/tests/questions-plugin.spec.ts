@@ -4,8 +4,9 @@
  * provider uniqueness, and disposal.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
+import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
@@ -13,7 +14,10 @@ import * as questionsPlugin from '../src/questions-plugin.ts'
 import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, KEY, type FakeScreen } from './fakes.ts'
 
-async function mount(localeId?: 'en' | 'zh'): Promise<{
+async function mount(
+  localeId?: 'en' | 'zh',
+  beforePlugin?: (ctx: Context) => void,
+): Promise<{
   ctx: Context
   screen: FakeScreen
   fiber: { dispose(): Promise<void> }
@@ -25,6 +29,7 @@ async function mount(localeId?: 'en' | 'zh'): Promise<{
     : new BlueLocaleService(ctx, { systemLocale: localeId })
   locale?.register('interaction', INTERACTION_LOCALE)
   await ctx.plugin(UserQuestionService)
+  beforePlugin?.(ctx)
   const fiber = await ctx.plugin(questionsPlugin)
   return { ctx, screen, fiber, locale }
 }
@@ -178,19 +183,53 @@ describe('blue-questions provider', () => {
     expect(screen.overlays).toHaveLength(0)
   })
 
-  it('registers exactly one provider; a second registration fails with DUPLICATE_PROVIDER', async () => {
-    const { ctx } = await mount()
-    expect(() => ctx.userQuestions.registerProvider({ ask: () => Promise.resolve({ answers: [] }) }))
-      .toThrow(/already registered/u)
+  it('claims the waterfall without invoking a later answerer', async () => {
+    const { ctx, screen } = await mount()
+    const later = vi.fn(async () => ({ answers: [] }))
+    ctx.on('user-questions/request', later)
+    const pending = ctx.userQuestions.ask({ questions: [choice()] })
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Alpha'] }] })
+    expect(later).not.toHaveBeenCalled()
   })
 
-  it('unregisters the provider when the fiber disposes (HMR safety)', async () => {
+  it('accepts a request delegated by an earlier waterfall answerer', async () => {
+    const delegated = vi.fn()
+    const { ctx, screen } = await mount(undefined, (owner) => {
+      owner.on('user-questions/request', (_request, next) => {
+        delegated()
+        return next()
+      })
+    })
+    const pending = ctx.userQuestions.ask({ questions: [choice()] })
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Alpha'] }] })
+    expect(delegated).toHaveBeenCalledOnce()
+  })
+
+  it('answers a scoped request for the exact live root agent', async () => {
+    const { ctx, screen } = fakeBlueContext()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestionService)
+    await ctx.plugin(questionsPlugin)
+    const agent = {
+      id: 'blue-question-root',
+      session: { id: 'blue-question-root', header: { delegationDepth: 0 } },
+    } as unknown as Agent
+    ctx.agents.enter(agent, undefined)
+
+    const pending = ctx.userQuestions.ask({ agent, questions: [choice()] })
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toEqual({ answers: [{ id: 'q1', selected: ['Alpha'] }] })
+  })
+
+  it('unregisters the waterfall answerer when the fiber disposes (HMR safety)', async () => {
     const { ctx, fiber } = await mount()
     await fiber.dispose()
     await expect(ctx.userQuestions.ask({ questions: [choice()] }))
       .rejects.toMatchObject({ code: 'NO_PROVIDER' })
-    // The slot is free again after disposal.
-    const dispose = ctx.userQuestions.registerProvider({ ask: () => Promise.resolve({ answers: [] }) })
+    const dispose = ctx.on('user-questions/request', async () => ({ answers: [] }))
+    await expect(ctx.userQuestions.ask({ questions: [choice()] })).resolves.toEqual({ answers: [] })
     dispose()
   })
 })

@@ -6,7 +6,7 @@
 
 ```sh
 npm i -g pnpm@11
-npm i -g @dsh-blue/blue-cli@rc
+npm i -g @dsh-blue/blue-cli@alpha
 blue
 ```
 
