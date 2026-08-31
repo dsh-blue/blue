@@ -1,16 +1,16 @@
 # Built-in plugins
 
-The installable Blue bundle contains 33 Blue-owned rows: two host-support rows, one private-runtime composition group, and 30 product rows wrapped by that group and split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public Beta API; internal rows connect through explicit `inject` dependencies and model/action seams.
+The installable Blue bundle contains 34 Blue-owned rows: three host-support rows, one private-runtime composition group, and 30 product rows wrapped by that group and split into baseline, enhancement, and assembly segments. External plugins integrate through the renderer-neutral public Beta API; internal rows connect through explicit `inject` dependencies and model/action seams.
 
-The patch also carries one Harness insert row, `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a bad title self-corrects on the next one). It is not Blue-owned and is therefore excluded from the 33-row count above.
+The patch also carries one Harness insert row, `session-title-all-prompts-llm` (the title-cadence swap: the base's `session-title-llm`, which titles once from the first prompt, is disabled in favor of re-titling on every user message, so a bad title self-corrects on the next one). It is not Blue-owned and is therefore excluded from the 34-row count above.
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 33 Blue-owned rows · 33 条 Blue 自有行"]
-        subgraph host["host support 宿主支撑 - 2 rows"]
-            presets["blue-agent-presets"]
+    subgraph bundle["cordis.patch.yml - 34 Blue-owned rows · 34 条 Blue 自有行"]
+        subgraph host["host support 宿主支撑 - 3 rows"]
+            presets["subagent model settings · agent-presets<br/>upstream shipped + blue-cordis"]
             creative["blue-creative-host"]
         end
         subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
@@ -51,7 +51,7 @@ flowchart TB
 
 | Plugin | Description |
 |---|---|
-| `blue-agent-presets` | Blue-owned preset root composing the standard/code/minimal agent planes |
+| `agent-presets` | Loads upstream shipped `standard/minimal/ptc/cordis` and the user root directly; Blue adds only the uniquely named `blue-cordis` preset, with no copied upstream directories or `code` alias |
 | `blue-creative-host` | isolated dynamic Cordis host whose only UI route is the public plugin host |
 
 ## Private runtime composition (1 group row)

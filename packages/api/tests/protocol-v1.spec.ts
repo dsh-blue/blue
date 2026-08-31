@@ -57,6 +57,7 @@ describe('@dsh-blue/blue-api protocol v1', () => {
     expect(BLUE_PRODUCT_PROTOCOL_VERSIONS).toEqual({
       '0.1.1-rc.2': '1.0.0-beta.1',
       '0.1.1-rc.3': '1.0.0-beta.1',
+      '0.1.2-alpha.1': '1.0.0-beta.1',
     })
     expect(BLUE_PLUGIN_CAPABILITIES_V1).toEqual([
       'commands',

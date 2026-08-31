@@ -4,7 +4,7 @@ This page explains the four pillars of Blue's plugin model: the Cordis tree and 
 
 ## The Cordis tree and the Fiber lifecycle
 
-There is exactly one Cordis plugin tree inside the dsh process. The Harness domain plugins (agents, sessions, tools, approval), Blue's 33 owned rows (including its private runtime group), and your plugin are all composition rows on this tree:
+There is exactly one Cordis plugin tree inside the dsh process. The Harness domain plugins (agents, sessions, tools, approval), Blue's 34 owned rows (including its private runtime group), and your plugin are all composition rows on this tree:
 
 ```text
 dsh process 进程（one Cordis tree 一棵 Cordis 树）

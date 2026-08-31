@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
-import SettingsProvider, { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
@@ -110,7 +110,7 @@ function packumentJson(options: { rcTag?: string; time?: Record<string, string> 
     '@dsh-blue/blue-app': '^0.1.0-rc.6',
   }
   return JSON.stringify({
-    'dist-tags': { ...(options.rcTag === undefined ? {} : { rc: options.rcTag }), latest: '0.1.0-rc.6' },
+    'dist-tags': { ...(options.rcTag === undefined ? {} : { alpha: options.rcTag }), latest: '0.1.0-rc.6' },
     versions: {
       '0.1.0-rc.1': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.1' } },
       '0.1.0-rc.6': { dependencies: rc2Deps },
@@ -311,7 +311,7 @@ describe('/update early verdicts', () => {
   it('answers up to date without touching the profile', async () => {
     const world = await mountWorld({ packument: packumentJson({ rcTag: '0.1.0-rc.6' }) })
     const result = await world.run()
-    expect(result).toEqual({ kind: 'success', text: `up to date (v${CURRENT_VERSION}; rc tag: 0.1.0-rc.6)` })
+    expect(result).toEqual({ kind: 'success', text: `up to date (v${CURRENT_VERSION}; alpha tag: 0.1.0-rc.6)` })
     expect(world.spawns.some(call => call.args[0] === 'plugin')).toBe(false)
     world.dispose()
   })
@@ -334,7 +334,7 @@ describe('/update early verdicts', () => {
 
   it('refuses a channel tag that does not parse as a version', async () => {
     const world = await mountWorld({ packument: JSON.stringify({
-      'dist-tags': { rc: 'banana' },
+      'dist-tags': { alpha: 'banana' },
       versions: { banana: {} },
       time: {},
     }) })
@@ -366,7 +366,7 @@ describe('/update early verdicts', () => {
     // running version; for a current tree it reads as plain up-to-date.
     const world = await mountWorld({ packument: packumentJson({ rcTag: '0.1.0-rc.3' }) })
     const result = await world.run()
-    expect(result).toEqual({ kind: 'success', text: `up to date (v${CURRENT_VERSION}; rc tag: 0.1.0-rc.3)` })
+    expect(result).toEqual({ kind: 'success', text: `up to date (v${CURRENT_VERSION}; alpha tag: 0.1.0-rc.3)` })
     world.dispose()
   })
 
@@ -426,7 +426,7 @@ describe('/update early verdicts', () => {
     settingsPlugin.apply(world.ctx)
     updateCheck.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
-    await settings.update(settingsNamespace('blue'), { updateChannel: 'beta' })
+    await settings.update('blue', { updateChannel: 'beta' })
     await new Promise(resolve => setTimeout(resolve, 5))
     const result = await world.run()
     if (result?.kind === 'error') expect(result.text).toContain('no "beta" tag')
@@ -563,7 +563,7 @@ describe('/update confirm and swap', () => {
     // No publish time for the target and an unreadable host probe: both
     // gates warn instead of blocking, and the warnings ride the subtitle.
     const noTimePackument = JSON.stringify({
-      'dist-tags': { rc: TARGET_VERSION },
+      'dist-tags': { alpha: TARGET_VERSION },
       versions: {
         '0.1.0-rc.6': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
         '0.1.0-rc.7': { dependencies: { '@deepseek-ai/dsh-agent-presets': '0.1.1-rc.2' } },
@@ -722,7 +722,7 @@ describe('/update confirm and swap', () => {
     world.dispose()
   })
 
-  it('falls back to the rc channel when the settings channel is blank', async () => {
+  it('falls back to the alpha channel when the settings channel is blank', async () => {
     const world = await mountWorld()
     class MemorySettings extends SettingsProvider {
       readonly writable = true
@@ -741,7 +741,7 @@ describe('/update confirm and swap', () => {
     settingsPlugin.apply(world.ctx)
     updateCheck.apply(world.ctx)
     await new Promise(resolve => setTimeout(resolve, 5))
-    await settings.update(settingsNamespace('blue'), { updateChannel: '' })
+    await settings.update('blue', { updateChannel: '' })
     await new Promise(resolve => setTimeout(resolve, 5))
     const pending = world.ctx.commands.execute(world.agent, '/update', [], new AbortController().signal)
     const overlay = await world.waitOverlay()
@@ -795,7 +795,7 @@ describe('/update confirm and swap', () => {
     // nothing useful, leaving the from-release a one-member set and the
     // rollback set the discovered install.
     const npmViewPackument = JSON.stringify({
-      'dist-tags': { rc: TARGET_VERSION },
+      'dist-tags': { alpha: TARGET_VERSION },
       versions: ['0.1.0-rc.6', '0.1.0-rc.7', CURRENT_VERSION, TARGET_VERSION],
       time: { '0.1.0-rc.6': '2026-08-20T00:00:00.000Z', [TARGET_VERSION]: '2026-08-23T00:00:00.000Z' },
     })

@@ -20,6 +20,7 @@
 | [blue-surface-migration-matrix.md](./blue-surface-migration-matrix.md) | surface replacement 与物理删除状态 |
 | [blue-plugin-validation.md](./blue-plugin-validation.md) | architecture validator 和独立 fixture 门禁 |
 | [blue-fixture-audit.md](./blue-fixture-audit.md) | context/remote/openpencil/lark 验证记录 |
+| [dsh-0.1.2-alpha-migration.md](./dsh-0.1.2-alpha-migration.md) | Blue `0.1.2-alpha.1` 到 Harness `0.1.2-alpha.2` 的 API、preset、兼容边界与验收记录 |
 
 ## 活跃收敛与发布
 

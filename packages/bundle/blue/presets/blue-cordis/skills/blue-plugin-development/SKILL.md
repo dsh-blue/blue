@@ -1,6 +1,6 @@
 ---
 name: blue-plugin-development
-description: Create or persist a Blue frontend plugin after an in-session prototype is accepted, or add a Blue frontend entry to an existing Harness plugin package. Uses the published blue-plugin catalog, generator, validator, and packed conformance command without requiring a Blue checkout. Stops with a capability proposal when the machine catalog cannot express the requested feature. Not for ephemeral prototyping, Blue core changes, agent presets, marketplace submission, or publishing without explicit user authorization.
+description: Create or persist a Blue frontend plugin from the blue-cordis preset after an in-session prototype is accepted, or add a Blue frontend entry to an existing Harness plugin package. Uses the published blue-plugin catalog, generator, validator, and packed conformance command without requiring a Blue checkout. Stops with a capability proposal when the machine catalog cannot express the requested feature. Not for ephemeral prototyping, Blue core changes, agent presets, marketplace submission, or publishing without explicit user authorization.
 ---
 
 # Develop a Blue plugin
@@ -121,10 +121,9 @@ Run the published checks from any directory:
 ```sh
 "$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" validate ./my-blue-plugin
 "$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" conformance ./my-blue-plugin
-"$DSH_BLUE_PLUGIN_NODE" "$DSH_BLUE_PLUGIN_BIN" conformance ./my-blue-plugin --harness-line <previousHarnessLine-from-catalog>
 ```
 
-Both conformance reports must have:
+The conformance report must have:
 
 - `valid: true`;
 - `peerResolution: "normal"` and the requested exact Harness line;
@@ -153,5 +152,6 @@ production `blue` profile for acceptance and never hot-replace the running
 Cordis tree through `/plugin`.
 
 Wait for explicit human acceptance before distribution. The deterministic P5
-gate ends at an accepted local package plus current/previous Harness packed
-conformance. GitHub and npm are separate, explicitly authorized outcomes.
+gate ends at an accepted local package plus packed conformance on every exact
+line in the catalog's `supportedHarnessLines`. GitHub and npm are separate,
+explicitly authorized outcomes.

@@ -202,11 +202,10 @@ follow-up rejection and safe-retraction boundaries.
 
 `changelog-content.ts` mirrors `docs/release-notes/` exactly; historical
 entries remain unchanged, while current-release behavior changes update both
-sources in the same commit. `0.1.1-rc.2` records the accepted P1–P4 machine
-contract, exact admission, bounded UI capabilities, field/key-scoped session
-reads, private management/raw services, marketplace migration limit, and
-Experimental provider/editor facets. Keep it newest-first and do not rewrite
-the byte content of older release history.
+sources in the same commit. `0.1.2-alpha.1` records the Harness alpha API and
+shipped-preset migration; older entries retain their accepted contracts and
+historical compatibility claims. Keep it newest-first and do not rewrite the
+byte content of older release history.
 
 Specs that create filesystem fixtures use the shared `mkdtempTracked` helper
 and call `registerTempDirCleanup()` at module scope. This is required for

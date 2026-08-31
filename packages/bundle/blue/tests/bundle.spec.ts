@@ -71,7 +71,6 @@ describe('blue bundle', () => {
     // not. Flattening the ids here keeps the product-order assertion explicit.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
-      'blue-agent-presets',
       'blue-creative-host',
       'blue-runtime-private',
       'blue-api-host',
@@ -149,17 +148,24 @@ describe('blue bundle', () => {
     expect(patch).not.toContain('@dsh-blue-example/')
   })
 
-  it('inserts the Blue-owned agent-presets roster ahead of the Blue rows', () => {
-    expect(patch).toContain('- id: blue-agent-presets')
+  it('extends the upstream agent-presets roster with only Blue\'s system root', () => {
+    expect(patch).toContain('- id: subagent-model-selection-settings')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'")
+    expect(patch).toContain('- id: agent-presets')
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
     expect(patch).toContain('default: standard')
-    // The id deliberately differs from `agent-presets`: dsh only forces its
-    // own shared root onto that upstream id, while Blue's provider resolves
-    // the immutable root inside this bundle.
-    expect(patch).not.toContain('- id: agent-presets\n')
+    expect(patch).toContain('includeShippedRoot: true')
+    expect(patch).toContain('includeUserRoot: true')
+    expect(patch).not.toContain('- id: blue-agent-presets')
     expect(patch).toContain("resolve('@dsh-blue/blue/package.json')")
-    expect(patch.indexOf('- id: blue-agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
-    expect(patch.indexOf('- id: blue-agent-presets')).toBeLessThan(patch.indexOf('- id: blue-app'))
+    expect(patch.indexOf('- id: subagent-model-selection-settings')).toBeLessThan(patch.indexOf('- id: agent-presets'))
+    expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-core'))
+    expect(patch.indexOf('- id: agent-presets')).toBeLessThan(patch.indexOf('- id: blue-app'))
+
+    const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-tool-subagent']).toBe('0.1.2-alpha.2')
   })
 
   it('keeps the host fallback persona valid for agents without preset model variables', () => {
@@ -168,11 +174,10 @@ describe('blue bundle', () => {
     expect(persona).not.toContain('{{model}}')
   })
 
-  it('inserts the cordis host-runner row the shipped cordis preset\'s tool-cordis injects', () => {
+  it('inserts the cordis host-runner required by upstream cordis and blue-cordis', () => {
     // Host plane, mirroring the web-app bundle's own row: the runner provides
-    // `dynamicCordisRunner` + `cordisInspect`, without which the `cordis`
-    // preset's standing mount parks `tool-cordis` and the roster's activation
-    // audit fails the `/preset cordis` switch.
+    // `dynamicCordisRunner` + `cordisInspect`, without which both creative
+    // presets park `tool-cordis` and fail the roster's activation audit.
     expect(patch).toContain('- id: cordis-host-runner')
     expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
     expect(patch).toContain('- id: blue-creative-host')
@@ -202,7 +207,7 @@ describe('blue bundle', () => {
     // no ruling on — the session-title cadence swap (S30): the base's
     // first-prompt provider stands down for the all-prompts sibling row in
     // the insert, and that is Blue's own call, outside the lockstep list.
-    const blueOnly = new Set(['session-title-llm'])
+    const blueOnly = new Set(['hmr', 'session-title-llm'])
     expect(disabledIds(patch).filter(id => !blueOnly.has(id))).toEqual(disabledIds(webAppPatch))
     // A typo'd id would silently disable nothing, leaving the row's tools in
     // the global layer: every disable must address a row the base defines.

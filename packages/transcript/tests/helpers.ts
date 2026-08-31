@@ -4,7 +4,7 @@
  */
 
 import {
-  CallId,
+  ToolCallId,
   MessageId,
   type AssistantMessage,
   type ContentBlock,
@@ -107,8 +107,8 @@ function toolResultMessage(callId: string, text: string, isError = false): ToolR
   return {
     id: MessageId(`m-${seq}`),
     role: 'user',
-    content: [{ type: 'tool-result', toolCallId: CallId(callId), content: [{ type: 'text', text }], isError }],
-    source: { kind: 'tool', callId: CallId(callId) },
+    content: [{ type: 'tool-result', toolCallId: ToolCallId(callId), content: [{ type: 'text', text }], isError }],
+    source: { kind: 'tool', callId: ToolCallId(callId) },
   }
 }
 
@@ -183,7 +183,7 @@ export function retractionEvent(turn: number, step: number, start: number, end: 
 
 /** A `tool/call` event. */
 export function toolCallEvent(turn: number, step: number, callId: string, name: string, args: string): SessionEvent<'tool/call'> {
-  return event('tool/call', { turn, step, callId: CallId(callId), name, arguments: args })
+  return event('tool/call', { turn, step, callId: ToolCallId(callId), name, arguments: args })
 }
 
 /** A `tool/result` event. */
@@ -219,7 +219,7 @@ export function subagentCallEvent(
   return event('tool/call', {
     turn,
     step,
-    callId: CallId(callId),
+    callId: ToolCallId(callId),
     name,
     arguments: JSON.stringify({ description, prompt }),
   }, options.time)

@@ -28,6 +28,23 @@ export interface ChangelogEntry {
 /** All shipped releases, newest first. */
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: '0.1.2-alpha.1',
+    summary: 'Blue now runs on the DeepSeek Harness 0.1.2 alpha line and delegates the standard preset roster to Harness itself.',
+    highlights: [
+      'Exact Harness alpha contract — every runtime, peer, launcher archive, fixture, version surface, and author catalog targets Harness 0.1.2-alpha.2; Harness RC releases are explicitly unsupported.',
+      'Upstream-owned shipped presets — Harness supplies standard, minimal, ptc, and cordis, while Blue ships only its uniquely named blue-cordis preset. The obsolete code alias and copied upstream preset trees are gone.',
+      'Alpha preset capabilities retained — blue-cordis includes the upstream command-goal row, selectable subagent models, and Web fetch support while preserving Blue\'s creative persona and authoring skills.',
+      'Harness API migration — settings use the scoped installSection API, user questions participate in the request waterfall, Todo types come from dsh-tool-todo, and tool-call construction uses ToolCallId.',
+      "Single-line plugin conformance — the machine catalog publishes supportedHarnessLines: ['0.1.2-alpha.2'], generated plugins declare that exact line, and author fixtures reject RC overrides.",
+      'Alpha release and update flow — the launcher, direct install docs, updater settings, drift monitor, and release promotion all use the alpha channel for this release phase.',
+      'Truthful marketplace compatibility — the pinned blue-doudizhu@0.3.0 RC snapshot remains visible but is marked incompatible and has no install action until that plugin declares and proves alpha support.',
+    ],
+    knownIssues: [
+      'Temporary React peer override — Harness alpha\'s Web closure still needs use-sync-external-store@1.6.0 forced beside React 19; the override can be removed when upstream resolves a compatible version itself.',
+      'Title cadence bridge remains — Harness 0.1.2-alpha.2 still does not refresh an all-prompts title on every human-message boundary by itself, so Blue retains its narrow app-owned refresh bridge.',
+    ],
+  },
+  {
     version: '0.1.1-rc.3',
     summary: 'Blue now ships the P5 authoring toolchain for creating, validating, and dogfooding canonical plugins without a Blue repository checkout.',
     highlights: [

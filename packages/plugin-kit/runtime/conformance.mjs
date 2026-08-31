@@ -18,7 +18,7 @@ const repositoryCandidate = resolve(import.meta.dirname, '../../..')
 const repositoryRoot = existsSync(join(repositoryCandidate, 'packages', 'api', 'package.json'))
   ? repositoryCandidate
   : undefined
-const pinnedHarnessLine = '0.1.1-rc.2'
+const pinnedHarnessLine = '0.1.2-alpha.2'
 const argumentsList = process.argv.slice(2)
 let packageArgument = '.'
 let harnessLine
@@ -590,7 +590,7 @@ process.stdout.write(${JSON.stringify(probeSentinel)} + JSON.stringify({ capabil
     const localeAdapter = await load('@dsh-blue/blue-harness-adapter/locale')
     const settingsModule = await load('@deepseek-ai/dsh-settings')
     const SettingsProvider = settingsModule.default
-    const localeNamespace = settingsModule.settingsNamespace('locale')
+    const localeNamespace = 'locale'
 
     class MemorySettings extends SettingsProvider {
       writable = true
@@ -703,7 +703,7 @@ process.stdout.write(${JSON.stringify(probeSentinel)} + JSON.stringify({ capabil
           id: '@fixture/session-data-v1',
           entry: '.',
           api: '^1.0.0-beta.1',
-          compatibility: { blue: '^0.1.1-rc.2', harness: '^0.1.1-rc.2', node: '>=22' },
+          compatibility: { blue: '0.1.2-alpha.1', harness: '0.1.2-alpha.2', node: '>=22' },
           capabilities: {
             required: [
               { name: 'session.read', version: '^1.0.0', resources: { fields: ['identity', 'cwd', 'model'] } },

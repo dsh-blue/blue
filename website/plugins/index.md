@@ -12,8 +12,8 @@ Blue 插件是一个普通的 Cordis 插件：它声明一份 manifest，向 `bl
   "entry": ".",
   "api": "^1.0.0-beta.1",
   "compatibility": {
-    "blue": ">=0.1.1-rc.3 <0.1.2",
-    "harness": ">=0.1.1-rc.1 <0.1.2",
+    "blue": ">=0.1.2-alpha.1 <0.1.2",
+    "harness": "0.1.2-alpha.2",
     "node": "^22.19.0 || >=24.0.0"
   },
   "capabilities": {
@@ -26,10 +26,10 @@ Blue 插件是一个普通的 Cordis 插件：它声明一份 manifest，向 `bl
 入口将这份已校验 manifest 传给 `open()`，再通过获准的 `status` facade 注册贡献。从零跑通完整包见[快速开始](/plugins/quickstart)。
 
 ::: warning 预览阶段提醒
-当前可执行协议是 `1.0.0-beta.1`，不是 Stable v1。`0.1.1-rc.3` 已交付 P1–P5：机器契约、catalog/Host 协商、五项 UI capability、两项会话只读 capability，以及免 checkout 的作者命令、创造模式 skill 和教程 fixture。它不表示 capability 已晋升 Stable，也不开放插件市场或自动授权 GitHub/npm 发布。
+当前可执行协议是 `1.0.0-beta.1`，不是 Stable v1。`0.1.2-alpha.1` 已交付 P1–P5，并将宿主契约迁移到唯一支持的 Harness `0.1.2-alpha.2`：机器契约、catalog/Host 协商、五项 UI capability、两项会话只读 capability，以及免 checkout 的作者命令、创造模式 skill 和教程 fixture。它不表示 capability 已晋升 Stable，也不开放插件市场或自动授权 GitHub/npm 发布。
 :::
 
-## `0.1.1-rc.3` 的 Public Beta 边界
+## `0.1.2-alpha.1` 的 alpha 边界
 
 | 阶段 | 已交付 |
 | --- | --- |
@@ -37,7 +37,7 @@ Blue 插件是一个普通的 Cordis 插件：它声明一份 manifest，向 `bl
 | P2 | required/optional 原子准入、exact resource grant、结构化 denial、受保护 owner generation 与 owner-gap restore |
 | P3 | `commands`、`status`、`panes`、`overlays`、`notifications.publish` 的配额、刷新、unload/reload 与 stale-result 门禁 |
 | P4 | exact-field `session.read` 与 exact-key `session.projections.read`，带 epoch/revision/seq、consistent cut、JSON/size bound 与 late-result 拒绝 |
-| P5 | `blue-plugin catalog/create/validate/conformance`、正式作者 skill、本地持久包闭环、双 Harness 教程 fixture 与双语 drift gate |
+| P5 | `blue-plugin catalog/create/validate/conformance`、正式作者 skill、本地持久包闭环、支持线教程 fixture 与双语 drift gate |
 
 这些能力可用于插件适配，但在生态 consumer、作者工具和 P7 证据关闭前仍为 Public Beta。机器入口是 `@dsh-blue/blue-api/protocol/v1` 与公开 [schema](/schema/blue.plugin.v1.schema.json)；新插件使用 canonical `blue.plugin.json`，不要从过渡期 flat manifest 起步。
 
@@ -92,5 +92,5 @@ generic `session.act` 已移除；写操作使用所属 Harness service 或 feat
 **参考**
 
 - [Seam 参考](/plugins/seams) —— Beta plugin host 与 Blue 内部边界的完整清单；
-- [内置插件](/plugins/builtins) —— bundle 的 33 条 Blue 自有行，是最完整的插件范例集；
+- [内置插件](/plugins/builtins) —— bundle 的 34 条 Blue 自有行，是最完整的插件范例集；
 - [贡献本仓库](/plugins/contributing) —— 给 Blue 本体贡献代码的本地开发流程。

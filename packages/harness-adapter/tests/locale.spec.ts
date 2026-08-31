@@ -5,7 +5,7 @@ import {
   LOCALE_SETTINGS_NAMESPACE as HARNESS_LOCALE_SETTINGS_NAMESPACE,
 } from '@deepseek-ai/dsh-client-locale'
 import type {} from '@deepseek-ai/dsh-settings'
-import SettingsProvider, { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import SettingsProvider, { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { describe, expect, it, vi } from 'vitest'
 import { BLUE_LOCALE_IDS } from '../../frontend/src/locale.ts'
 import {
@@ -65,12 +65,12 @@ describe('Harness locale settings adapter', () => {
     await ctx.plugin(MemorySettings, { locale: { preference: 'en' } })
     await settle()
     expect(ctx.blueLocale.snapshot).toMatchObject({ locale: 'en', preference: 'en' })
-    ctx.emit('settings/updated', settingsNamespace('blue'), {}, {}, 'update')
+    ctx.emit('settings/updated', 'blue' as SettingsNamespace, {}, {}, 'update')
     expect(ctx.blueLocale.preference).toBe('en')
-    await ctx.settings.update(settingsNamespace('locale'), { preference: 'zh' })
+    await ctx.settings.update('locale', { preference: 'zh' })
     await settle()
     expect(ctx.blueLocale.snapshot).toMatchObject({ locale: 'zh', preference: 'zh' })
-    await ctx.settings.mutate(settingsNamespace('locale'), [{ op: 'unset', path: ['preference'] }])
+    await ctx.settings.mutate('locale', [{ op: 'unset', path: ['preference'] }])
     await settle()
     expect(ctx.blueLocale.snapshot).toMatchObject({ locale: 'zh', preference: undefined })
     await localeFiber.dispose()
@@ -85,7 +85,7 @@ describe('Harness locale settings adapter', () => {
     const first = await ctx.plugin(MemorySettings, { locale: { preference: 'zh' } })
     await settle()
     expect(ctx.blueLocale.locale).toBe('zh')
-    expect(() => ctx.settings.register(settingsNamespace('locale'), LocaleSettingsSchema)).toThrow(/already registered/u)
+    expect(() => ctx.settings.register('locale', LocaleSettingsSchema)).toThrow(/already registered/u)
     await first.dispose()
     await settle()
     expect(ctx.blueLocale.snapshot).toMatchObject({ locale: 'en', preference: undefined })

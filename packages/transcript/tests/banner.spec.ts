@@ -321,7 +321,7 @@ describe('blue-banner plugin', () => {
     const { screen } = await bootBanner({ displayVersion })
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
     expect(joined).toContain(`Version:   ${displayVersion}`)
-    expect(BLUE_VERSION).toBe('0.1.1-rc.3')
+    expect(BLUE_VERSION).toBe('0.1.2-alpha.1')
   })
 
   it('switches the mounted banner language without replacing its component', async () => {

@@ -10,7 +10,8 @@ export const BLUE_PLUGIN_PROTOCOL_VERSION = "1.0.0-beta.1"
 /** Product-to-protocol mapping stamped into the canonical manifest schema. */
 export const BLUE_PRODUCT_PROTOCOL_VERSIONS_SOURCE = {
   "0.1.1-rc.2": "1.0.0-beta.1",
-  "0.1.1-rc.3": "1.0.0-beta.1"
+  "0.1.1-rc.3": "1.0.0-beta.1",
+  "0.1.2-alpha.1": "1.0.0-beta.1"
 } as const
 
 /** Capability names present in the v1 target machine catalog. */
@@ -49,7 +50,8 @@ export const BLUE_PLUGIN_MANIFEST_V1_SCHEMA_SOURCE: BluePluginManifestSchemaV1 =
   "x-blue-protocol-version": "1.0.0-beta.1",
   "x-blue-product-versions": {
     "0.1.1-rc.2": "1.0.0-beta.1",
-    "0.1.1-rc.3": "1.0.0-beta.1"
+    "0.1.1-rc.3": "1.0.0-beta.1",
+    "0.1.2-alpha.1": "1.0.0-beta.1"
   },
   "type": "object",
   "additionalProperties": false,

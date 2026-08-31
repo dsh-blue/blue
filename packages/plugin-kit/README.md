@@ -9,7 +9,7 @@ npx @dsh-blue/blue-plugin-kit catalog --json
 npx @dsh-blue/blue-plugin-kit create ./my-blue-plugin --name @acme/my-blue-plugin
 npx @dsh-blue/blue-plugin-kit validate ./my-blue-plugin
 npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin
-npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin --harness-line 0.1.1-rc.1
+npx @dsh-blue/blue-plugin-kit conformance ./my-blue-plugin --harness-line 0.1.2-alpha.2
 ```
 
 Install globally or as a project tool to use the shorter `blue-plugin` command.
@@ -21,4 +21,6 @@ The commands never publish, create a repository, or mutate a dsh profile.
 Conformance packs with lifecycle scripts disabled, installs into a temporary
 project with normal peer resolution, and verifies public entry load, Host
 admission, widths 20/40/80/120, Fiber unload, and capability-absent fallback.
-It is a compatibility check, not a security sandbox.
+Blue `0.1.2-alpha.1` supports exactly Harness `0.1.2-alpha.2`; the explicit
+option is a diagnostic override within that supported set, and RC lines are
+rejected. It is a compatibility check, not a security sandbox.

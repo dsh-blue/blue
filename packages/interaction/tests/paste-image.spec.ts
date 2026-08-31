@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   AttachmentError,
   AttachmentId,
@@ -24,7 +25,6 @@ import { applyReversibleSubmitTransformers, applySubmitTransformers } from '../s
 import { clearSharedEditor, setSharedEditor } from '../src/editor-instance.ts'
 // The value import carries the `settings` Context merge and the
 // 'settings/updated' Events merge the override spec below uses.
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as pasteImage from '../src/paste-image.ts'
 import { ACTION_IMAGE_PASTE, type ClipboardImageResult } from '../src/paste-image.ts'
 import { fakeBlueContext, FakeBlueEditor, KEY, type FakeKeymap } from './fakes.ts'
@@ -857,7 +857,7 @@ exit 1
       present = true
       user = next
     }
-    const blueNs = settingsNamespace('blue')
+    const blueNs = 'blue'
     /** One paste, awaited by its outcome notice (after the 'pasting image...' lead-in). */
     const pasteAndSettle = async (): Promise<void> => {
       const before = notices.length
@@ -919,7 +919,7 @@ exit 1
     // Another namespace's commit is ignored even with a valid override
     // sitting in the user layer.
     setUser({ pasteImageBackend: 'x11' })
-    ctx.emit('settings/updated', settingsNamespace('shell'), {}, {}, 'update')
+    ctx.emit('settings/updated', 'shell' as SettingsNamespace, {}, {}, 'update')
     await pasteAndSettle()
     expect(notices.at(-1)).toBe('clipboard read failed: wl-paste exited with code 1')
 

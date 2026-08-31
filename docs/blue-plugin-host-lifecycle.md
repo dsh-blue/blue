@@ -85,6 +85,7 @@ Registration restore只恢复最新定义或订阅关系，不伪造 gap 中的�
 4. overlay/action/notification/gesture/late callback不 replay；
 5. consumer unload、owner generation、session epoch 和 abort 的 stale fencing；
 6. contribution failure isolation 与默认 fallback；
-7. 当前/上一 Harness line 的独立 packed composition。
+7. 发布声明的每个 Harness line 的独立 packed composition；`0.1.2-alpha.1`
+   仅声明 `0.1.2-alpha.2`，不包含 RC。
 
 PR #77 的 Beta 合并只要求上述可观察边界成立，不要求最终 authority representation 已冻结。协议 `1.0.0` 发布前，具体 owner-only exports、mapping、error taxonomy 和 generation report必须进入机器 contract 与 API declaration gate。

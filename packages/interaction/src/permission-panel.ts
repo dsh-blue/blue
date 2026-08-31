@@ -52,7 +52,7 @@ export interface PermissionPresetsService {
   /** Switchable preset names in table order; `custom` is never listed. */
   readonly names: readonly string[]
   /** Domain projection used by the app boundary, retained in the structural service shape. */
-  current(events: readonly unknown[]): string
+  current(session: unknown): string
   /** The sandbox + approval bundle of a table preset; throws when unknown. */
   resolve(name: string): PermissionPresetSpec
   /** The display option of a table key or `custom`; throws when unknown. */

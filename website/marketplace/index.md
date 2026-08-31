@@ -1,13 +1,13 @@
 # 插件市场
 
-::: warning rc.3 市场迁移中
+::: warning alpha.1 市场迁移中
 市场注册表仍使用 P1–P4 之前的过渡契约，但首个显式索引插件
-`dsh-blue/blue-doudizhu@0.3.0` 已完成 canonical manifest 与双 Harness fixture 迁移。
-裸 `/plugin` 的 TUI 目录会显示“兼容”并提供锁到完整 commit 的安装动作。本页仍不
-展示安装卡片；现有 `verified` 标记也不是 rc.3 兼容性证据。
+`dsh-blue/blue-doudizhu@0.3.0` 已完成旧 RC canonical manifest，但其固定提交尚未声明 Harness `0.1.2-alpha.2`，因此当前 catalog 正确显示 incompatible，等待插件自身迁移。
+裸 `/plugin` 的 TUI 目录会保留该固定 commit 供查看，但不会提供安装动作。本页仍不
+展示安装卡片；现有 `verified` 标记也不是 alpha 兼容性证据。
 :::
 
-`0.1.1-rc.3` 提供七项 Public Beta capability 的机器契约与 Host admission：
+`0.1.2-alpha.1` 提供七项 Public Beta capability 的机器契约与 Host admission，并只支持 Harness `0.1.2-alpha.2`：
 `commands`、`status`、`panes`、`overlays`、`notifications.publish`、
 `session.read` 和 `session.projections.read`。市场恢复前会完成两项工作：
 

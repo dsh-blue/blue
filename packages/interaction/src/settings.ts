@@ -1,7 +1,7 @@
 /**
  * `blue-settings` plugin: the consolidated `blue` settings namespace. This
- * is the tree's ONE `installSettingsSection` registration for
- * `settingsNamespace('blue')` — every consumer (the boot update check, the
+ * is the tree's ONE `settings.installSection` registration for the `blue`
+ * namespace — every consumer (the boot update check, the
  * `/settings` panel, the `/update` channel read) resolves the tree-scoped
  * {@link currentBlueSettings} source instead of registering its own section, so a
  * host's settings service sees exactly one `blue` schema. Until a settings
@@ -32,7 +32,6 @@ import type { Context } from '@deepseek-ai/cordis'
 // Empty type import carries the `settings` Context merge and the
 // 'settings/updated' Events merge this plugin subscribes to.
 import type {} from '@deepseek-ai/dsh-settings'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 // Empty type import carries the app-owned reader Context merge.
 import type {} from '@dsh-blue/blue-app'
@@ -49,7 +48,7 @@ declare module '@deepseek-ai/cordis' {
 export interface BlueSettings {
   /** Whether the boot update check runs at all; `false` is the offline switch. */
   readonly updateCheck: boolean
-  /** The dist-tag the update check follows (`rc` today). */
+  /** The dist-tag the update check follows (`alpha` today). */
   readonly updateChannel: string
   /** The default theme, applied at startup; `/theme` overrides per session. */
   readonly theme: 'dark' | 'light' | 'ocean' | 'paper' | 'auto'
@@ -80,7 +79,7 @@ export interface BlueSettings {
 /** The settings schema; defaults double as the composition base. */
 export const Config: z<BlueSettings> = z.object({
   updateCheck: z.boolean().default(true),
-  updateChannel: z.string().default('rc'),
+  updateChannel: z.string().default('alpha'),
   theme: z.union([z.const('dark'), z.const('light'), z.const('ocean'), z.const('paper'), z.const('auto')]).default('dark'),
   statusProvider: z.string().default('blue.default'),
   editorProvider: z.string().default('blue.default'),
@@ -98,7 +97,7 @@ export const Config: z<BlueSettings> = z.object({
 /** The resolved defaults, used until a settings service layers overrides. */
 export const DEFAULT_SETTINGS: BlueSettings = {
   updateCheck: true,
-  updateChannel: 'rc',
+  updateChannel: 'alpha',
   theme: 'dark',
   statusProvider: 'blue.default',
   editorProvider: 'blue.default',
@@ -176,7 +175,7 @@ export function apply(ctx: Context): void {
   // follow: the attach-time sync reads the current value.
   let attached = ctx.blueSessionReader.current() !== null
   // The initial sync must read the resolved scope, which goes live one
-  // inject-beat after apply — installSettingsSection fires onChange then,
+  // inject-beat after apply — settings.installSection fires onChange then,
   // and re-fires it on every blue commit through the scope watch, so
   // `primed` keeps that watch from doubling the settings/updated channel.
   let primed = false
@@ -185,12 +184,14 @@ export function apply(ctx: Context): void {
     primed = true
     sync()
   }
-  installSettingsSection(ctx, settingsNamespace('blue'), Config, DEFAULT_SETTINGS, {
-    setSource: next => {
-      ctx.blueInteractionState.settingsSource = next
-      ctx.emit('blue/settings-source-ready', next())
-    },
-    onChange: prime,
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(ctx, 'blue', Config, DEFAULT_SETTINGS, {
+      setSource: next => {
+        ctx.blueInteractionState.settingsSource = next
+        ctx.emit('blue/settings-source-ready', next())
+      },
+      onChange: prime,
+    })
   })
   ctx.on('settings/updated', (ns) => {
     if (String(ns) !== 'blue' || !attached) return

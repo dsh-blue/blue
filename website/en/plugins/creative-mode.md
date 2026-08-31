@@ -1,9 +1,9 @@
 # Creative mode walkthrough: from session prototype to a distributable plugin
 
-Creative mode (the `cordis` agent preset) is for turning an idea into a visible, in-session prototype before deciding how to keep it. A dynamic plugin lives only in the current dsh process and disappears on restart; a durable feature must eventually become an ordinary npm plugin package.
+Creative mode (the `blue-cordis` agent preset) is for turning an idea into a visible, in-session prototype before deciding how to keep it. Upstream `cordis` stays unchanged; Blue owns only this uniquely named custom preset. A dynamic plugin lives only in the current dsh process and disappears on restart; a durable feature must eventually become an ordinary npm plugin package.
 
 ::: info P5 is delivered; the historical case is still not a new template
-`0.1.1-rc.3` ships the formal `blue-plugin-development` skill, published
+`0.1.2-alpha.1` ships the formal `blue-plugin-development` skill, published
 no-checkout author commands, and the local persistent-package loop. The
 Doudizhu case predates the canonical contract and explains prototype iteration
 only. New packages follow the machine catalog, generator, and conformance
@@ -17,7 +17,7 @@ The recommended flow is:
 ```text
 clarify -> inspect available APIs -> cordis_define -> cordis_run (hot mount)
         -> iterate and accept -> choose ephemeral/local/GitHub/npm
-        -> catalog -> create/edit -> validate -> dual conformance -> live acceptance
+        -> catalog -> create/edit -> validate -> supported-line conformance -> live acceptance
 ```
 
 The `cordis-plugin-development` skill governs the prototype phase. It requires `cordis_inspect_list` and `cordis_inspect_query` before writing `code.host`, so Service, Event, Tool, and Provider shapes come from the running host. `cordis_define` stores an immutable Package; `cordis_run` activates it. Later changes append a Package and use `update`; `inspect_self` provides diagnostics when activation fails.
@@ -32,7 +32,7 @@ blue-plugin catalog --json
 blue-plugin create ./my-plugin --name @acme/my-plugin
 blue-plugin validate ./my-plugin
 blue-plugin conformance ./my-plugin
-blue-plugin conformance ./my-plugin --harness-line 0.1.1-rc.1
+blue-plugin conformance ./my-plugin --harness-line 0.1.2-alpha.2
 ```
 
 If the catalog cannot express the request, the skill stops before writing
@@ -142,7 +142,7 @@ dsh --profile blue-dev
 ```
 
 Before entering the scratch profile, run `blue-plugin validate` and
-`blue-plugin conformance` on both the current and previous Harness lines. Then
+`blue-plugin conformance` on the sole supported Harness `0.1.2-alpha.2` line. Then
 install the local directory and cover unload, restart, 120/80/40 columns, and
 real-terminal dogfood. Conformance script-disables and packs the package, so it
 already verifies the public entry, canonical manifest, `cordis.patch.yml`, and
@@ -159,5 +159,5 @@ The historical session did call earlier skills with the names
 `blue-plugin-development` and `cordis-plugin-development`, but that record
 predates the canonical contract. Current P5 delivery is established by the
 formal skill's four eval classes, the published CLI's no-checkout pack gate,
-the tutorial's dual-Harness conformance, and live profile acceptance. The
+the tutorial's supported-line conformance, and live profile acceptance. The
 Doudizhu history itself remains none of that evidence.

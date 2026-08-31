@@ -24,7 +24,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 34 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -173,9 +173,9 @@ Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`�
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 33 Blue-owned rows · 33 条 Blue 自有行"]
-        subgraph host["host support 宿主支撑 - 2 rows"]
-            presets["blue-agent-presets"]
+    subgraph bundle["cordis.patch.yml - 34 Blue-owned rows · 34 条 Blue 自有行"]
+        subgraph host["host support 宿主支撑 - 3 rows"]
+            presets["subagent model settings · agent-presets<br/>upstream shipped + blue-cordis"]
             creative["blue-creative-host"]
         end
         subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
@@ -212,7 +212,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-composition -->
 
-33 条 Blue 自有行由 2 条 host-support、1 条 private-runtime composition group 和 30 条 product row 组成。产品段内：
+34 条 Blue 自有行由 3 条 host-support、1 条 private-runtime composition group 和 30 条 product row 组成。产品段内：
 
 - baseline 9 行，包含 locale runtime/settings adapter、conversation projection 与 official transcript consumer；
 - enhancement 15 行，可逐项移除；

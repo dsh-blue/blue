@@ -1,7 +1,7 @@
 ---
 name: cordis-plugin-development
 description: >-
-  Create, modify, debug, or roll back dynamic Cordis plugins in a Blue session,
+  Create, modify, debug, or roll back dynamic Cordis plugins in a blue-cordis session,
   including hot-mounted additive UI prototypes. Use for the inspect, define,
   run, iterate, and rollback lifecycle before packaging an accepted feature.
 ---

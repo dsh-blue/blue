@@ -21,7 +21,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-settings'
-import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsConflictError, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
@@ -170,7 +170,7 @@ function fakeRoster(ids: readonly string[] = ['reviewer', 'default']): FakeRoste
 function fullSections(): Record<string, Record<string, unknown>> {
   return {
     blue: {
-      updateCheck: true, updateChannel: 'rc', theme: 'dark',
+      updateCheck: true, updateChannel: 'alpha', theme: 'dark',
       collapseThinking: true, collapseToolCalls: true,
       windowTurns: 15, recentStepsRetention: 30, expandTurns: 3,
       userFoldLines: 10, userFoldChars: 1000,
@@ -633,7 +633,7 @@ describe('/settings writes', () => {
     expect(settingItems(bench)[0]?.currentValue).toBe('false')
     expect(bench.screen.renderRequests).toBe(1)
     // A document-updated with no further change diffs empty: no updateValue.
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 2)
     await settle()
     expect(settingsPanels(bench)[0]?.updates).toEqual([])
     expect(bench.screen.renderRequests).toBe(1)
@@ -719,7 +719,7 @@ describe('/settings writes', () => {
       sections: fullSections(),
       updateImpl: (ns, patch) => {
         calls += 1
-        if (calls === 1) throw new SettingsConflictError(settingsNamespace(ns), 1, 2)
+        if (calls === 1) throw new SettingsConflictError(ns as SettingsNamespace, 1, 2)
         bench.settings.sections[ns] = { ...bench.settings.sections[ns], ...patch }
         return Promise.resolve()
       },
@@ -737,7 +737,7 @@ describe('/settings writes', () => {
     const bench = mount({
       sections: fullSections(),
       updateImpl: ns => {
-        throw new SettingsConflictError(settingsNamespace(ns), 1, 3)
+        throw new SettingsConflictError(ns as SettingsNamespace, 1, 3)
       },
     })
     await bench.command.handler()
@@ -911,7 +911,7 @@ describe('/settings refresh', () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()
     await openNamespace(bench, 'blue')
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 2)
     await settle()
     expect(settingsPanels(bench)).toHaveLength(1)
     expect(settingsPanels(bench)[0]?.updates).toEqual([])
@@ -924,7 +924,7 @@ describe('/settings refresh', () => {
     await openNamespace(bench, 'blue')
     bench.settings.sections.blue!.theme = 'ocean'
     bench.settings.sections.shell!.timeoutMs = 300_000
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 2)
     await settle()
     const list = settingsPanels(bench)[0]!
     // Exactly the OPEN namespace's deltas land on updateValue; the closed
@@ -934,7 +934,7 @@ describe('/settings refresh', () => {
     expect(list.snapshotItems().find(item => item.id === 'blue.theme')?.currentValue).toBe('ocean')
     expect(bench.screen.renderRequests).toBe(1)
     // lastKnown moved with the diff: a second emission diffs empty.
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 3)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 3)
     await settle()
     expect(list.updates).toHaveLength(1)
     expect(bench.screen.renderRequests).toBe(1)
@@ -945,7 +945,7 @@ describe('/settings refresh', () => {
     await bench.command.handler()
     await openNamespace(bench, 'blue')
     bench.settings.drop('shell')
-    bench.ctx.emit('settings/document-updated', settingsNamespace('shell'), 2)
+    bench.ctx.emit('settings/document-updated', 'shell' as SettingsNamespace, 2)
     await settle()
     // Level one remounted (its rows changed) and level two rebuilt for the
     // still-present open namespace; the retired panels hide behind.
@@ -963,7 +963,7 @@ describe('/settings refresh', () => {
     await bench.command.handler()
     await openNamespace(bench, 'shell')
     bench.settings.drop('shell')
-    bench.ctx.emit('settings/document-updated', settingsNamespace('shell'), 2)
+    bench.ctx.emit('settings/document-updated', 'shell' as SettingsNamespace, 2)
     await settle()
     expect(settingsPanels(bench).filter(panel => bench.screen.overlays.some(entry => !entry.hidden && entry.component === panel))).toHaveLength(0)
     expect(l2(bench.screen)).toBeUndefined()
@@ -977,7 +977,7 @@ describe('/settings refresh', () => {
     await openNamespace(bench, 'blue')
     closeAll(bench)
     bench.settings.sections.blue!.theme = 'ocean'
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 2)
     await settle()
     expect(settingsPanels(bench).filter(panel => bench.screen.overlays.some(entry => !entry.hidden && entry.component === panel))).toHaveLength(0)
     expect(settingsPanels(bench)[0]?.updates).toEqual([])
@@ -990,7 +990,7 @@ describe('/settings refresh', () => {
     // No namespace open: the diff has no live list to push into, and the
     // new baseline simply waits for the namespace to open.
     bench.settings.sections.blue!.theme = 'ocean'
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 2)
     await settle()
     expect(settingsPanels(bench)).toHaveLength(0)
     expect(bench.screen.renderRequests).toBe(0)
@@ -1011,7 +1011,7 @@ describe('/settings refresh', () => {
     await bench.command.handler()
     await settle()
     bench.settings.sections.blue!.theme = 'ocean'
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 2)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 2)
     // Wait for the refresh's own fetch to be in flight, then dispose
     // behind it: the continuation's inactive guard swallows the result.
     await vi.waitFor(() => {
@@ -1031,7 +1031,7 @@ describe('/settings refresh', () => {
     bench.dispose()
     // The panel is still open (dispose only flags unloaded): the listener
     // fires, and the inactive guard swallows it.
-    bench.ctx.emit('settings/document-updated', settingsNamespace('blue'), 5)
+    bench.ctx.emit('settings/document-updated', 'blue' as SettingsNamespace, 5)
     await settle()
     expect(bench.screen.overlays).toHaveLength(1)
   })
@@ -1040,7 +1040,7 @@ describe('/settings refresh', () => {
     const bench = mount({
       sections: fullSections(),
       onWrite: ns => {
-        bench.ctx.emit('settings/document-updated', settingsNamespace(ns), 2)
+        bench.ctx.emit('settings/document-updated', ns as SettingsNamespace, 2)
       },
     })
     await bench.command.handler()
@@ -1063,7 +1063,7 @@ describe('/settings refresh', () => {
         // The namespace vanishes mid-write and the watcher announces it:
         // the refresh rebuilds without the row before the failure lands.
         bench.settings.drop(ns)
-        bench.ctx.emit('settings/document-updated', settingsNamespace(ns), 2)
+        bench.ctx.emit('settings/document-updated', ns as SettingsNamespace, 2)
         throw new Error('gone mid-write')
       },
     })

@@ -37,7 +37,7 @@ for (const relative of ['plugins/quickstart.md', 'plugins/testing.md', 'plugins/
   }
 }
 
-const skillRoot = join(root, 'packages/bundle/blue/presets/cordis/skills/blue-plugin-development')
+const skillRoot = join(root, 'packages/bundle/blue/presets/blue-cordis/skills/blue-plugin-development')
 const skill = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8')
 const evals = JSON.parse(readFileSync(join(skillRoot, 'evals.json'), 'utf8'))
 for (const command of ['catalog --json', 'create', 'validate', 'conformance']) {

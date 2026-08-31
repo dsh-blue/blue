@@ -8,7 +8,7 @@
 
 [English](README.md) | 中文
 
-Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十六个 workspace 包——十二个属于 `0.1.1-rc.3` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.1-rc.2` 线构建与测试。
+Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的交互式终端界面（TUI）：一个 `pi-tui` 渲染器，以树外 [Cordis](https://www.npmjs.com/package/@deepseek-ai/cordis) 插件 bundle 的形式挂载在 `dsh-base` bundle 之上。本仓库包含十六个 workspace 包——十二个属于 `0.1.2-alpha.1` 发布集，四个为 validation-only adapter——针对已发布的 Harness `0.1.2-alpha.2` 线构建与测试。
 
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示——流式回复、工具卡片与底部 dock 面板"></a>
@@ -29,21 +29,21 @@ Blue 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`
 ## 用法
 
 > [!NOTE]
-> `0.1.1-rc.3` 是当前 Public Beta 发布线。下方命令使用 `rc` 通道；
-> 插件适配和可复现环境应锁定精确的 `0.1.1-rc.3` 版本。
+> `0.1.2-alpha.1` 是当前 alpha 发布线。下方命令使用 `alpha` 通道；
+> 插件适配和可复现环境应锁定 Blue `0.1.2-alpha.1` 与 Harness `0.1.2-alpha.2`。不支持 Harness RC 版本。
 
 前置条件：Node `^22.19 || >=24` 与 pnpm 11。推荐的启动器已经内含经过测试的 dsh 运行时。
 
 ```sh
 npm i -g @deepseek-ai/dsh
-dsh plugin --profile blue add @dsh-blue/blue@rc
+dsh plugin --profile blue add @dsh-blue/blue@alpha
 dsh --profile blue
 ```
 
 或者使用推荐的一条命令安装 `blue` 启动器；它把经过测试的 Harness 树封装成公共层和平台层归档，npm 安装时不会解析该依赖图：
 
 ```sh
-npm i -g @dsh-blue/blue-cli@rc
+npm i -g @dsh-blue/blue-cli@alpha
 blue
 ```
 
@@ -61,7 +61,7 @@ flowchart TB
         HAR["agents · sessions · tools · approval<br/>commands · events"]
     end
 
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 33 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
+    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 34 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
         direction TB
         subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
             direction LR
@@ -93,7 +93,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-layers -->
 
-运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 33 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
+运行时流向为 `Harness domain -> projection/action 边界 -> renderer-neutral model -> TUI 功能插件 -> core`。事件表达已发生的事实，projection 表达当前状态，action 是带结构化结果的写请求；Blue 不维护第二套 Agent 真相，Agent/Session 对象也从不越界进入 renderer。bundle 的逐行组合（`dsh-base` 之上的 34 行 Blue 自有插件）见 [bundle 指南](https://dsh-blue.dev/plugins/builtins/)，功能巡览见[网站功能页](https://dsh-blue.dev/features/)。
 
 ## 文档
 

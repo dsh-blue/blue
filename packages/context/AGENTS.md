@@ -8,8 +8,8 @@ The package imports only blue-app's public projection/reader types. Keep the `@d
 
 This validation-only package keeps its own `0.1.0-rc.2` version outside the
 product release set. Its Blue peers use the explicit preview window
-`>=0.1.1-rc.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
-`0.1.1` product line and breaks independent packed installs.
+`>=0.1.2-alpha.1 <0.1.2`; a prerelease caret rooted on `0.1.0` does not admit the
+`0.1.2` alpha product line and breaks independent packed installs.
 
 The projection registry notifies once per changed key during a committed event. The adapter coalesces relevant notifications through one microtask before calling `currentMany()`, buffers the newest cut across attach, rejects stale epochs after session switches, drops late callbacks after disposal, and lets malformed keys degrade independently. `blueSessionReader` supplies only the active session id and attach lifecycle.
 

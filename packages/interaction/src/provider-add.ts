@@ -19,7 +19,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-llm'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Empty type imports carry the `settings`/`credentials` Context merges this
 // module resolves lazily.
@@ -409,9 +408,9 @@ async function fillModelDefaults(
 
 /** The settings surface the edit flow reads and writes. */
 interface EditSettings {
-  get(ns: object): unknown
+  get(ns: string): unknown
   describe(): { ns: unknown, revision?: number }[]
-  mutate(ns: object, ops: unknown[], expected?: number): Promise<void>
+  mutate(ns: string, ops: unknown[], expected?: number): Promise<void>
 }
 
 /** The credentials surface the edit flow writes. */
@@ -436,7 +435,7 @@ interface ProviderProfile {
  * @param route - the provider route id.
  * @returns the stored profile, or undefined when absent.
  */
-function readProfile(settings: EditSettings, ns: object, route: string): ProviderProfile | undefined {
+function readProfile(settings: EditSettings, ns: string, route: string): ProviderProfile | undefined {
   const section = settings.get(ns)
   if (typeof section !== 'object' || section === null) return undefined
   const providers = (section as { providers?: Record<string, unknown> }).providers
@@ -464,7 +463,7 @@ export async function runProviderEdit(ctx: Context, display: ProviderAddDisplay,
   if (settings === undefined || credentials === undefined) {
     return 'provider configuration requires the host settings and credentials services'
   }
-  const ns = settingsNamespace('llm-pi-ai')
+  const ns = 'llm-pi-ai'
   const profile = readProfile(settings, ns, route)
   if (profile === undefined) {
     return `provider "${route}" has no stored profile (catalog vendors carry none) — nothing to edit`
@@ -594,7 +593,7 @@ export async function runProviderAdd(
   if (piAi.length === 0) {
     return 'no configurable providers: the host composition carries no llm-pi-ai provider settings surface'
   }
-  const ns = settingsNamespace('llm-pi-ai')
+  const ns = 'llm-pi-ai'
 
   // Step 1: the source branch.
   const source = await choose(ctx, display, 'Add provider', [

@@ -83,7 +83,7 @@ import * as exampleBottomLogPlugin from '../../../../examples/bottom-log/src/ind
 import * as exampleOverlayPlugin from '../../../../examples/overlay/src/index.ts'
 import * as exampleStatusProviderPlugin from '../../../../examples/status-provider/src/index.ts'
 import * as exampleEditorProviderPlugin from '../../../../examples/editor-provider/src/index.ts'
-import { CallId} from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { MockAdapter} from './mock-adapter.ts'
 // The wizard's models.dev lookup stays offline in the e2e (the fixture
 // gateways carry their own metadata paths).
@@ -105,7 +105,7 @@ export function twoToolCallsResponse(
 ): StreamChunk[] {
   const build = (index: number, callId: string, name: string, args: object): StreamChunk[] => {
     const argumentsJson = JSON.stringify(args)
-    const id = CallId(callId)
+    const id = ToolCallId(callId)
     return [
       { type: 'block-start', index, blockType: 'tool-call' },
       { type: 'tool-call-delta', index, id, name, argumentsDelta: argumentsJson.slice(0, 5) },
@@ -393,9 +393,9 @@ export async function bootBlue(argv: string[], options: {
   }
   // A real dsh profile carries every package referenced by its shipped
   // presets. The e2e profile is otherwise intentionally thin, so mirror
-  // that resolution surface for Blue's bundle-owned cordis payload.
+  // that resolution surface for Blue's bundle-owned blue-cordis payload.
   if (options.creativePersonaOnly === true) {
-    const presetComposition = readFileSync(new URL('../presets/cordis/agent.cordis.yml', import.meta.url), 'utf8')
+    const presetComposition = readFileSync(new URL('../presets/blue-cordis/agent.cordis.yml', import.meta.url), 'utf8')
     const presetPackages = new Set([...presetComposition.matchAll(/name: '(@deepseek-ai\/[^']+)'/g)]
       .map(match => match[1]!.split('/').slice(0, 2).join('/')))
     const require = createRequire(import.meta.url)
@@ -414,7 +414,7 @@ export async function bootBlue(argv: string[], options: {
   const hooks: BlueE2EHooks = {
     apiHostApply: apiHostPlugin.apply,
     localeApply: localePlugin.apply,
-    presetsApply: (ctx) => { ctx.plugin(AgentPresetsService, { default: (options.presetFixtures ?? [{ id: 'e2e' }])[0]!.id, roots: [{ path: presetRoot, trust: 'system' }], includeUserRoot: false }) },
+    presetsApply: (ctx) => { ctx.plugin(AgentPresetsService, { default: (options.presetFixtures ?? [{ id: 'e2e' }])[0]!.id, roots: [{ path: presetRoot, trust: 'system' }], includeShippedRoot: false, includeUserRoot: false }) },
     creativeIsolationApply: (ctx) => {
       for (const service of CREATIVE_BLUE_INTERNAL_SERVICES) creativeIsolation[service] = ctx.get(service)
       creativeIsolation.commands = ctx.get('commands')
@@ -505,9 +505,9 @@ export async function bootBlue(argv: string[], options: {
     return pathToFileURL(join(dir, file)).href
   }
   const rows = [
-    '- id: blue-agent-presets',
-    `  name: ${fixture('blue-agent-presets.mjs', `
-export const name = 'blue-agent-presets'
+    '- id: agent-presets',
+    `  name: ${fixture('agent-presets.mjs', `
+export const name = 'agent-presets'
 export const apply = ctx => globalThis.__blueE2E.presetsApply(ctx)
 `)}`,
     '- id: blue-creative-host',
@@ -966,8 +966,8 @@ export const apply = ctx => globalThis.__blueE2E.exampleEditorProviderApply(ctx)
   for (const preset of presets) {
     const presetDir = join(presetRoot, preset.id)
     mkdirSync(presetDir, { recursive: true })
-    if (preset.id === 'cordis' && options.creativePersonaOnly === true) {
-      cpSync(new URL('../presets/cordis/', import.meta.url), presetDir, { recursive: true })
+    if (preset.id === 'blue-cordis' && options.creativePersonaOnly === true) {
+      cpSync(new URL('../presets/blue-cordis/', import.meta.url), presetDir, { recursive: true })
       const compositionPath = join(presetDir, 'agent.cordis.yml')
       const composition = readFileSync(compositionPath, 'utf8')
       const personaStart = composition.indexOf('- id: persona\n')
