@@ -117,11 +117,14 @@ pnpm run website:build   # VitePress build; DOCS_BASE=/blue/ matches the Pages b
 pnpm run website:preview # serves the built site (pass the same DOCS_BASE as the build)
 ```
 
-- During the rc.2 marketplace migration, `website:dev` and `website:build` run
-  `script/marketplace-fetch.mjs --paused`: generated registry data and plugin
-  detail routes are removed before VitePress starts; `website-pages.yml` uses
-  the same mode. `pnpm marketplace:fetch` remains the explicit maintainer-only
-  path for migration work.
+- `website:dev` / `website:build` run `script/marketplace-fetch.mjs` first to sync
+  the marketplace registry from the `dsh-blue/marketplace` repo (`website:dev`
+  adds `--allow-missing` so offline local dev degrades instead of failing;
+  `website:build` and CI are strict). `website-pages.yml` rebuilds daily via cron
+  and is also dispatch-triggered from the marketplace repo on every merge
+  (cross-repo PAT, see `website/marketplace/submit.md`). The fetcher's `--paused`
+  flag remains available as a kill switch that strips generated marketplace data
+  and detail routes.
 
 - Build is two-stage: `tsc -b` owns type emission (`lib/types/*.d.ts` + intermediate JS), `tsdown` owns runtime bundling into the published `lib/` layout (`lib/index.js`, `lib/invariant.js`, `lib/startup.js`). Package deps and peer deps stay external.
 - **Subpath exports travel in threes.** Adding, renaming, or removing a package subpath moves three independent manifests together: the package's `package.json` `exports`, its `files` tarball whitelist, and the root `tsdown.config.ts` entry enumeration. Nothing ties them together — tsc emits types for subpaths tsdown never bundles, the specs run source-plane (`../src/*.ts` relative imports) so no test walks `lib/`, and a dev profile links the source checkout so the `files` list stays invisible until the first publish. `pnpm check:lib` (a CI gate right after `pnpm build`) verifies the triangle mechanically; each arm shipped once as the S30 incident (`./status-title` missing from the tsdown list boot-crashed every real install, and missing from `files` would have shipped a tarball without it). A plugin mounted through the package index (no subpath of its own) needs none of the three.

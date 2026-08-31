@@ -79,13 +79,13 @@ const sharedTheme = {
 const navZh = [
   { text: '用户手册', link: '/guide/', activeMatch: '/(guide|dsh|features|reference)' },
   { text: '开发手册', link: '/plugins/', activeMatch: '^/plugins' },
-  { text: '插件市场（迁移中）', link: '/marketplace/', activeMatch: '^/marketplace' },
+  { text: '插件市场', link: '/marketplace/', activeMatch: '^/marketplace' },
 ]
 
 const navEn = [
   { text: 'User manual', link: '/en/guide/', activeMatch: '/en/(guide|dsh|features|reference)' },
   { text: 'Developer manual', link: '/en/plugins/', activeMatch: '^/en/plugins' },
-  { text: 'Marketplace (migrating)', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
+  { text: 'Marketplace', link: '/en/marketplace/', activeMatch: '^/en/marketplace' },
 ]
 
 // ── 侧边栏：按路径分册 ─────────────────────────────────────────────────────
@@ -189,8 +189,8 @@ const sidebarZh = {
     {
       text: '市场',
       items: [
-        { text: '迁移状态', link: '/marketplace/' },
-        { text: '收录门禁', link: '/marketplace/submit' },
+        { text: '插件列表', link: '/marketplace/' },
+        { text: '收录指南', link: '/marketplace/submit' },
       ],
     },
   ],
@@ -293,8 +293,8 @@ const sidebarEn = {
     {
       text: 'Marketplace',
       items: [
-        { text: 'Migration status', link: '/en/marketplace/' },
-        { text: 'Submission gate', link: '/en/marketplace/submit' },
+        { text: 'Plugin list', link: '/en/marketplace/' },
+        { text: 'Submission guide', link: '/en/marketplace/submit' },
       ],
     },
   ],
