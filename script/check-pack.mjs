@@ -10,8 +10,9 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { x as extractTar } from 'tar'
-import { PACKAGE_DIRS, ROOT, readManifest } from './package-contract.mjs'
+import { PACKAGE_DIRS, ROOT, readManifest, releaseRepository } from './package-contract.mjs'
 import { buildCliRuntime } from './pack-cli-runtime.mjs'
 
 const outDir = resolve(process.env.BLUE_PACK_DIR ?? join(ROOT, '.artifacts', 'pack'))
@@ -55,7 +56,11 @@ function runtimeTarget(value) {
   return undefined
 }
 
-function validateManifest(name, manifest, root) {
+function validateManifest(name, manifest, root, relativeDir) {
+  const expectedRepository = releaseRepository(relativeDir)
+  if (!isDeepStrictEqual(manifest.repository, expectedRepository)) {
+    fail(`${name}: packed repository must equal ${JSON.stringify(expectedRepository)}`)
+  }
   for (const tableName of ['dependencies', 'peerDependencies', 'optionalDependencies', 'devDependencies']) {
     for (const [dependency, spec] of Object.entries(manifest[tableName] ?? {})) {
       if (typeof spec === 'string' && /^(workspace|link|file):/.test(spec)) fail(`${name}: packed ${tableName}.${dependency} leaked ${spec}`)
@@ -222,7 +227,7 @@ for (const relativeDir of PACKAGE_DIRS) {
   mkdirSync(packageRoot, { recursive: true })
   await extractTar({ file: tarball, cwd: packageRoot, strip: 1 })
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-  validateManifest(sourceManifest.name, manifest, packageRoot)
+  validateManifest(sourceManifest.name, manifest, packageRoot, relativeDir)
 
   const files = walk(packageRoot)
   for (const file of files) {

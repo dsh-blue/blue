@@ -11,6 +11,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+export const REPOSITORY_URL = 'git+https://github.com/dsh-blue/blue.git'
+
+/** Canonical npm provenance metadata for a publishable workspace package. */
+export function releaseRepository(relativeDir) {
+  return { type: 'git', url: REPOSITORY_URL, directory: relativeDir }
+}
 
 /** Publish order is dependency order; the launcher is always last. */
 export const RELEASE_PACKAGE_DIRS = [

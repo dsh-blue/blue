@@ -7,9 +7,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, test } from 'node:test'
 import { auditAgentDocs } from '../check-agent-docs.mjs'
+import { readManifest, releaseRepository, RELEASE_PACKAGE_DIRS } from '../package-contract.mjs'
 import { classifyChanges, isStructuralBuildPath, owningPackage, promoteToFull } from '../test-impact.mjs'
 
 describe('change impact planning', () => {
+  test('keeps release manifests linked to the provenance repository', () => {
+    for (const relativeDir of RELEASE_PACKAGE_DIRS) {
+      assert.deepEqual(readManifest(relativeDir).repository, releaseRepository(relativeDir))
+    }
+  })
+
   test('CLI entry points accept pnpm argument separators', () => {
     const verify = execFileSync(process.execPath, [
       'script/verify-changed.mjs', '--plan', '--', '--files-json', '[]',
