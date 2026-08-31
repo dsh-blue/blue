@@ -261,9 +261,9 @@ verifyPluginKit(
 )
 
 if (libraryFiles > 210) fail(`library lib output has ${libraryFiles} files; budget is 210`)
-// P5 baseline includes the versioned protocol/session runtimes and the packed
-// author kit, with about 3% release headroom.
-if (libraryBytes > 1_700_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1700000`)
+// The P5 plus canonical focused-surface baseline retains about 3% release
+// headroom after the interaction-hint runtime landed.
+if (libraryBytes > 1_770_000) fail(`library lib output has ${libraryBytes} bytes; budget is 1770000`)
 
 if (problems.length > 0) {
   console.error(`pack contract failed with ${problems.length} problem(s)`)
