@@ -95,6 +95,7 @@ describe('blue bundle', () => {
       'blue-pane-todo',
       'blue-pane-btw',
       'blue-pane-agents',
+      'blue-pane-workflow',
       'blue-plugin-view-bridge',
       'blue-status-provider-owner',
       'blue-interaction',

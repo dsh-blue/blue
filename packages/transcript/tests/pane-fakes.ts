@@ -181,6 +181,16 @@ export class FakeProjectionService {
   }
 }
 
+/** Minimal app-owned projection reader for pane fixtures: only the child catalog. */
+export class FakeSessionProjectionReader {
+  /** Direct child session ids `children()` reports for the current session. */
+  childIds: string[] = []
+
+  children(_key: string): { readonly id: string, readonly asOfSeq: number, readonly value: unknown }[] {
+    return this.childIds.map(id => ({ id, asOfSeq: 0, value: undefined }))
+  }
+}
+
 /** A plugin module shape accepted by `ctx.plugin`. */
 export interface PanePluginModule {
   name: string
@@ -193,6 +203,8 @@ export interface PanePluginHarness {
   screen: PaneFakeScreen
   keymap: PaneFakeKeymap
   commands: PaneFakeCommands
+  /** The child-catalog fake behind `blueSessionProjections`. */
+  sessionProjections: FakeSessionProjectionReader
   dispose(): Promise<void>
 }
 
@@ -221,6 +233,7 @@ export async function bootPanePlugin(
   }, screen)
   const projections = new FakeProjectionService()
   ctx.on('session/event', (session, event) => projections.emit(session, event))
+  const sessionProjections = new FakeSessionProjectionReader()
   const serviceNames: Record<string, unknown> = {
     blueScreen: screen,
     blueTheme: { colors: COLORS },
@@ -228,6 +241,7 @@ export async function bootPanePlugin(
     blueKeymap: keymap,
     blueSession: { current: current === null ? null : asAgent(current) },
     blueSessionFacts: facts,
+    blueSessionProjections: sessionProjections,
     sessionProjections: projections,
     commands,
     ...extras,
@@ -241,6 +255,7 @@ export async function bootPanePlugin(
     screen,
     keymap,
     commands,
+    sessionProjections,
     dispose: async () => {
       await fiber.dispose()
       bottomPanes.dispose()

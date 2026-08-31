@@ -402,6 +402,15 @@
           name: '@dsh-blue/blue-transcript/pane-agents'
           inject: [blueComponents, blueSessionFacts]
 
+        # Workflow pane: folds dsh-workflow's `workflow/*` lifecycle events
+        # into a dock section pinned above the editor, attributed to the
+        # current session by child-session id cross-check; the settled summary
+        # card stays until the next turn begins (the pane-agents semantics).
+        # Same blueComponents dock-order pin as the other panes.
+        - id: blue-pane-workflow
+          name: '@dsh-blue/blue-transcript/pane-workflow'
+          inject: [blueComponents, blueSessionFacts]
+
         # Public additive status adapter: projects renderer-neutral status nodes
         # into the transcript-owned footer registry. Public panes and overlays are
         # compiled by core's canonical surface bridge.

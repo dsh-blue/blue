@@ -43,9 +43,10 @@ turn. Move or retire both halves together and prove behavior in whole-tree
 tests.
 
 Bottom-pane priorities and explicit dependencies preserve activity, queue,
-todo, BTW, agents, then editor behavior under scarce height. The queue never
-claims editor history keys. Provider candidate rows are inert; persisted user
-selection, frontend-tree owners, and default fallback control activation.
+todo, BTW, agents, workflow, then editor behavior under scarce height. The
+queue never claims editor history keys. Provider candidate rows are inert;
+persisted user selection, frontend-tree owners, and default fallback control
+activation.
 
 ## Preset And Skills
 

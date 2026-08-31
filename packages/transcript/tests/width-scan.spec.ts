@@ -28,6 +28,7 @@ import { createTranscriptModel, TranscriptModelComponent } from '../src/transcri
 import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import { BlueBottomPaneService } from '../src/dock-model.ts'
+import { WorkflowPaneComponent, type WorkflowRunState } from '../src/pane-workflow.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { COLORS } from './status-fakes.ts'
@@ -280,6 +281,42 @@ describe('transcript width-scan', () => {
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`AgentGroup/${name}`, new AgentGroupComponent(subagentItem(text), colors, components).render(width), width)
       }
+    })
+
+    it(`WorkflowPaneComponent survives ${name}`, () => {
+      const { screen, bottom } = bottomPaneScreen()
+      const components = fakeBlueComponents()
+      const service = new BlueBottomPaneService(new Context(), {
+        components,
+        colors,
+        viewport: () => ({ columns: screen.columns, rows: screen.rows }),
+      }, screen)
+      const run = (id: string, settled: boolean): WorkflowRunState => ({
+        id,
+        name: text,
+        phases: [{ title: text }],
+        phasesSeen: [text],
+        currentPhase: text,
+        agents: [{ seq: 1, label: text, phase: text, childId: 'c1' }],
+        startedAt: 1_700_000_000_000,
+        ...(settled
+          ? { stopReason: 'completed' as const, endedAt: 1_700_000_075_000, agentsStarted: 1 }
+          : { stopReason: undefined, endedAt: undefined, agentsStarted: undefined }),
+        attributed: true,
+      })
+      const runs = [run('run-live', false), run('run-settled', true)]
+      const component = new WorkflowPaneComponent(() => runs, colors, components, () => 1_700_000_010_000)
+      service.register(
+        { id: `workflow-${name}`, node: { kind: 'text', content: '' } },
+        (_node, width) => component.render(width),
+      )
+      const mounted = bottom[0]
+      if (mounted === undefined) throw new Error('workflow pane adapter did not mount')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`WorkflowPane/${name}`, mounted.render(width), width)
+      }
+      component.invalidate()
+      service.dispose()
     })
 
     it(`banner (composeBannerLines) survives ${name}`, () => {

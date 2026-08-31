@@ -32,7 +32,7 @@ Footer 子插件以 canonical status node 提供 model、cwd、git、title、con
 
 ## 其他子路径
 
-`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node；`./status-provider-owner` 拥有独占 provider 选择。`./pane-activity`、`./pane-todo`、`./pane-btw` 与 `./pane-agents` 发布 canonical bottom-pane node。`./tool-model` 导出 `toolCallNode`/`toolResultNode` 和 canonical tool registry；`./transcript-model` 提供 renderer-neutral transcript registry。Bottom-pane service 有意不作为 subpath 导出。
+`./banner` 挂载欢迎横幅；`./banner-content` 导出横幅显示的 `BLUE_VERSION` 常量，与 `package.json` 保持同步。`./status-basic-model`、`./status-cwd`、`./status-title`、`./status-git` 与 `./status-context` 发布 canonical footer node；`./status-provider-owner` 拥有独占 provider 选择。`./pane-activity`、`./pane-todo`、`./pane-btw`、`./pane-agents` 与 `./pane-workflow` 发布 canonical bottom-pane node。`./tool-model` 导出 `toolCallNode`/`toolResultNode` 和 canonical tool registry；`./transcript-model` 提供 renderer-neutral transcript registry。Bottom-pane service 有意不作为 subpath 导出。
 
 所有渲染行都遵守 core 的 visible-width 契约，包括窄窗口与 CJK viewport。通用行裁剪与 BTW 顶边框都通过窄化的 `blueComponents` renderer 操作完成；transcript 不导入 core 私有 chrome 算法。
 

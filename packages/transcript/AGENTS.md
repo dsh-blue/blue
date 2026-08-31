@@ -61,6 +61,16 @@ BTW owns one side-session handle for one pane lifetime, reads its official
 conversation projection through the opaque identity, and disposes on close or
 unload. App retains parent seeding, Agent filtering, and action ownership.
 
+The workflow pane (`blue-pane-workflow`) folds the six `workflow/*` events the
+engine dispatches unfiltered from its isolate realm — every fiber sees every
+agent's runs, so a run renders only after cross-attribution: one member's
+`agent-start.childId` must appear in the app-side child-session catalog
+(`blueSessionProjections.children`), re-attempted on each later event, and a
+run still unattributed at `workflow/end` is dropped unseen. A settled run
+collapses to a one-row summary card that survives until the next turn begins
+(the pane-agents kimi semantics); the in-stream record stays the `workflow`
+tool's own generic result card.
+
 `BlueModelToolService` converts official presentation facts to canonical call
 and result nodes. The semantic renderer owns card status/header/chrome and
 bounded expansion; it does not reintroduce the removed frontend View adapter,

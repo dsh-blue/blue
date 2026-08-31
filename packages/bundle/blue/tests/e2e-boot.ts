@@ -70,6 +70,7 @@ import * as bannerPlugin from '../../../transcript/src/banner.ts'
 import * as paneActivityPlugin from '../../../transcript/src/pane-activity.ts'
 import * as paneBtwPlugin from '../../../transcript/src/pane-btw.ts'
 import * as paneTodoPlugin from '../../../transcript/src/pane-todo.ts'
+import * as paneWorkflowPlugin from '../../../transcript/src/pane-workflow.ts'
 import * as viewBridgePlugin from '../../../transcript/src/plugin-host-bridge.ts'
 import * as statusProviderOwnerPlugin from '../../../transcript/src/status-provider-owner.ts'
 import * as statusBasicPlugin from '../../../transcript/src/status-basic-model.ts'
@@ -261,6 +262,7 @@ interface BlueE2EHooks {
   paneQueueApply: typeof paneQueuePlugin.apply
   paneTodoApply: typeof paneTodoPlugin.apply
   paneBtwApply: typeof paneBtwPlugin.apply
+  paneWorkflowApply: typeof paneWorkflowPlugin.apply
   viewBridgeApply: typeof viewBridgePlugin.apply
   statusProviderOwnerApply: typeof statusProviderOwnerPlugin.apply
   editorProviderOwnerApply: typeof editorProviderOwnerPlugin.apply
@@ -477,6 +479,7 @@ export async function bootBlue(argv: string[], options: {
     paneQueueApply: paneQueuePlugin.apply,
     paneTodoApply: paneTodoPlugin.apply,
     paneBtwApply: paneBtwPlugin.apply,
+    paneWorkflowApply: paneWorkflowPlugin.apply,
     viewBridgeApply: options.viewBridge === false ? () => {} : viewBridgePlugin.apply,
     statusProviderOwnerApply: statusProviderOwnerPlugin.apply,
     editorProviderOwnerApply: editorProviderOwnerPlugin.apply,
@@ -728,6 +731,15 @@ export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'commands', 
 export const apply = ctx => globalThis.__blueE2E.paneBtwApply(ctx)
 `)}`,
     '  inject: [blueComponents, blueSessionActions]',
+    // The workflow pane row mirrors cordis.patch.yml's inject pin; the thin
+    // e2e tree omits the agents pane, so it follows the btw row here.
+    '- id: blue-pane-workflow',
+    `  name: ${fixture('blue-pane-workflow.mjs', `
+export const name = 'blue-pane-workflow'
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueSessionProjections', 'blueBottomPanes']
+export const apply = ctx => globalThis.__blueE2E.paneWorkflowApply(ctx)
+`)}`,
+    '  inject: [blueComponents, blueSessionFacts]',
     '- id: blue-plugin-view-bridge',
     `  name: ${fixture('blue-plugin-view-bridge.mjs', `
 export const name = 'blue-plugin-view-bridge'
