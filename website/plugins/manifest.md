@@ -60,12 +60,16 @@ script-disabled pack 不是安全沙箱，第三方 npm/GitHub 代码仍需要�
 
 ## 安装与创造模式
 
-运行中的 `/plugin` 只扫描当前 profile 中声明 `package.json.blue.manifest` 的已安装包，
-显示 compatible/incompatible/invalid 状态，并提供本地 `list/search/info/verify`。安装只接受
-已存在的本地路径/tarball、精确 npm `package@version` 或钉到 40 位 commit 的 GitHub
-source；remove/install 都委托给 dsh profile owner，重启后才激活，绝不替换 live tree。
+裸 `/plugin` 提供“已安装”和“插件目录”两个标签页。已安装只扫描当前 profile 中声明
+`package.json.blue.manifest` 的包，显示 compatible/incompatible/invalid 状态并提供
+验证/移除动作；插件目录先显示审核过的内置快照，再后台刷新显式 GitHub 索引。只有
+canonical 且兼容的 manifest 才获得锁到解析后完整 commit 的安装动作；旧契约条目可
+查看但禁装。本地 `list/search/info/verify` 与直接安装仍只接受已存在的本地路径/tarball、
+精确 npm `package@version` 或钉到 40 位 commit 的 GitHub source；remove/install 都委托
+给 dsh profile owner，重启后才激活，绝不替换 live tree。
 
 创造模式保留 inspect/define/run/update/stop/rollback 临时原型。用户验收后，正式
 `blue-plugin-development` skill 要求先明确 ephemeral/local/GitHub/npm 目的地；local
 路径可执行 `catalog -> create -> validate -> dual conformance` 确定性闭环。原型验收
-不自动授权 repository、commit、tag 或 npm 发布。插件市场仍暂停，不参与这些本地路径。
+不自动授权 repository、commit、tag 或 npm 发布。TUI 插件目录不等于 Website 插件
+市场；市场卡片、路由和提交流程仍暂停。

@@ -20,11 +20,15 @@ Draft text、prompt/bash mode、history、command alias、settings/theme identit
 
 内置命令族覆盖项目初始化（`/init`）、会话导航与 rewind、help、theme、model 与 reasoning effort、provider、permission 与 preset、mode、status/context/version/changelog、export/copy、tool、skill、MCP、trace、settings 与 profile update。Effort panel 将 provider 提供的可选级别显示为一行 bracket 选项，并通过 Left/Right 移动高亮。命令读取不可变 snapshot 并调用 `blueSessionActions`，不会折叠 session event 或直接修改 Harness object。
 
-插件市场保持暂停时，`/plugin` 只处理本地 profile。裸命令只显示已安装且发布
-canonical Blue manifest 的依赖，并标出 compatible/incompatible/invalid；
-`/plugin verify <package-or-directory>` 会真实运行公开静态校验器。安装只接受已存在的
-本地目录或 tarball、精确 npm `package@version`，或锁到完整 commit 的 GitHub 源。
-所有 mutation 都委托给 `dsh plugin`，重启后生效，不会替换当前运行中的 Cordis tree。
+裸 `/plugin` 固定提供两个标签页。**已安装**列出当前 profile 中发布 Blue manifest 的
+依赖，标明 compatible/incompatible/invalid，并提供验证/移除动作；**插件目录**先立即
+显示随版本审核的内置快照，再后台刷新显式维护的 GitHub 索引，离线时保留快照。目录
+元数据不会执行；只有 canonical 且兼容的 manifest 才获得安装动作，来源锁到解析出的
+40 位 commit。`dsh-blue/blue-doudizhu` 等旧契约条目仍可查看，但显示“需要迁移”且
+禁用安装。`/plugin verify <package-or-directory>` 会真实运行公开静态校验器；直接安装
+仍只接受已存在的本地目录/tarball、精确 npm `package@version` 或完整 commit 的 GitHub
+源。所有 mutation 都委托给 `dsh plugin`，重启后生效，绝不替换 live tree。这份 TUI
+目录不表示另行暂停的 Website 插件市场已经开放。
 
 Dialog 替换 editor slot，并编译与插件 surface 相同的 renderer-neutral Blue UI node。Help/info window、list、form、settings、question、approval、model、loading state 与 plan review 因此共用 core 所有的 chrome、focus、语义颜色和窄宽收容。Question 与 approval 工作绑定 Fiber、支持 abort，并拒绝 unload 或会话切换后的迟到结果。第三方 renderer-neutral command、notification 与 editor extension 通过 `./plugin-host-bridge` 进入；它只在 owner Fiber 存活时宣告这些 capability，并会在替换后恢复 host 持有的 definition。私有 owner lease 会按 generation 约束 command dispatch 及 fulfilled/rejected settlement、editor callback 与 notification observation；保留的 stale handler 不会调用插件代码。Notification observer failure 与其它 observer、publisher result 相互隔离。
 

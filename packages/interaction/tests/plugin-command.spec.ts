@@ -1,6 +1,6 @@
 /**
- * `/plugin` local inventory, compatibility, verification, and profile-owner
- * mutation tests. The paused marketplace has no network path in this suite.
+ * `/plugin` installed/catalog tabs, compatibility, verification, bounded
+ * refresh, and profile-owner mutation tests.
  *
  * @module @dsh-blue/blue-interaction/plugin-command-tests
  */
@@ -15,6 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { createPluginPackage } from '../../plugin-kit/src/create.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 import { pluginCommandInternals, registerPluginCommand } from '../src/plugin-command.ts'
+import { bundledPluginCatalog, type PluginCatalogResult } from '../src/plugin-catalog.ts'
 import { setSharedEditor } from '../src/editor-instance.ts'
 import { fakeBlueContext, KEY } from './fakes.ts'
 
@@ -56,6 +57,25 @@ function addPlugin(world: Pick<World, 'profile'>, packageName: string, mutate?: 
   expect(created.ok).toBe(true)
   mutate?.(root)
   return root
+}
+
+function compatibleCatalog(commit = 'd'.repeat(40)): PluginCatalogResult {
+  return {
+    source: 'live',
+    entries: [{
+      packageName: '@acme/catalog-ready',
+      version: '1.2.3',
+      description: 'A canonical plugin ready to install.',
+      repository: 'acme/catalog-ready',
+      repositoryUrl: 'https://github.com/acme/catalog-ready',
+      branch: 'main',
+      commit,
+      capabilities: ['status'],
+      state: 'compatible',
+      reason: 'canonical manifest compatible',
+      installSpec: `github:acme/catalog-ready@${commit}`,
+    }],
+  }
 }
 
 async function mount(options: { readonly display?: boolean } = {}): Promise<World & { readonly screen?: ReturnType<typeof fakeBlueContext>['screen'] }> {
@@ -149,7 +169,7 @@ describe('registerPluginCommand', () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
     const world = await mount()
-    await expect(world.execute('')).resolves.toEqual({ kind: 'success', text: 'no Blue plugins installed; marketplace is paused' })
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success', text: 'no Blue plugins installed' })
     await expect(world.execute('search anything')).resolves.toEqual({ kind: 'success', text: 'no matching installed plugins' })
     expect(fetch).not.toHaveBeenCalled()
     world.dispose()
@@ -175,6 +195,7 @@ describe('registerPluginCommand', () => {
     addPlugin(world, '@scope/incompatible', root => {
       const path = join(root, 'blue.plugin.json')
       const manifest = JSON.parse(readFileSync(path, 'utf8'))
+      manifest.api = '>=9.0.0'
       manifest.compatibility = { blue: '>=9.0.0', harness: '>=9.0.0', node: '>=99.0.0' }
       writeFileSync(path, JSON.stringify(manifest))
     })
@@ -221,6 +242,7 @@ describe('registerPluginCommand', () => {
       ['@scope/missing-manifest', 'invalid'],
     ])
     expect(rows.find(row => row.packageName === '@scope/incompatible')?.reason).toContain('Blue')
+    expect(rows.find(row => row.packageName === '@scope/incompatible')?.reason).toContain('API')
     expect(rows.find(row => row.packageName === '@scope/incompatible')?.reason).toContain('Harness')
     expect(rows.find(row => row.packageName === '@scope/incompatible')?.reason).toContain('Node')
     expect(rows.find(row => row.packageName === '@scope/missing-manifest')?.installed).toBe('unknown')
@@ -291,26 +313,35 @@ describe('registerPluginCommand', () => {
     await expect(world.execute('unknown value')).resolves.toEqual({ kind: 'error', text: 'unknown plugin action: unknown' })
   })
 
-  it('opens a local-only panel and performs verify and uninstall actions', async () => {
+  it('opens Installed first and performs visible Verify and Remove actions', async () => {
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(bundledPluginCatalog())
     const world = await mount({ display: true })
     writeProfileManifest(world.profile, { '@scope/installed': '1.0.0' })
     addPlugin(world, '@scope/installed')
     await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
     const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
-    expect(panel.render(100).join('\n')).toContain('marketplace paused')
-    expect(panel.render(100).join('\n')).toContain('@scope/installed')
+    const initial = panel.render(100).join('\n')
+    expect(initial).toContain('Installed')
+    expect(initial).toContain('Catalog')
+    expect(initial).toContain('@scope/installed')
+    expect(initial).toContain('[Verify]')
+    expect(initial).toContain('[Remove]')
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('verified @scope/installed'))
-    panel.handleInput(KEY.altS)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('uninstalled; restart Blue to apply'))
 
     const failure = vi.spyOn(pluginCommandInternals.effects, 'run').mockRejectedValueOnce(new Error('validator offline'))
+    panel.handleInput(KEY.left)
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('plugin operation failed: validator offline'))
     failure.mockRejectedValueOnce('profile owner offline')
-    panel.handleInput(KEY.altS)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('plugin operation failed: profile owner offline'))
     failure.mockRejectedValueOnce('validator offline without Error')
+    panel.handleInput(KEY.left)
     panel.handleInput(KEY.enter)
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('plugin operation failed: validator offline without Error'))
     failure.mockRejectedValueOnce(new Error('profile owner Error'))
@@ -318,4 +349,224 @@ describe('registerPluginCommand', () => {
     await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('plugin operation failed: profile owner Error'))
     panel.handleInput(KEY.escape)
   }, 20_000)
+
+  it('shows the vetted doudizhu catalog entry with migration-gated installation', async () => {
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(bundledPluginCatalog())
+    const world = await mount({ display: true })
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    expect(panel.render(80).join('\n')).toContain('No Blue plugins installed')
+    panel.handleInput(KEY.tab)
+    const catalog = panel.render(120).join('\n')
+    expect(catalog).toContain('@dsh-blue/blue-doudizhu')
+    expect(catalog).toContain('Needs migration')
+    expect(catalog).toContain('[Details]')
+    expect(catalog).toContain('[Install]')
+    panel.handleInput(KEY.right)
+    expect(panel.render(40).join('\n')).toContain('Details selected')
+    panel.handleInput(KEY.enter)
+    const detail = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    const renderedDetail = detail.render(120).join('\n')
+    expect(renderedDetail).toContain('legacy manifest')
+    expect(renderedDetail).toContain('d2edd2b6cce3440d8aab87dd23e2a05e00d54f14')
+    expect(renderedDetail).not.toContain('Enter install')
+    detail.handleInput(KEY.escape)
+    panel.handleInput(KEY.escape)
+  })
+
+  it('refreshes Catalog and installs only the exact admitted commit', async () => {
+    const catalog = compatibleCatalog()
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(catalog)
+    const world = await mount({ display: true })
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('catalog refreshed from GitHub'))
+    panel.handleInput(KEY.tab)
+    expect(panel.render(120).join('\n')).toContain('@acme/catalog-ready')
+    panel.handleInput(KEY.enter)
+    const detail = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    expect(detail.render(120).join('\n')).toContain('Enter install')
+    detail.handleInput(KEY.enter)
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('installed; restart Blue to apply'))
+    expect(panel.render(120).join('\n')).toContain(`github:acme/catalog-ready@${'d'.repeat(40)}`)
+    panel.handleInput(KEY.escape)
+  })
+
+  it('contains catalog installation failures without changing the live tree', async () => {
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(compatibleCatalog())
+    const installFailure = vi.spyOn(pluginCommandInternals.effects, 'run')
+    installFailure.mockRejectedValueOnce(new Error('install failed')).mockRejectedValueOnce('plain install failure')
+    const world = await mount({ display: true })
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('catalog refreshed from GitHub'))
+    panel.handleInput(KEY.tab)
+    panel.handleInput(KEY.right)
+    expect(panel.render(40).join('\n')).toContain('Install selected')
+    panel.handleInput(KEY.enter)
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('plugin operation failed: install failed'))
+    expect(panel.render(120).join('\n')).toContain('‹ Catalog ›')
+    panel.handleInput(KEY.enter)
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('plugin operation failed: plain install failure'))
+    panel.handleInput(KEY.escape)
+  })
+
+  it('renders installed and catalog compatibility states, including already installed entries', async () => {
+    const ready = compatibleCatalog().entries[0]!
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue({
+      source: 'live',
+      entries: [
+        ready,
+        { ...ready, packageName: '@acme/incompatible', repository: 'acme/incompatible', state: 'incompatible', reason: 'does not accept Blue', installSpec: undefined },
+        { ...ready, packageName: '@acme/invalid', repository: 'acme/invalid', capabilities: [], state: 'invalid', reason: 'invalid manifest', installSpec: undefined },
+      ],
+    })
+    const world = await mount({ display: true })
+    writeProfileManifest(world.profile, {
+      '@acme/catalog-ready': '1.2.3',
+      '@scope/incompatible': '2.0.0',
+      '@scope/invalid': '3.0.0',
+    })
+    addPlugin(world, '@acme/catalog-ready')
+    addPlugin(world, '@scope/incompatible', root => {
+      const path = join(root, 'blue.plugin.json')
+      const manifest = JSON.parse(readFileSync(path, 'utf8'))
+      manifest.compatibility.blue = '>=9'
+      writeFileSync(path, JSON.stringify(manifest))
+    })
+    addPlugin(world, '@scope/invalid', root => writeFileSync(join(root, 'blue.plugin.json'), '{}'))
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    const installed = panel.render(120).join('\n')
+    expect(installed).toContain('Compatible')
+    expect(installed).toContain('Incompatible')
+    expect(installed).toContain('Invalid')
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('catalog refreshed from GitHub'))
+    panel.handleInput(KEY.tab)
+    const catalog = panel.render(120).join('\n')
+    expect(catalog).toContain('Installed')
+    expect(catalog).toContain('Incompatible')
+    expect(catalog).toContain('Invalid')
+    panel.handleInput(KEY.enter)
+    const detail = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    expect(detail.render(120).join('\n')).toContain('Already installed in this profile')
+    expect(detail.render(120).join('\n')).not.toContain('Enter install')
+    detail.handleInput(KEY.escape)
+    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.down)
+    panel.handleInput(KEY.enter)
+    const invalidDetail = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    expect(invalidDetail.render(120).join('\n')).toContain('Capabilities none declared')
+    invalidDetail.handleInput(KEY.escape)
+    panel.handleInput(KEY.escape)
+  })
+
+  it('reports a resolved offline fallback without discarding its vetted rows', async () => {
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue({
+      ...bundledPluginCatalog(),
+      message: 'rate limited',
+    })
+    const world = await mount({ display: true })
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    await vi.waitFor(() => expect(panel.render(100).join('\n')).toContain('offline · using vetted snapshot'))
+    panel.handleInput(KEY.escape)
+  })
+
+  it('keeps the bundled catalog on refresh failure and rejects late refresh after unload', async () => {
+    const refresh = vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog')
+      .mockRejectedValueOnce(new Error('GitHub offline'))
+      .mockRejectedValueOnce('plain offline')
+    const offline = await mount({ display: true })
+    await expect(offline.execute('')).resolves.toEqual({ kind: 'success' })
+    const offlinePanel = offline.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    await vi.waitFor(() => expect(offlinePanel.render(100).join('\n')).toContain('catalog refresh failed: GitHub offline'))
+    offlinePanel.handleInput(KEY.tab)
+    expect(offlinePanel.render(100).join('\n')).toContain('@dsh-blue/blue-doudizhu')
+    offlinePanel.handleInput(KEY.escape)
+
+    const plainOffline = await mount({ display: true })
+    await expect(plainOffline.execute('')).resolves.toEqual({ kind: 'success' })
+    const plainPanel = plainOffline.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    await vi.waitFor(() => expect(plainPanel.render(100).join('\n')).toContain('catalog refresh failed: plain offline'))
+    plainPanel.handleInput(KEY.escape)
+
+    let resolveRefresh: ((value: PluginCatalogResult) => void) | undefined
+    let refreshSignal: AbortSignal | undefined
+    refresh.mockImplementation(signal => {
+      refreshSignal = signal
+      return new Promise(resolve => { resolveRefresh = resolve })
+    })
+    const late = await mount({ display: true })
+    await expect(late.execute('')).resolves.toEqual({ kind: 'success' })
+    const requestsBeforeDispose = late.screen!.renderRequests
+    late.dispose()
+    expect(refreshSignal?.aborted).toBe(true)
+    const requestsAfterDispose = late.screen!.renderRequests
+    expect(requestsAfterDispose).toBeGreaterThanOrEqual(requestsBeforeDispose)
+    resolveRefresh?.(compatibleCatalog('e'.repeat(40)))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(late.screen!.renderRequests).toBe(requestsAfterDispose)
+    expect(late.ctx.commands.find(late.agent, 'plugin')).toBeUndefined()
+  })
+
+  it('rejects verification and refresh failures that settle after panel disposal', async () => {
+    let rejectRefresh: ((reason: Error) => void) | undefined
+    const refresh = vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockImplementation(() => new Promise((_resolve, reject) => { rejectRefresh = reject }))
+    let resolveValidation: ((value: { stdout: string, stderr: string }) => void) | undefined
+    const run = vi.spyOn(pluginCommandInternals.effects, 'run').mockImplementation(() => new Promise(resolve => { resolveValidation = resolve }))
+    const world = await mount({ display: true })
+    writeProfileManifest(world.profile, { '@scope/installed': '1.0.0' })
+    addPlugin(world, '@scope/installed')
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    panel.handleInput(KEY.enter)
+    expect(panel.render(80).join('\n')).toContain('Verifying')
+    world.dispose()
+    const requests = world.screen!.renderRequests
+    resolveValidation?.({ stdout: JSON.stringify({ package: '@scope/installed', valid: true, files: 3 }), stderr: '' })
+    rejectRefresh?.(new Error('late offline'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(world.screen!.renderRequests).toBe(requests)
+
+    refresh.mockResolvedValue(bundledPluginCatalog())
+    let rejectValidation: ((reason: Error) => void) | undefined
+    run.mockImplementation(() => new Promise((_resolve, reject) => { rejectValidation = reject }))
+    const rejected = await mount({ display: true })
+    writeProfileManifest(rejected.profile, { '@scope/installed': '1.0.0' })
+    addPlugin(rejected, '@scope/installed')
+    await expect(rejected.execute('')).resolves.toEqual({ kind: 'success' })
+    const rejectedPanel = rejected.screen!.overlays.at(-1)?.component as { handleInput(data: string): void }
+    rejectedPanel.handleInput(KEY.enter)
+    rejected.dispose()
+    const rejectedRequests = rejected.screen!.renderRequests
+    rejectValidation?.(new Error('late validator failure'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(rejected.screen!.renderRequests).toBe(rejectedRequests)
+  })
+
+  it('keeps retained panel callbacks inert and makes disposal idempotent', async () => {
+    vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(compatibleCatalog())
+    const run = vi.spyOn(pluginCommandInternals.effects, 'run')
+    const world = await mount({ display: true })
+    writeProfileManifest(world.profile, { '@scope/installed': '1.0.0' })
+    addPlugin(world, '@scope/installed')
+    await expect(world.execute('')).resolves.toEqual({ kind: 'success' })
+    const panel = world.screen!.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
+    await vi.waitFor(() => expect(panel.render(120).join('\n')).toContain('catalog refreshed from GitHub'))
+    world.dispose()
+    world.dispose()
+    panel.handleInput(KEY.enter)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.enter)
+    panel.handleInput(KEY.tab)
+    panel.handleInput(KEY.enter)
+    panel.handleInput(KEY.right)
+    panel.handleInput(KEY.enter)
+    panel.handleInput(KEY.escape)
+    expect(run).not.toHaveBeenCalled()
+  })
 })

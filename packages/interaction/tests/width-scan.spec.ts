@@ -19,6 +19,7 @@ import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { CanonicalDocumentController } from '../src/frontend-panel.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
+import { pluginCommandInternals } from '../src/plugin-command.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
 import { CanonicalSelectController } from '../src/select-list.ts'
 import { CanonicalMultiSelectController } from '../src/select.ts'
@@ -222,6 +223,56 @@ describe('interaction width-scan', () => {
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`canonical-loading-document/${name}`, panel.render(width), width)
       }
+    })
+
+    it(`/plugin Installed, Catalog, and Details survive ${name}`, () => {
+      const display = fakeBlueContext()
+      const catalogEntry = {
+        packageName: text,
+        version: text,
+        description: text,
+        repository: text,
+        repositoryUrl: text,
+        branch: text,
+        commit: 'a'.repeat(40),
+        capabilities: [text],
+        state: 'invalid' as const,
+        reason: text,
+      }
+      const model = () => pluginCommandInternals.pluginPanelModel([{
+        packageName: text,
+        label: text,
+        installed: text,
+        spec: text,
+        root: text,
+        state: 'invalid' as const,
+        reason: text,
+      }], {
+        catalog: { source: 'bundled' as const, entries: [catalogEntry], message: text },
+        refreshing: false,
+      })
+      const panel = new CanonicalDocumentController({
+        keymap: display.keymap,
+        theme: IDENTITY_THEME as never,
+        components: display.components,
+        model,
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+        showSelectedVariantInFooter: true,
+      })
+      for (const width of SCAN_WIDTHS) expectLinesFit(`/plugin-installed/${name}`, panel.render(width), width)
+      panel.handleInput('\t')
+      for (const width of SCAN_WIDTHS) expectLinesFit(`/plugin-catalog/${name}`, panel.render(width), width)
+
+      const detail = new CanonicalDocumentController({
+        keymap: display.keymap,
+        theme: IDENTITY_THEME as never,
+        components: display.components,
+        model: () => pluginCommandInternals.catalogDetailModel(catalogEntry, false),
+        onAction: vi.fn(),
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) expectLinesFit(`/plugin-details/${name}`, detail.render(width), width)
     })
 
     it(`approval plugin prompt survives ${name}`, async () => {

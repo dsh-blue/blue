@@ -1,7 +1,8 @@
 /**
- * User-facing `/plugin` command family. Inventory and verification are local:
- * the paused pre-v1 marketplace is not queried. Profile mutations remain
- * delegated to the dsh profile owner and take effect only after restart.
+ * User-facing `/plugin` command family. Installed inventory stays local while
+ * the catalog reads inert metadata from a bounded, pinned GitHub index.
+ * Profile mutations remain delegated to the dsh profile owner and take effect
+ * only after restart.
  *
  * @module @dsh-blue/blue-interaction/plugin-command
  */
@@ -12,15 +13,23 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import { BLUE_VERSION } from '@dsh-blue/blue-api'
+import { BLUE_API_VERSION, BLUE_VERSION } from '@dsh-blue/blue-api'
 import { validateBluePluginManifestV1, type BluePluginManifestV1 } from '@dsh-blue/blue-api/protocol/v1'
 import { bluePluginRuntimePath, BLUE_PLUGIN_HARNESS_LINE } from '@dsh-blue/blue-plugin-kit'
+import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { satisfies, valid } from 'semver'
 import { profileNameFromArgv, profileRoot, readProfileFacts } from './updater/profile.ts'
 import { updaterInternals } from './updater/io.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { CanonicalDocumentController, type FrontendPanelDocument } from './frontend-panel.ts'
+import { interactionTranslator } from './locale.ts'
+import {
+  bundledPluginCatalog,
+  refreshPluginCatalog,
+  type PluginCatalogEntry,
+  type PluginCatalogResult,
+} from './plugin-catalog.ts'
 
 const GITHUB_PROXY_ENV = 'BLUE_GITHUB_PROXY'
 
@@ -30,9 +39,11 @@ interface ProcessResult {
 }
 
 type RunProcess = (file: string, args: string[], options: { readonly encoding: 'utf8', readonly timeout: number }) => Promise<ProcessResult>
+type RefreshCatalog = (signal: AbortSignal) => Promise<PluginCatalogResult>
 
-const pluginCommandEffects: { run: RunProcess } = {
+const pluginCommandEffects: { run: RunProcess, refreshCatalog: RefreshCatalog } = {
   run: promisify(execFile) as unknown as RunProcess,
+  refreshCatalog: refreshPluginCatalog,
 }
 
 type CompatibilityState = 'compatible' | 'incompatible' | 'invalid'
@@ -59,6 +70,19 @@ interface ValidationReport {
   readonly files?: number
   readonly violations?: readonly ValidationFinding[]
 }
+
+interface PluginPanelState {
+  catalog: PluginCatalogResult
+  refreshing: boolean
+  busy?: string
+  message?: string
+}
+
+type PluginPanelAction =
+  | { readonly kind: 'plugin.verify', readonly row: InstalledPluginRow }
+  | { readonly kind: 'plugin.uninstall', readonly row: InstalledPluginRow }
+  | { readonly kind: 'plugin.catalog.details', readonly entry: PluginCatalogEntry }
+  | { readonly kind: 'plugin.catalog.install', readonly entry: PluginCatalogEntry, readonly spec: string }
 
 function currentProfile(): string {
   return profileNameFromArgv(process.argv)
@@ -100,6 +124,7 @@ function classifyManifest(packageName: string, root: string, pointer: string): P
   if (!parsed.ok) return { state: 'invalid', reason: parsed.issues.map(issue => `${issue.path}: ${issue.message}`).join('; ') }
   if (parsed.value.id !== packageName) return { state: 'invalid', reason: `manifest id ${parsed.value.id} differs from package name` }
   const incompatible: string[] = []
+  if (!satisfies(BLUE_API_VERSION, parsed.value.api, { includePrerelease: true })) incompatible.push(`API ${BLUE_API_VERSION}`)
   if (!satisfies(BLUE_VERSION, parsed.value.compatibility.blue, { includePrerelease: true })) incompatible.push(`Blue ${BLUE_VERSION}`)
   if (!satisfies(BLUE_PLUGIN_HARNESS_LINE, parsed.value.compatibility.harness, { includePrerelease: true })) incompatible.push(`Harness ${BLUE_PLUGIN_HARNESS_LINE}`)
   if (!satisfies(process.versions.node, parsed.value.compatibility.node, { includePrerelease: true })) incompatible.push(`Node ${process.versions.node}`)
@@ -133,22 +158,110 @@ function installedPlugins(): readonly InstalledPluginRow[] {
   return rows.sort((left, right) => left.label.localeCompare(right.label))
 }
 
-function pluginPanelModel(rows: readonly InstalledPluginRow[], state: { readonly busy?: string, readonly message?: string }): FrontendPanelDocument {
-  if (state.busy !== undefined) return { mode: 'loading', title: 'Plugins', view: { kind: 'text', content: state.busy }, dismissible: false }
+const passthrough: BlueTranslate = (key, values) => {
+  let result = key
+  for (const [name, value] of Object.entries(values ?? {})) result = result.replaceAll(`{${name}}`, String(value))
+  return result
+}
+
+function installedStateLabel(state: CompatibilityState, t: BlueTranslate): string {
+  switch (state) {
+    case 'compatible': return t('Compatible')
+    case 'incompatible': return t('Incompatible')
+    case 'invalid': return t('Invalid')
+  }
+}
+
+function catalogStateLabel(state: PluginCatalogEntry['state'], t: BlueTranslate): string {
+  switch (state) {
+    case 'compatible': return t('Compatible')
+    case 'needs-migration': return t('Needs migration')
+    case 'incompatible': return t('Incompatible')
+    case 'invalid': return t('Invalid')
+  }
+}
+
+function catalogStatus(state: PluginPanelState, t: BlueTranslate): string {
+  if (state.refreshing) return t('vetted snapshot · refreshing GitHub')
+  if (state.catalog.source === 'live') return t('catalog refreshed from GitHub')
+  return state.catalog.message === undefined ? t('vetted catalog snapshot') : t('offline · using vetted snapshot')
+}
+
+function pluginPanelModel(rows: readonly InstalledPluginRow[], state: PluginPanelState, t: BlueTranslate = passthrough): FrontendPanelDocument {
+  if (state.busy !== undefined) return { mode: 'loading', title: t('Plugins'), view: { kind: 'text', content: state.busy }, dismissible: false }
+  const installedNames = new Set(rows.map(row => row.packageName))
   return {
     mode: 'select',
-    title: 'Installed Plugins',
-    header: { kind: 'text', content: state.message ?? `${rows.length} installed · marketplace paused` },
-    items: rows.map(row => ({
-      id: row.packageName,
-      label: row.label,
-      detail: `v${row.installed} · ${row.state} · ${row.spec}`,
-      action: { kind: 'plugin.verify', row },
-      secondaryAction: { kind: 'plugin.uninstall', row },
-    })),
-    grouped: false,
+    title: t('Plugins'),
+    header: { kind: 'text', content: state.message ?? t('{installed} installed · {indexed} indexed · {status}', { installed: rows.length, indexed: state.catalog.entries.length, status: catalogStatus(state, t) }) },
+    items: [
+      ...rows.map(row => ({
+        id: `installed:${row.packageName}`,
+        label: row.label,
+        detail: `v${row.installed} · ${row.spec}`,
+        badge: installedStateLabel(row.state, t),
+        group: 'installed',
+        variantsFirst: true,
+        secondaryAction: { kind: 'plugin.uninstall', row },
+        variants: [
+          { id: 'verify', label: t('Verify'), action: { kind: 'plugin.verify', row } },
+          { id: 'remove', label: t('Remove'), action: { kind: 'plugin.uninstall', row } },
+        ],
+      })),
+      ...state.catalog.entries.map(entry => {
+        const installed = installedNames.has(entry.packageName)
+        const installSpec = entry.installSpec
+        const installable = installSpec !== undefined && !installed
+        return {
+          id: `catalog:${entry.repository}`,
+          label: entry.packageName,
+          detail: `v${entry.version} · ${entry.description}`,
+          badge: installed ? t('Installed') : catalogStateLabel(entry.state, t),
+          group: 'catalog',
+          variantsFirst: true,
+          variants: [
+            { id: 'details', label: t('Details'), action: { kind: 'plugin.catalog.details', entry } },
+            {
+              id: 'install',
+              label: installed ? t('Installed') : t('Install'),
+              disabled: !installable,
+              ...(installSpec !== undefined && !installed ? { action: { kind: 'plugin.catalog.install', entry, spec: installSpec } } : {}),
+            },
+          ],
+        }
+      }),
+    ],
+    grouped: true,
     includeAllGroup: false,
+    groups: ['installed', 'catalog'],
+    groupLabels: { installed: t('Installed'), catalog: t('Catalog') },
+    groupCounts: { installed: rows.length, catalog: state.catalog.entries.length },
+    emptyByGroup: {
+      installed: { title: t('No Blue plugins installed'), description: t('Open Catalog to inspect indexed plugins.') },
+      catalog: { title: t('No plugins indexed'), description: t('The vetted catalog snapshot is empty.') },
+    },
     filterable: true,
+  }
+}
+
+function catalogDetailModel(entry: PluginCatalogEntry, installed: boolean, t: BlueTranslate = passthrough): FrontendPanelDocument {
+  const installSpec = entry.installSpec
+  return {
+    mode: 'info',
+    title: entry.packageName,
+    header: { kind: 'text', content: entry.description },
+    view: {
+      kind: 'text',
+      content: [
+        `${t('Version')}      ${entry.version}`,
+        `${t('Status')}       ${installed ? t('Installed') : catalogStateLabel(entry.state, t)}`,
+        `${t('Reason')}       ${installed ? t('Already installed in this profile') : entry.reason}`,
+        `${t('Repository')}   ${entry.repositoryUrl}`,
+        `${t('Commit')}       ${entry.commit}`,
+        `${t('Capabilities')} ${entry.capabilities.join(', ') || t('none declared')}`,
+      ].join('\n'),
+    },
+    ...(installSpec !== undefined && !installed ? { submit: { kind: 'plugin.catalog.install', entry, spec: installSpec } } : {}),
   }
 }
 
@@ -260,10 +373,12 @@ function resolveVerificationTarget(target: string, rows: readonly InstalledPlugi
 
 /** Register `/plugin` and its local inventory/verification/profile operations. */
 export function registerPluginCommand(ctx: Context): () => void {
-  const dispose = ctx.commands.register({
+  const activePanels = new Set<() => void>()
+  const t = interactionTranslator(ctx)
+  const unregister = ctx.commands.register({
     name: 'plugin',
     description: 'Inspect, verify, install, and remove Blue plugins',
-    input: { hint: '[list|search|info|verify|install|remove] [package-or-path] · bare opens installed plugins' },
+    input: { hint: '[list|search|info|verify|install|remove] [package-or-path] · bare opens installed/catalog tabs' },
     handler: async invocation => {
       const input = invocation.rawInput.trim()
       const match = /^(\S+)(?:\s+([\s\S]*))?$/u.exec(input)
@@ -273,57 +388,113 @@ export function registerPluginCommand(ctx: Context): () => void {
         if (input === '' && displayServices(ctx) !== undefined) {
           const display = displayServices(ctx)!
           let rows = installedPlugins()
-          const state: { busy?: string, message?: string } = {}
+          const state: PluginPanelState = { catalog: bundledPluginCatalog(), refreshing: true }
+          const refreshAbort = new AbortController()
+          let live = true
           let restore: (() => void) | undefined
+          let restoreDetail: (() => void) | undefined
           let panel: CanonicalDocumentController
-          const close = (): void => { restore?.(); restore = undefined }
+          const closeDetail = (): void => { restoreDetail?.(); restoreDetail = undefined }
+          const close = (): void => {
+            if (!live) return
+            live = false
+            refreshAbort.abort()
+            closeDetail()
+            restore?.()
+            restore = undefined
+            activePanels.delete(close)
+          }
           const refresh = (): void => {
             rows = installedPlugins()
             panel.invalidate()
             display.screen.requestRender()
           }
-          const verify = async (row: InstalledPluginRow): Promise<void> => {
-            state.busy = `Verifying ${row.label}...`
+          const operate = async (busy: string, operation: () => Promise<string>): Promise<void> => {
+            if (!live) return
+            state.busy = busy
             panel.invalidate()
             display.screen.requestRender()
             try {
-              const report = await validatePackage(row.root)
-              state.message = validationText(report)
+              const result = await operation()
+              if (live) state.message = result
             } catch (error) {
-              state.message = `plugin operation failed: ${error instanceof Error ? error.message : String(error)}`
+              if (live) state.message = t('plugin operation failed: {message}', { message: error instanceof Error ? error.message : String(error) })
             } finally {
-              delete state.busy
-              refresh()
+              if (live) {
+                delete state.busy
+                refresh()
+              }
             }
           }
-          const uninstall = async (row: InstalledPluginRow): Promise<void> => {
-            state.busy = `Uninstalling ${row.label}...`
-            panel.invalidate()
-            display.screen.requestRender()
-            try {
-              const output = await runProfileCommand('remove', row.packageName)
-              state.message = `${output}\nuninstalled; restart Blue to apply`
-            } catch (error) {
-              state.message = `plugin operation failed: ${error instanceof Error ? error.message : String(error)}`
-            } finally {
-              delete state.busy
-              refresh()
-            }
+          const verify = (row: InstalledPluginRow): Promise<void> => operate(
+            t('Verifying {plugin}...', { plugin: row.label }),
+            async () => validationText(await validatePackage(row.root)),
+          )
+          const uninstall = (row: InstalledPluginRow): Promise<void> => operate(
+            t('Uninstalling {plugin}...', { plugin: row.label }),
+            async () => `${await runProfileCommand('remove', row.packageName)}\n${t('uninstalled; restart Blue to apply')}`,
+          )
+          const install = (entry: PluginCatalogEntry, spec: string): Promise<void> => {
+            closeDetail()
+            return operate(
+              t('Installing {plugin}...', { plugin: entry.packageName }),
+              async () => `${await runProfileCommand('add', spec)}\n${t('installed; restart Blue to apply, then run /plugin verify {plugin}', { plugin: entry.packageName })}`,
+            )
+          }
+          const details = (entry: PluginCatalogEntry): void => {
+            if (!live) return
+            const installed = rows.some(row => row.packageName === entry.packageName)
+            let detail: CanonicalDocumentController
+            detail = new CanonicalDocumentController({
+              keymap: display.keymap,
+              theme: display.theme,
+              components: display.components,
+              model: () => catalogDetailModel(entry, installed, t),
+              hint: installed || entry.installSpec === undefined ? t('Esc close') : t('Enter install · Esc close'),
+              onAction: actionValue => {
+                const selected = actionValue as Extract<PluginPanelAction, { readonly kind: 'plugin.catalog.install' }>
+                closeDetail()
+                void install(selected.entry, selected.spec)
+              },
+              onClose: closeDetail,
+            })
+            closeDetail()
+            restoreDetail = mountEditorReplacement(ctx, detail)
           }
           panel = new CanonicalDocumentController({
             keymap: display.keymap,
             theme: display.theme,
             components: display.components,
-            model: () => pluginPanelModel(rows, state),
-            hint: 'Enter verify · Alt+S uninstall · Esc close',
+            model: () => pluginPanelModel(rows, state, t),
+            hint: t('Tab pages · ↑↓ rows · ←→ action · Enter run · Alt+S remove · Esc close'),
+            showSelectedVariantInFooter: true,
             onAction: actionValue => {
-              const selected = actionValue as { readonly kind: 'plugin.verify' | 'plugin.uninstall', readonly row: InstalledPluginRow }
+              const selected = actionValue as PluginPanelAction
               if (selected.kind === 'plugin.verify') void verify(selected.row)
-              else void uninstall(selected.row)
+              else if (selected.kind === 'plugin.uninstall') void uninstall(selected.row)
+              else if (selected.kind === 'plugin.catalog.details') details(selected.entry)
+              else void install(selected.entry, selected.spec)
             },
             onClose: close,
           })
           restore = mountEditorReplacement(ctx, panel)
+          activePanels.add(close)
+          void pluginCommandEffects.refreshCatalog(refreshAbort.signal).then(
+            catalog => {
+              if (!live) return
+              state.catalog = catalog
+              state.refreshing = false
+              panel.invalidate()
+              display.screen.requestRender()
+            },
+            error => {
+              if (!live) return
+              state.refreshing = false
+              state.message = t('catalog refresh failed: {message}', { message: error instanceof Error ? error.message : String(error) })
+              panel.invalidate()
+              display.screen.requestRender()
+            },
+          )
           return { kind: 'success' } satisfies CommandResult
         }
 
@@ -331,7 +502,7 @@ export function registerPluginCommand(ctx: Context): () => void {
         if (action === 'list') {
           return {
             kind: 'success',
-            text: rows.map(row => `${row.packageName}@${row.installed} [${row.state}]`).join('\n') || 'no Blue plugins installed; marketplace is paused',
+            text: rows.map(row => `${row.packageName}@${row.installed} [${row.state}]`).join('\n') || 'no Blue plugins installed',
           } satisfies CommandResult
         }
         if (action === 'search') {
@@ -375,6 +546,13 @@ export function registerPluginCommand(ctx: Context): () => void {
       }
     },
   })
+  let disposed = false
+  const dispose = (): void => {
+    if (disposed) return
+    disposed = true
+    unregister()
+    for (const close of activePanels) close()
+  }
   ctx.effect(() => dispose)
   return dispose
 }
@@ -389,4 +567,6 @@ export const pluginCommandInternals = {
   validationText,
   runProfileCommand,
   validatePackage,
+  pluginPanelModel,
+  catalogDetailModel,
 }

@@ -208,12 +208,17 @@ tag 和 publication 各自需要后续授权。bundle 将 author kit 纳入安�
 `0.1.1-rc.2`/`0.1.1-rc.1` 上 `declared == executed`、无 skip/failure 且 cleanup；
 21 组中英文页面、链接和 catalog drift；193 个测试文件、逐文件 100% coverage、
 typecheck/lint/build/lib/pack/examples/diagram/Website gate，以及 happy/PTY/mouse/output
-四条 smoke。`/plugin` 已改为当前 profile 的本地 inventory/verify 和精确来源 mutation，
-修改仍委托 dsh profile owner 并要求重启，不热替换 live tree。
+四条 smoke。裸 `/plugin` 现为固定 Installed/Catalog 双标签：Installed 仍只读取当前
+profile，Catalog 从审核快照启动并后台刷新显式 GitHub 索引；只有 canonical 且兼容的
+条目可按解析出的 40 位 commit 安装，旧契约 `dsh-blue/blue-doudizhu` 显示 Needs
+migration 并禁装。verify、精确来源 mutation、离线快照、关闭/卸载后的迟到结果拒绝和
+20/40/80/120 宽度均有自动证据；修改仍委托 dsh profile owner 并要求重启，不热替换
+live tree。
 
-P6 没有在本批次启动：未创建 `blue-ecosystem-outreach`，未迁移或联系生态项目。
-Marketplace 构建仍强制 `--paused`，registry 数据、详情路由、卡片和提交入口继续关闭；
-P5 全绿不等于 protocol Stable、生态 conformance、市场解锁或 GitHub/npm 发布授权。
+P6 没有在本批次启动：未创建 `blue-ecosystem-outreach`，未迁移或联系生态项目。内置
+TUI Catalog 只是有界元数据索引，不是市场 Service；Marketplace 构建仍强制
+`--paused`，registry 数据、详情路由、卡片和提交入口继续关闭。P5 全绿不等于
+protocol Stable、生态 conformance、市场解锁或 GitHub/npm 发布授权。
 
 ## 6. R4：Stable 晋升
 

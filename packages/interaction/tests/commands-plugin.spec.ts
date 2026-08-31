@@ -26,6 +26,8 @@ import { DEFAULT_SETTINGS } from '../src/settings.ts'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
+import { pluginCommandInternals } from '../src/plugin-command.ts'
+import { bundledPluginCatalog } from '../src/plugin-catalog.ts'
 
 registerTempDirCleanup()
 
@@ -844,7 +846,7 @@ describe('blue-commands plugin', () => {
     const { ctx, agent, fiber } = await mount({ appExit: () => {} })
     expect((await ctx.commands.execute(agent, '/plugin list', [], signal()))?.result).toMatchObject({
       kind: 'success',
-      text: 'no Blue plugins installed; marketplace is paused',
+      text: 'no Blue plugins installed',
     })
     expect(fetch).not.toHaveBeenCalled()
     await fiber.dispose()
@@ -852,20 +854,27 @@ describe('blue-commands plugin', () => {
     vi.unstubAllEnvs()
   })
 
-  it('/plugin opens the installed-only panel while the marketplace stays paused', async () => {
+  it('/plugin opens Installed and the vetted Catalog while the Website Marketplace stays paused', async () => {
     const root = mkdtempTracked('blue-commands-plugin-panel-')
     const profile = join(root, 'profiles', 'blue')
     mkdirSync(profile, { recursive: true })
     writeFileSync(join(profile, 'package.json'), JSON.stringify({ private: true, dependencies: {} }))
     vi.stubEnv('DSH_HOME', root)
-    const { ctx, screen, agent } = await mount({ appExit: () => {} })
+    const refresh = vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(bundledPluginCatalog())
+    const { ctx, screen, agent, fiber } = await mount({ appExit: () => {}, locale: 'zh' })
     const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
     expect(execution?.result).toEqual({ kind: 'success' })
-    const panel = screen.overlays.at(-1)?.component as { render(width: number): string[] }
+    const panel = screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
     const output = panel.render(100).join('\n')
-    expect(output).toContain('Installed Plugins')
-    expect(output).toContain('0 installed · marketplace paused')
-    expect(output).not.toContain('‹ Available ›')
+    expect(output).toContain('插件')
+    expect(output).toContain('已安装')
+    expect(output).toContain('插件目录')
+    expect(output).toContain('已安装 0 · 已索引 1')
+    panel.handleInput(KEY.tab)
+    expect(panel.render(100).join('\n')).toContain('@dsh-blue/blue-doudizhu')
+    expect(panel.render(100).join('\n')).toContain('需要迁移')
+    await fiber.dispose()
+    refresh.mockRestore()
     vi.unstubAllEnvs()
   })
 })

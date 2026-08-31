@@ -94,7 +94,7 @@ owner-declined paths bypass public transforms.
 
 `commands-plugin.ts` registers the base command families and owns the tree-scoped alias registrations through `InteractionStateService.aliases`. Session navigation emits the app-owned switch request events; model/mode/preset/tool/skill/session-info operations call `blueSessionActions`. Read operations use readonly reader/projection values.
 
-The command-model service projects canonical commands into `CommandModel` values and executes only structured `command.execute` actions. Active executions receive owned abort controllers and resolve to no result after service disposal. Model/effort, trace, update, plugin, and session documents now build `BlueUiNode` trees through `CanonicalDocumentController`; the frontend `PanelModel` facade has been removed. Async command state invalidates the mounted controller only after generation/session fences accept the result, and loading snapshots do not reset grouped-tab selection. List-item variants render as one horizontal bracketed selector row, with Left/Right moving the selected variant; only that variant carries canonical `accent`/`strong` detail semantics. `/effort` uses this path and only displays levels supplied by provider metadata.
+The command-model service projects canonical commands into `CommandModel` values and executes only structured `command.execute` actions. Active executions receive owned abort controllers and resolve to no result after service disposal. Model/effort, trace, update, plugin, and session documents now build `BlueUiNode` trees through `CanonicalDocumentController`; the frontend `PanelModel` facade has been removed. Async command state invalidates the mounted controller only after generation/session fences accept the result, and loading snapshots do not reset grouped-tab selection. List-item variants render as one horizontal bracketed selector row, with Left/Right moving the selected variant; only that variant carries canonical `accent`/`strong` detail semantics. Filterable documents reserve every printable character, including `q`, for the query, so their footer advertises Escape as the sole close key. `/effort` uses this path and only displays levels supplied by provider metadata.
 
 `session-export.ts` has two deliberate paths. Readable export/copy use the official `blueConversation` projection after flushing and reading the durable artifact; full export decodes the raw append-only artifact for audit fidelity. No display command may introduce a new event fold.
 
@@ -213,19 +213,34 @@ and call `registerTempDirCleanup()` at module scope. This is required for
 eager `afterAll` cleanup when Vitest reuses a worker; the helper's process-exit
 hook is only the recovery path for an interrupted worker.
 
-`blue-commands` also owns `/plugin`. P5 removes the old registry from the
-runtime: inventory is derived only from current-profile dependencies whose
-installed package exposes `package.json.blue.manifest`. The bare command opens
-an installed-only panel with compatibility state, real static verification,
-and profile-owner uninstall; there is no Available/marketplace page. Direct
-install accepts existing local paths/tarballs, exact npm versions, or GitHub
-sources pinned to a full 40-character commit. Local directories must pass the
-published `@dsh-blue/blue-plugin-kit` validator before `dsh plugin` is invoked;
-they are normalized to pnpm `file:` installs so the profile materializes their
-declared dependency closure instead of retaining a dependency-blind source
-symlink. Source changes therefore require another install before restart.
-all mutations report that restart is required and never replace the live
-Cordis tree. `BLUE_GITHUB_PROXY` may rewrite only already-pinned GitHub sources.
+`blue-commands` also owns `/plugin`. P5 removes the old marketplace registry
+from runtime authority: the fixed Installed tab derives only from
+current-profile dependencies whose package exposes
+`package.json.blue.manifest`. Its rows carry compatibility state plus explicit
+Verify/Remove variants. The fixed Catalog tab starts from a release-vetted,
+immutable snapshot of an explicit repository list and refreshes bounded GitHub
+metadata in the background; close/unload aborts the fetch and both fulfill and
+reject continuations carry a live fence. A failed refresh retains the bundled
+snapshot. No repository code is imported or executed while indexing. Only a
+canonical P1 manifest compatible with the current API/Blue/Harness/Node lines
+receives an Install variant, and its source is pinned to the resolved full
+40-character commit. Legacy `dsh-blue/blue-doudizhu` is therefore visible as
+Needs migration with Details available and Install disabled. This TUI catalog
+is not the paused Website Marketplace and does not start P6 outreach or
+migration.
+
+Direct install accepts existing local paths/tarballs, exact npm versions, or
+GitHub sources pinned to a full 40-character commit. Local directories must
+pass the published `@dsh-blue/blue-plugin-kit` validator before `dsh plugin` is
+invoked; they are normalized to pnpm `file:` installs so the profile
+materializes their declared dependency closure instead of retaining a
+dependency-blind source symlink. Source changes therefore require another
+install before restart. All mutations report that restart is required and
+never replace the live Cordis tree. `BLUE_GITHUB_PROXY` may rewrite only
+already-pinned GitHub sources. Plugin tab selection survives async loading;
+rows use action-first variants so actions remain visible before long metadata,
+and the selected action is repeated in the footer when list details disappear
+at 40 columns or below.
 
 The parent interaction Fiber also mounts `blue-plugin-author-environment` as a
 child that waits for the official Harness `shellEnv` registry. It contributes

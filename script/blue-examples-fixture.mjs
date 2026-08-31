@@ -84,6 +84,7 @@ async function scenario(name, run) {
 
 const packageDirs = [
   'packages/api',
+  'packages/plugin-kit',
   'packages/ui',
   'packages/frontend',
   'packages/harness-adapter',

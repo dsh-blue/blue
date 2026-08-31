@@ -63,17 +63,21 @@ third-party npm/GitHub code.
 
 ## Installation and creative mode
 
-The running `/plugin` command scans only installed packages in the current
-profile that declare `package.json.blue.manifest`. It exposes local
-`list/search/info/verify` with compatible/incompatible/invalid state. Install
-accepts only an existing local path/tarball, an exact npm `package@version`, or
-a GitHub source pinned to a full 40-character commit. Install/remove delegates
-to the dsh profile owner and activates only after restart; it never replaces
-the live tree.
+Bare `/plugin` opens Installed and Catalog tabs. Installed scans only packages
+in the current profile that declare `package.json.blue.manifest` and exposes
+Verify/Remove actions with compatible/incompatible/invalid state. Catalog opens
+from a vetted bundled snapshot, then refreshes an explicit GitHub index in the
+background. Only a canonical compatible manifest receives an Install action,
+pinned to the resolved full commit; legacy entries remain inspectable with
+Install disabled. Local `list/search/info/verify` and direct install still
+accept only an existing local path/tarball, an exact npm `package@version`, or
+a full-commit GitHub source. Install/remove delegates to the dsh profile owner
+and activates only after restart; it never replaces the live tree.
 
 Creative mode retains inspect/define/run/update/stop/rollback for ephemeral
 prototypes. After acceptance, the formal `blue-plugin-development` skill first
 requires an explicit ephemeral/local/GitHub/npm outcome. The local path closes
 the deterministic `catalog -> create -> validate -> dual conformance` loop.
 Prototype acceptance never authorizes a repository, commit, tag, or npm
-release. The marketplace remains paused and is not part of these local paths.
+release. The TUI Catalog is not the Website Marketplace: marketplace cards,
+routes, and submissions remain paused.

@@ -25,6 +25,6 @@
 │mock                                                                          │
 │ → mock/Mock — ← current [Low] [High]                                         │
 │   mock/Mock Pro — [Low] [High]                                               │
-│Enter choose · Esc / q close                                                  │
+│Enter choose · Esc close                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  mock  «cwd»

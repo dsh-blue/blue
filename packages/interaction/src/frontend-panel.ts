@@ -20,17 +20,21 @@ const PAGE_SCROLL = 10
 const DEFAULT_MAX_VISIBLE = 20
 
 /** One action-bearing variant of a canonical panel row. */
-export interface FrontendPanelVariant { readonly id: string, readonly label: string, readonly action?: Action, readonly secondaryAction?: Action }
+export interface FrontendPanelVariant { readonly id: string, readonly label: string, readonly disabled?: boolean, readonly action?: Action, readonly secondaryAction?: Action }
+/** One empty state selected by the active document group. */
+export interface FrontendPanelEmptyState { readonly title: string, readonly description?: string }
 /** One action-bearing canonical panel row. */
 export interface FrontendPanelItem {
   readonly id: string
   readonly label: string
   readonly detail?: string
+  readonly badge?: string
   readonly disabled?: boolean
   readonly action?: Action
   readonly secondaryAction?: Action
   readonly group?: string
   readonly variants?: readonly FrontendPanelVariant[]
+  readonly variantsFirst?: boolean
   readonly selectedVariantId?: string
 }
 /** Renderer-neutral interaction document compiled to one canonical node. */
@@ -45,6 +49,10 @@ export interface FrontendPanelDocument {
   readonly grouped?: boolean
   readonly includeAllGroup?: boolean
   readonly groups?: readonly string[]
+  readonly groupLabels?: Readonly<Record<string, string>>
+  readonly groupCounts?: Readonly<Record<string, number>>
+  readonly empty?: FrontendPanelEmptyState
+  readonly emptyByGroup?: Readonly<Record<string, FrontendPanelEmptyState>>
   readonly submit?: Action
   readonly cancel?: Action
   readonly dismissible?: boolean
@@ -61,6 +69,7 @@ export interface FrontendPanelOptions {
   readonly onUnhandledInput?: (data: string, selectedId: string | undefined) => Action | undefined
   readonly maxVisible?: number
   readonly hint?: string
+  readonly showSelectedVariantInFooter?: boolean
 }
 
 /** Canonical panel controller preserving the former panel interaction set. */
@@ -70,6 +79,7 @@ export class CanonicalDocumentController implements BlueFocusable {
   private selectedId: string | undefined
   private query = ''
   private group = 0
+  private groupId: string | undefined
   private readonly selectedVariants = new Map<string, string>()
 
   constructor(private readonly options: FrontendPanelOptions) {
@@ -128,9 +138,14 @@ export class CanonicalDocumentController implements BlueFocusable {
     }
     else if (model.items !== undefined) {
       const groups = this.groups(model)
+      const activeGroup = this.activeGroup(groups)
       if (model.grouped === true && groups.length > 1) children.push({
-        kind: 'tabs', id: 'frontend-panel-groups', activeId: groups[this.group] ?? groups[0]!,
-        items: groups.map(group => ({ id: group, label: group })),
+        kind: 'tabs', id: 'frontend-panel-groups', activeId: activeGroup,
+        items: groups.map(group => ({
+          id: group,
+          label: model.groupLabels?.[group] ?? group,
+          ...(model.groupCounts?.[group] === undefined ? {} : { count: model.groupCounts[group] }),
+        })),
       })
       const items = this.filteredItems(model)
       const maxVisible = Math.max(5, this.options.maxVisible ?? DEFAULT_MAX_VISIBLE)
@@ -146,24 +161,27 @@ export class CanonicalDocumentController implements BlueFocusable {
         items: items.slice(this.scrollTop, this.scrollTop + maxVisible).map(item => ({
           id: item.id, label: item.label,
           ...(item.variants === undefined ? (item.detail === undefined ? {} : { detail: item.detail }) : { detailSpans: this.itemDetailSpans(item, item.variants) }),
+          ...(item.badge === undefined ? {} : { badge: item.badge }),
           ...(item.group === undefined ? {} : { group: item.group }),
           ...(item.disabled === true ? { disabled: true } : {}),
         })),
-        ...(items.length === 0 ? { empty: {
-          kind: 'empty', title: 'no matches',
-          ...(this.query === '' ? {} : { description: `/ ${this.query}` }),
-        } as const } : {}),
+        ...(items.length === 0 ? { empty: this.emptyNode(model, activeGroup) } : {}),
       })
     } else if (model.view !== undefined) children.push(model.view)
     else children.push({ kind: 'empty', title: model.mode === 'error' ? 'unavailable' : 'no content' })
     const hasAction = model.mode === 'select'
       ? this.selectedAction(model, false) !== undefined || model.submit !== undefined
       : model.submit !== undefined
-    const defaultHint = model.dismissible === false ? 'updating - do not close' : model.mode === 'loading' ? 'Esc / q to cancel' : hasAction ? 'Enter choose · Esc / q close' : 'Esc / q close'
+    const selectedVariant = model.mode === 'select' && this.options.showSelectedVariantInFooter === true
+      ? this.selectedVariant(this.selectedItem(model))
+      : undefined
+    const closeHint = model.filterable === true ? 'Esc close' : 'Esc / q close'
+    const defaultHint = model.dismissible === false ? 'updating - do not close' : model.mode === 'loading' ? 'Esc / q to cancel' : hasAction ? `Enter choose · ${closeHint}` : closeHint
+    const variantHint = selectedVariant === undefined ? undefined : `${selectedVariant.label} selected`
     return {
       kind: 'surface', chrome: 'overlay', title: model.title,
       child: { kind: 'stack', direction: 'column', gap: 1, children: children.map(node => ({ node })) },
-      footer: { kind: 'text', content: [defaultHint, this.options.hint].filter(Boolean).join(' · '), tone: model.mode === 'error' ? 'danger' : 'muted' },
+      footer: { kind: 'text', content: [variantHint, defaultHint, this.options.hint].filter(Boolean).join(' · '), tone: model.mode === 'error' ? 'danger' : 'muted' },
     }
   }
 
@@ -183,10 +201,19 @@ export class CanonicalDocumentController implements BlueFocusable {
 
   private filteredItems(model: FrontendPanelDocument): readonly FrontendPanelItem[] {
     const groups = this.groups(model)
-    if (this.group >= groups.length) this.group = 0
-    const activeGroup = groups[this.group]
+    const activeGroup = this.activeGroup(groups)
     return (model.items ?? []).filter(item => (activeGroup === 'All' || item.group === activeGroup)
       && (this.query === '' || this.options.components.fuzzyMatch(this.query, `${item.label} ${item.detail ?? ''}`).matches))
+  }
+
+  private emptyNode(model: FrontendPanelDocument, group: string): BlueUiNode {
+    if (this.query !== '') return { kind: 'empty', title: 'no matches', description: `/ ${this.query}` }
+    const empty = model.emptyByGroup?.[group] ?? model.empty ?? { title: 'no matches' }
+    return {
+      kind: 'empty',
+      title: empty.title,
+      ...(empty.description === undefined ? {} : { description: empty.description }),
+    }
   }
 
   private selectable(model: FrontendPanelDocument): readonly FrontendPanelItem[] { return this.filteredItems(model).filter(item => item.disabled !== true) }
@@ -215,7 +242,7 @@ export class CanonicalDocumentController implements BlueFocusable {
   }
 
   private selectedVariant(item: FrontendPanelItem | undefined): FrontendPanelVariant | undefined {
-    const variants = item?.variants
+    const variants = item?.variants?.filter(variant => variant.disabled !== true)
     if (item === undefined || variants === undefined || variants.length === 0) return undefined
     const selected = this.selectedVariants.get(item.id) ?? item.selectedVariantId
     const variant = variants.find(entry => entry.id === selected) ?? variants[0]!
@@ -225,7 +252,7 @@ export class CanonicalDocumentController implements BlueFocusable {
 
   private moveVariant(model: FrontendPanelDocument, delta: -1 | 1): void {
     const item = this.selectedItem(model)
-    const variants = item?.variants
+    const variants = item?.variants?.filter(variant => variant.disabled !== true)
     if (item === undefined || variants === undefined || variants.length === 0) return
     const current = this.selectedVariant(item)
     const index = Math.max(0, variants.findIndex(variant => variant.id === current?.id))
@@ -235,12 +262,40 @@ export class CanonicalDocumentController implements BlueFocusable {
   private moveGroup(model: FrontendPanelDocument, delta: -1 | 1): void {
     const groups = this.groups(model)
     if (groups.length <= 1) return
-    this.group = (this.group + delta + groups.length) % groups.length
+    const current = groups.indexOf(this.activeGroup(groups))
+    this.group = (current + delta + groups.length) % groups.length
+    this.groupId = groups[this.group]
     this.reseedSelection(model)
+  }
+
+  private activeGroup(groups: readonly string[]): string {
+    if (this.groupId !== undefined) {
+      const index = groups.indexOf(this.groupId)
+      if (index >= 0) {
+        this.group = index
+        return this.groupId
+      }
+      this.group = 0
+    } else if (this.group >= groups.length) this.group = 0
+    const active = groups[this.group]!
+    this.groupId = active
+    return active
   }
 
   private itemDetailSpans(item: FrontendPanelItem, variants: readonly FrontendPanelVariant[]): readonly BlueInlineSpan[] {
     const selected = this.selectedVariant(item)
+    if (item.variantsFirst === true) {
+      const spans: BlueInlineSpan[] = variants.map((variant, index) => {
+        const active = variant.id === selected?.id
+        return {
+          text: `${index === 0 ? '' : ' '}[${variant.label}]`,
+          tone: active ? 'accent' : 'muted',
+          ...(active ? { emphasis: 'strong' as const } : {}),
+        }
+      })
+      if (item.detail !== undefined) spans.push({ text: ` · ${item.detail}` })
+      return spans
+    }
     const spans: BlueInlineSpan[] = item.detail ? [{ text: item.detail }] : []
     for (const variant of variants) {
       const active = variant.id === selected?.id
@@ -275,7 +330,7 @@ export class CanonicalDocumentController implements BlueFocusable {
       if (action !== undefined) void this.options.onAction(action)
     } else if (event.kind === 'tab-change' && event.controlId === 'frontend-panel-groups') {
       const index = this.groups(model).indexOf(event.tabId)
-      if (index >= 0) { this.group = index; this.reseedSelection(model); this.adapter.invalidate() }
+      if (index >= 0) { this.group = index; this.groupId = event.tabId; this.reseedSelection(model); this.adapter.invalidate() }
     }
   }
 }

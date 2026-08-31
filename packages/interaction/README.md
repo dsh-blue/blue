@@ -20,13 +20,19 @@ Public `editor.extensions` contributions can add passive rows, hints, diagnostic
 
 Built-in command families cover project init (`/init`), session navigation and rewind, help, themes, models and reasoning effort, providers, permissions and presets, modes, status/context/version/changelog, export/copy, tools, skills, MCP, trace, settings, and profile updates. The effort panel presents the provider's available levels in one horizontal bracketed row and moves the highlight with Left/Right. Commands read immutable snapshots and invoke `blueSessionActions`; they do not fold session events or mutate Harness objects.
 
-`/plugin` is local-first while the marketplace remains paused. Bare `/plugin`
-shows only profile dependencies that publish a canonical Blue manifest, with
-compatible/incompatible/invalid state. `/plugin verify <package-or-directory>`
-runs the published static validator. Installs accept an existing local path or
-tarball, an exact npm `package@version`, or a GitHub source pinned to a full
-commit; mutations are delegated to `dsh plugin` and require a restart rather
-than replacing the live tree.
+Bare `/plugin` opens two fixed tabs. **Installed** inventories current-profile
+dependencies that publish a Blue manifest, with compatible/incompatible/invalid
+state and Verify/Remove actions. **Catalog** opens immediately from a vetted
+bundled snapshot, then refreshes its explicit GitHub index in the background;
+an offline refresh keeps the snapshot. Catalog metadata is inert and only a
+canonical compatible manifest receives an Install action pinned to the resolved
+40-character commit. Legacy entries such as `dsh-blue/blue-doudizhu` remain
+inspectable as Needs migration with Install disabled. `/plugin verify
+<package-or-directory>` runs the published static validator. Direct installs
+still accept only an existing local path/tarball, an exact npm
+`package@version`, or a full-commit GitHub source. All mutations delegate to
+`dsh plugin`, require restart, and never replace the live tree. This TUI catalog
+does not reopen the separately paused Website Marketplace.
 
 Dialogs replace the editor slot and compile the same renderer-neutral Blue UI nodes used by plugin surfaces. Help/info windows, lists, forms, settings, questions, approvals, models, loading states, and plan review therefore share core-owned chrome, focus, semantic paint, and narrow-width containment. Question and approval work is Fiber-bound, abort-aware, and rejects late completion after unload or session changes. Third-party renderer-neutral commands, notifications, and editor extensions enter through `./plugin-host-bridge`, which advertises those capabilities only while its owner Fiber is active and restores retained definitions after replacement. Its private owner lease fences command dispatch and both fulfilled/rejected settlement, editor callbacks, and notification observation by generation; retained stale handlers never invoke plugin code. Notification observer failures are isolated from sibling observers and from the publisher result.
 

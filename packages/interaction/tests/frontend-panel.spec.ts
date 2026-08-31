@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CanonicalDocumentController, type FrontendPanelDocument } from '../src/frontend-panel.ts'
 import { fakeBlueContext, KEY } from './fakes.ts'
 
-function fixture(initial?: FrontendPanelDocument, options: { hint?: string, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
+function fixture(initial?: FrontendPanelDocument, options: { hint?: string, showSelectedVariantInFooter?: boolean, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
   const display = fakeBlueContext()
   let model: FrontendPanelDocument = initial ?? { mode: 'info', title: 'Fixture', view: { kind: 'text', content: 'body' }, submit: { kind: 'refresh' } }
   const onAction = vi.fn()
@@ -12,6 +12,7 @@ function fixture(initial?: FrontendPanelDocument, options: { hint?: string, onUn
   const panel = new CanonicalDocumentController({
     ...display, model: () => model, onAction, onClose, maxVisible: 5,
     ...(options.hint === undefined ? {} : { hint: options.hint }),
+    ...(options.showSelectedVariantInFooter === undefined ? {} : { showSelectedVariantInFooter: options.showSelectedVariantInFooter }),
     ...(options.onUnhandledInput === undefined ? {} : { onUnhandledInput: options.onUnhandledInput }),
   })
   return { panel, onAction, onClose, setModel(next: FrontendPanelDocument) { model = next; panel.invalidate() } }
@@ -26,6 +27,7 @@ describe('CanonicalDocumentController', () => {
     expect(active.onAction).toHaveBeenCalledWith({ kind: 'refresh' })
     active.panel.invalidate()
     const passive = fixture({ mode: 'info', title: 'Passive' })
+    passive.panel.handleInput('x')
     passive.panel.handleInput(KEY.enter)
     expect(passive.onClose).toHaveBeenCalledOnce()
   })
@@ -52,6 +54,7 @@ describe('CanonicalDocumentController', () => {
     value.panel.handleInput('z')
     expect(value.panel.render(40).join('\n')).toContain('/ z')
     expect(value.panel.render(40).join('\n')).toContain('no matches')
+    expect(value.panel.currentNode()).toMatchObject({ footer: { content: 'Esc close' } })
     value.panel.handleInput(KEY.escape)
     expect(value.onClose).not.toHaveBeenCalled()
     expect(value.panel.render(40).join('\n')).not.toContain('/ z')
@@ -101,6 +104,46 @@ describe('CanonicalDocumentController', () => {
     expect(groupsOnly.panel.render(80).join('\n')).toContain('Two')
   })
 
+  it('renders named counted tabs, group empty states, badges, and disabled variants', () => {
+    const value = fixture({
+      mode: 'select', title: 'Plugins', grouped: true, includeAllGroup: false,
+      groups: ['installed', 'catalog'],
+      groupLabels: { installed: 'Installed', catalog: 'Catalog' },
+      groupCounts: { installed: 1, catalog: 0 },
+      empty: { title: 'nothing here' },
+      emptyByGroup: { catalog: { title: 'catalog unavailable', description: 'offline' } },
+      items: [{
+        id: 'a', label: 'Alpha', badge: 'ready', group: 'installed', detail: 'v1', variantsFirst: true,
+        variants: [
+          { id: 'verify', label: 'Verify', action: { kind: 'verify' } },
+          { id: 'remove', label: 'Remove', disabled: true, action: { kind: 'remove' } },
+        ],
+      }],
+    }, { showSelectedVariantInFooter: true })
+    const node = value.panel.currentNode()
+    if (node.kind !== 'surface' || node.child.kind !== 'stack') throw new Error('expected panel surface')
+    expect(node.child.children.map(child => child.node).find(child => child.kind === 'tabs')).toEqual({
+      kind: 'tabs', id: 'frontend-panel-groups', activeId: 'installed',
+      items: [{ id: 'installed', label: 'Installed', count: 1 }, { id: 'catalog', label: 'Catalog', count: 0 }],
+    })
+    expect(extractList(node).items[0]).toMatchObject({ badge: 'ready' })
+    expect(extractList(node).items[0]!.detailSpans).toEqual([
+      { text: '[Verify]', tone: 'accent', emphasis: 'strong' },
+      { text: ' [Remove]', tone: 'muted' },
+      { text: ' · v1' },
+    ])
+    expect(node.footer).toMatchObject({ content: expect.stringContaining('Verify selected') })
+    value.panel.handleInput(KEY.right)
+    value.panel.handleInput(KEY.enter)
+    expect(value.onAction).toHaveBeenCalledWith({ kind: 'verify' })
+    value.panel.handleInput(KEY.tab)
+    expect(value.panel.render(80).join('\n')).toContain('catalog unavailable')
+    expect(value.panel.render(80).join('\n')).toContain('offline')
+
+    value.setModel({ mode: 'select', title: 'Empty', grouped: true, includeAllGroup: false, groups: ['installed'], empty: { title: 'nothing here' }, items: [] })
+    expect(value.panel.render(80).join('\n')).toContain('nothing here')
+  })
+
   it('bounds long lists, supports page/top/end keys, and custom input', () => {
     const shortcut = vi.fn(() => ({ kind: 'shortcut' as const }))
     const value = fixture({
@@ -119,6 +162,24 @@ describe('CanonicalDocumentController', () => {
     expect(value.panel.render(40).join('\n')).toContain('working')
     value.setModel({ mode: 'error', title: 'Failed', view: { kind: 'text', content: 'down' } })
     expect(value.panel.render(40).join('\n')).toContain('down')
+
+    const structured = fixture({ mode: 'loading', title: 'Structured', view: { kind: 'divider', label: 'waiting' } })
+    expect(structured.panel.currentNode()).toMatchObject({
+      child: { children: [{ node: { kind: 'loader' } }, { node: { kind: 'divider', label: 'waiting' } }] },
+    })
+
+    const groupedModel: FrontendPanelDocument = {
+      mode: 'select', title: 'Stable tab', grouped: true, includeAllGroup: false, groups: ['installed', 'catalog'],
+      items: [{ id: 'i', label: 'Installed', group: 'installed' }, { id: 'c', label: 'Catalog', group: 'catalog' }],
+    }
+    const grouped = fixture(groupedModel, { showSelectedVariantInFooter: true })
+    grouped.panel.handleInput(KEY.tab)
+    grouped.setModel({ mode: 'loading', title: 'Stable tab', dismissible: false })
+    grouped.panel.render(80)
+    grouped.setModel(groupedModel)
+    const groupedNode = grouped.panel.currentNode()
+    if (groupedNode.kind !== 'surface' || groupedNode.child.kind !== 'stack') throw new Error('expected grouped surface')
+    expect(groupedNode.child.children.map(child => child.node).find(node => node.kind === 'tabs')).toMatchObject({ activeId: 'catalog' })
   })
 
   it('maps compiler list, tab, and Escape events through the canonical adapter', () => {
@@ -163,6 +224,9 @@ describe('CanonicalDocumentController', () => {
     expect(error.panel.render(40).join('\n')).toContain('unavailable')
     const loading = fixture({ mode: 'loading', title: 'Loading' })
     expect(loading.panel.currentNode()).toMatchObject({ footer: { content: 'Esc / q to cancel' } })
+
+    const detailed = fixture({ mode: 'select', title: 'Detail', items: [{ id: 'a', label: 'A', detail: 'description' }] })
+    expect(extractList(detailed.panel.currentNode()).items[0]).toMatchObject({ detail: 'description' })
   })
 
   it('clamps scrolling, resets stale groups, and tolerates missing variants and events', () => {
@@ -185,11 +249,20 @@ describe('CanonicalDocumentController', () => {
     grouped.panel.handleInput(KEY.tab)
     grouped.panel.handleInput(KEY.left)
 
+    const outOfRange = fixture({ mode: 'select', title: 'Clamp', items: [{ id: 'a', label: 'A' }] })
+    const outOfRangeState = outOfRange.panel as unknown as { group: number }
+    outOfRangeState.group = 99
+    expect(extractList(outOfRange.panel.currentNode()).items).toHaveLength(1)
+
     const variant = fixture({ mode: 'select', title: 'Variant', items: [{ id: 'a', label: 'A', selectedVariantId: 'missing', variants: [{ id: 'only', label: 'Only' }] }] })
     variant.panel.currentNode()
     variant.panel.handleInput('\x1bs')
     const emptyVariants = fixture({ mode: 'select', title: 'No variants', items: [{ id: 'a', label: 'A', variants: [] }] })
     expect(extractList(emptyVariants.panel.currentNode()).items[0]!.detailSpans).toEqual([])
+    const variantsFirst = fixture({ mode: 'select', title: 'First', items: [{ id: 'a', label: 'A', variantsFirst: true, variants: [{ id: 'only', label: 'Only' }] }] })
+    expect(extractList(variantsFirst.panel.currentNode()).items[0]!.detailSpans).toEqual([
+      { text: '[Only]', tone: 'accent', emphasis: 'strong' },
+    ])
 
     const events = variant.panel as unknown as { onEvent(event: { kind: string, controlId: string, value?: unknown, tabId?: string }): void }
     events.onEvent({ kind: 'activate', controlId: 'other' })
