@@ -13,8 +13,14 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 
 // 每张图的唯一正典 .mmd 与它嵌入的目标文件（嵌入块一律生成，勿手改）。
+// 值为数组时所有目标共享同名 .mmd；值为对象时按目标文件指定 .mmd 源
+// （README.md 用英文图，中文文档用中文图）。
 const DIAGRAMS = {
-  'blue-layers': ['README.md', 'README.zh.md', 'docs/blue-architecture.md'],
+  'blue-layers': {
+    'README.md': 'blue-layers.en',
+    'README.zh.md': 'blue-layers.zh',
+    'docs/blue-architecture.md': 'blue-layers.zh',
+  },
   'blue-composition': [
     'docs/blue-architecture.md',
     'website/plugins/builtins.md',
@@ -25,20 +31,23 @@ const DIAGRAMS = {
 const check = process.argv.includes('--check')
 let failures = 0
 
-for (const [name, targets] of Object.entries(DIAGRAMS)) {
-  const source = `docs/diagrams/${name}.mmd`
-  const mermaid = readFileSync(source, 'utf8').replace(/\s+$/, '')
-  const fence = '```' + 'mermaid'
-  const block =
-    `<!-- BEGIN diagram:${name} -->\n` +
-    `<!-- single source 单一来源: ${source} — edit the .mmd, then \`pnpm run diagrams:sync\` -->\n` +
-    `${fence}\n${mermaid}\n${fence.slice(0, 3)}\n` +
-    `<!-- END diagram:${name} -->`
-
+for (const [name, mapping] of Object.entries(DIAGRAMS)) {
+  const targets = Array.isArray(mapping)
+    ? mapping.map(file => [file, name])
+    : Object.entries(mapping)
   const begin = `<!-- BEGIN diagram:${name} -->`
   const end = `<!-- END diagram:${name} -->`
 
-  for (const file of targets) {
+  for (const [file, sourceName] of targets) {
+    const source = `docs/diagrams/${sourceName}.mmd`
+    const mermaid = readFileSync(source, 'utf8').replace(/\s+$/, '')
+    const fence = '```' + 'mermaid'
+    const block =
+      `${begin}\n` +
+      `<!-- single source 单一来源: ${source} — edit the .mmd, then \`pnpm run diagrams:sync\` -->\n` +
+      `${fence}\n${mermaid}\n${fence.slice(0, 3)}\n` +
+      end
+
     const text = readFileSync(file, 'utf8')
     const i = text.indexOf(begin)
     const j = text.indexOf(end)
@@ -54,7 +63,7 @@ for (const [name, targets] of Object.entries(DIAGRAMS)) {
       failures++
     } else {
       writeFileSync(file, updated)
-      console.log(`→ ${file}: synced ${name}`)
+      console.log(`→ ${file}: synced ${name} from ${source}`)
     }
   }
 }
