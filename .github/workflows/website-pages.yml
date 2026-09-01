@@ -14,14 +14,9 @@ on:
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
+  # Branch protection requires Build check (PR) for every pull request, so
+  # this event must not be path-filtered.
   pull_request:
-    paths:
-      - .github/workflows/website-pages.yml
-      - website/**
-      - script/marketplace-fetch.mjs
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
   # 保留每日重建节奏以同步收录仓数据；marketplace 仓 merge 后也会通过
   # workflow_dispatch 触发本流程（跨仓 PAT 触发，见收录指南）。
   schedule:
