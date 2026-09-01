@@ -194,7 +194,8 @@ export class ChildAttachView implements BlueFocusable {
   focused = false
   private readonly transcript: TranscriptModelComponent
   private model: TranscriptModel
-  private watermark = -1
+  /** Per-key delivery watermarks: a push or cut seeds a key only past its last applied seq. */
+  private readonly watermarks = new Map<string, number>()
   private running = false
   private tokens: number | undefined
   private settledMs: number | undefined
@@ -249,15 +250,20 @@ export class ChildAttachView implements BlueFocusable {
         this.invalidate()
         return
       }
-      this.watermark = cut.value.asOfSeq
-      this.applyValue('blueConversation', cut.value.values['blueConversation'])
-      this.applyValue('blueConversationFacts', cut.value.values['blueConversationFacts'])
-      this.applyValue('subagentTiming', cut.value.values['subagentTiming'])
+      // Live pushes that landed while the cut was in flight may already carry
+      // newer per-key state: seed only the keys the cut actually advances, so
+      // a stale resolution neither rewinds a key's watermark nor clobbers the
+      // model built from pushes.
+      for (const key of ATTACH_PROJECTION_KEYS) {
+        if (cut.value.asOfSeq <= (this.watermarks.get(key) ?? -1)) continue
+        this.watermarks.set(key, cut.value.asOfSeq)
+        this.applyValue(key, cut.value.values[key])
+      }
       this.invalidate()
     }, () => {})
     this.offChild = this.options.projections.subscribeChild(this.childId, (key, value, seq) => {
-      if (this.disposed || seq <= this.watermark) return
-      this.watermark = seq
+      if (this.disposed || seq <= (this.watermarks.get(key) ?? -1)) return
+      this.watermarks.set(key, seq)
       this.applyValue(key, value)
       this.invalidate()
     })

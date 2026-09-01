@@ -548,6 +548,34 @@ describe('ChildAttachView through the service', () => {
     harness.service.close()
   })
 
+  it('a cut resolving behind live pushes neither clobbers the model nor rewinds the watermark', async () => {
+    const harness = await mount({
+      cut: {
+        asOfSeq: 2,
+        values: {
+          blueConversation: conversation('stale cut', 2),
+          blueConversationFacts: { epochTokens: 512 },
+        },
+      },
+    })
+    harness.service.open(continuable)
+    const panel = attachPanel(harness)
+    // A push lands synchronously while the cut's promise is still in flight.
+    harness.push('c1', 'blueConversation', conversation('fresh push', 5), 5)
+    await vi.waitFor(() => {
+      expect(plain(panel.component.render(80)).some(row => row.includes('fresh push'))).toBe(true)
+    })
+    // The late cut must not restore its older conversation state, while keys
+    // no push covered still seed from it (per-key watermarks).
+    const rows = plain(panel.component.render(80))
+    expect(rows.some(row => row.includes('stale cut'))).toBe(false)
+    expect(rows[0]).toContain('512 tok')
+    // And an in-between seq stays stale after the cut resolved.
+    harness.push('c1', 'blueConversation', conversation('stale reply', 3), 3)
+    expect(plain(panel.component.render(80)).some(row => row.includes('stale reply'))).toBe(false)
+    harness.service.close()
+  })
+
   it('surfaces a failed initial cut in the footer and swallows a rejecting one', async () => {
     const failing = await mount()
     failing.cutError = true

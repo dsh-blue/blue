@@ -175,6 +175,7 @@ export async function resetBlueModuleState(): Promise<void> {
 export interface BlueTree {
   ctx: Context
   sessionReader: Context['blueSessionReader']
+  sessionProjections: Context['blueSessionProjections']
   sessionActions: Context['blueSessionActions']
   terminal: FakeTerminal
   adapter: MockAdapter
@@ -414,6 +415,7 @@ export async function bootBlue(argv: string[], options: {
   const creativeIsolation: BlueTree['creativeIsolation'] = {}
   const hostileIsolation: BlueTree['hostileIsolation'] = {}
   let sessionReader: Context['blueSessionReader'] | undefined
+  let sessionProjections: Context['blueSessionProjections'] | undefined
   let sessionActions: Context['blueSessionActions'] | undefined
   let presetRoot = ''
   const hooks: BlueE2EHooks = {
@@ -434,6 +436,7 @@ export async function bootBlue(argv: string[], options: {
     },
     privateRuntimeApply: (ctx) => {
       sessionReader = ctx.blueSessionReader
+      sessionProjections = ctx.blueSessionProjections
       sessionActions = ctx.blueSessionActions
     },
     coreApply: async (ctx) => {
@@ -812,7 +815,7 @@ export const apply = ctx => globalThis.__blueE2E.sessionBridgeApply(ctx)
     '- id: e2e-private-runtime-observer',
     `  name: ${fixture('e2e-private-runtime-observer.mjs', `
 export const name = 'e2e-private-runtime-observer'
-export const inject = ['blueSessionReader', 'blueSessionActions']
+export const inject = ['blueSessionReader', 'blueSessionProjections', 'blueSessionActions']
 export const apply = ctx => globalThis.__blueE2E.privateRuntimeApply(ctx)
 `)}`,
   )
@@ -1063,7 +1066,7 @@ export const apply = (ctx) => {
 
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
-  if (sessionReader === undefined || sessionActions === undefined) throw new Error('Blue private runtime observer did not activate')
+  if (sessionReader === undefined || sessionProjections === undefined || sessionActions === undefined) throw new Error('Blue private runtime observer did not activate')
   const sessionChanges: Agent[] = []
   let lastSessionId: string | undefined
   const sessionRegistration = sessionReader.subscribe(snapshot => {
@@ -1076,7 +1079,7 @@ export const apply = (ctx) => {
   })
   ctx.effect(() => () => sessionRegistration.dispose())
   disposers.push(async () => { await ctx.fiber.dispose() })
-  return { ctx, sessionReader, sessionActions, terminal, adapter, exits, sessionChanges, creativeIsolation, hostileIsolation }
+  return { ctx, sessionReader, sessionProjections, sessionActions, terminal, adapter, exits, sessionChanges, creativeIsolation, hostileIsolation }
 }
 
 /** Wait until the app driver has published its first Agent. */

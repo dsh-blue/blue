@@ -2811,6 +2811,99 @@ describe('blue whole-tree e2e', () => {
     })
   })
 
+  it('attach view follows a running child live: registry feed, app fan-out, and repaint probes', async () => {
+    const tree = await bootBlue(['main task'], {
+      script: [textResponse('main answer')],
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+
+    const child = tree.ctx.sessions.create('agents-e2e-push-child' as never, {
+      meta: { origin: 'subagent', parentSession: agent.id, cwd: '/tmp' },
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'child question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    child.append('step/start', { turn: 1, step: 0 })
+    child.append('assistant/message', {
+      turn: 1,
+      step: 0,
+      message: {
+        id: MessageId('agents-e2e-push-assistant'),
+        role: 'assistant',
+        content: [{ type: 'text', text: 'child answer' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    // Link A probe: the raw registry change feed scoped to the child.
+    const registryEvents: string[] = []
+    const projections = tree.ctx.get('sessionProjections') as {
+      onChanged(listener: (session: { id: unknown }, key: string, value: unknown, seq: number) => void): () => void
+    } | undefined
+    const offRaw = projections?.onChanged((session, key, _value, seq) => {
+      if (String(session.id) === String(child.id)) registryEvents.push(`${key}@${String(seq)}`)
+    })
+    // Link B probe: the app seam's targeted fan-out.
+    const seamEvents: string[] = []
+    const offSeam = tree.sessionProjections.subscribeChild(String(child.id), (key, _value, seq) => {
+      seamEvents.push(`${key}@${String(seq)}`)
+    })
+
+    tree.ctx.provide('subagents', {
+      listDescendants: async () => [
+        { kind: 'child', id: child.id, parentId: agent.id, depth: 1, activity: 'inactive', hasChildren: false, mode: 'continuable', label: 'explore' },
+      ],
+      followup: async () => { throw new Error('not exercised') },
+      interrupt: () => { throw new Error('not exercised') },
+    })
+
+    await expect(executeCommand(tree, agent, '/agents')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Subagents') })
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('Subagent · explore')
+      expect(frame).toContain('child answer')
+    })
+
+    // The child keeps running while the attach view is open: a second turn
+    // must reach the panel without a re-attach.
+    child.append('turn/start', { turn: 2 })
+    child.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'child question 2' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    child.append('step/start', { turn: 2, step: 0 })
+    child.append('assistant/message', {
+      turn: 2,
+      step: 0,
+      message: {
+        id: MessageId('agents-e2e-push-assistant-2'),
+        role: 'assistant',
+        content: [{ type: 'text', text: 'child answer 2' }],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      },
+    }, { surfaceOp: 'append' })
+    child.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+
+    // Link A: the registry saw the child's projection fold.
+    await vi.waitFor(() => { expect(registryEvents.length).toBeGreaterThan(0) })
+    // Link B: the app seam pushed to the attach subscriber.
+    await vi.waitFor(() => { expect(seamEvents.length).toBeGreaterThan(0) })
+    // Link C: the panel repainted with the new turn.
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('child answer 2')
+    })
+    offRaw?.()
+    offSeam()
+  })
+
   it('attach view scrolls the child transcript with arrows, pages, and wheel — the editor history stays out of it', async () => {
     const tree = await bootBlue(['main task'], {
       script: [textResponse('main answer'), textResponse('probe answer')],

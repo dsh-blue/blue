@@ -53,7 +53,9 @@ an editor-slot select panel; Enter hands the child descriptor to the optional
 capability-absent notice when that row is not mounted. The attach owner swaps
 the editor slot (the D30 panel stack, so q/Escape pops back to the browser)
 for a framed view over one child's official projections — `childCut` seeds the
-initial value, `subscribeChild` follows live pushes, a continuable child gets
+initial value, `subscribeChild` follows live pushes (per-key watermarks: a cut
+resolving behind in-flight pushes seeds only the keys it actually advances and
+never rewinds a key's seq), a continuable child gets
 a follow-up input crossing `childFollowup`, and Ctrl+C interrupts through
 `interruptChild`. While the attach view is focused, Up/Down (also the wheel,
 normalized to arrows by core's dock route) and PageUp/PageDown scroll the
