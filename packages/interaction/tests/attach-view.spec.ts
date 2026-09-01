@@ -38,6 +38,22 @@ function conversation(text: string, seq = 2): unknown {
   }
 }
 
+/**
+ * One conversation value with `turns` user/assistant exchanges — enough rows
+ * to overflow the attach body budget (10 at the fake screen's 24 rows). The
+ * final seq is `2 * turns`.
+ */
+function longConversation(turns: number): unknown {
+  const entries: unknown[] = []
+  for (let index = 0; index < turns; index += 1) {
+    entries.push(
+      { id: `u${String(index)}`, seq: 2 * index + 1, turn: index + 1, kind: 'user', text: `line ${String(index)}`, images: [] },
+      { id: `a${String(index)}`, seq: 2 * index + 2, turn: index + 1, kind: 'assistant', step: 0, text: `reply ${String(index)}`, streaming: false },
+    )
+  }
+  return { entries, streaming: false }
+}
+
 /** One conversation value whose tool entry exercises the presentation source. */
 function conversationWithTool(): unknown {
   return {
@@ -605,6 +621,85 @@ describe('ChildAttachView through the service', () => {
     vi.advanceTimersByTime(1000)
     expect(harness.screen.renderRequests).toBeGreaterThan(armed)
     expect(armed).toBeGreaterThan(before)
+    harness.service.close()
+  })
+})
+
+describe('ChildAttachView scrolling', () => {
+  const pageUp = '\x1b[5~'
+  const pageDown = '\x1b[6~'
+
+  /** Open one attach over a 12-turn cut and wait for the tail frame. */
+  async function openLong(target: BlueChildAttachTarget = continuable): Promise<{ harness: Harness, panel: ReturnType<typeof attachPanel> }> {
+    const harness = await mount({
+      cut: { asOfSeq: 24, values: { blueConversation: longConversation(12) } },
+    })
+    harness.service.open(target)
+    const panel = attachPanel(harness)
+    await vi.waitFor(() => {
+      expect(plain(panel.component.render(40)).some(row => row.includes('reply 11'))).toBe(true)
+    })
+    expect(plain(panel.component.render(40)).some(row => row.includes('line 0'))).toBe(false)
+    return { harness, panel }
+  }
+
+  it('scrolls the transcript window by line and page, clamped at both bounds', async () => {
+    const { harness, panel } = await openLong()
+    // The wheel arrives as these same arrow sequences through core's dock
+    // route, so keyboard and wheel share this path.
+    const following = plain(panel.component.render(40))
+    panel.component.handleInput(KEY.up)
+    expect(plain(panel.component.render(40))).not.toEqual(following)
+
+    // A page up drops the tail row; repeated pages reach the top and clamp.
+    panel.component.handleInput(pageUp)
+    expect(plain(panel.component.render(40)).some(row => row.includes('reply 11'))).toBe(false)
+    for (let count = 0; count < 10; count += 1) panel.component.handleInput(pageUp)
+    const topRows = plain(panel.component.render(40))
+    expect(topRows.some(row => row.includes('line 0'))).toBe(true)
+    const pinned = harness.screen.renderRequests
+    for (let count = 0; count < 30; count += 1) panel.component.handleInput(KEY.up)
+    expect(harness.screen.renderRequests).toBe(pinned)
+    expect(plain(panel.component.render(40)).some(row => row.includes('line 0'))).toBe(true)
+
+    // Pages and lines back down restore the tail; Down at the bottom is inert.
+    panel.component.handleInput(pageDown)
+    panel.component.handleInput(pageDown)
+    panel.component.handleInput(pageDown)
+    for (let count = 0; count < 200; count += 1) panel.component.handleInput(KEY.down)
+    expect(plain(panel.component.render(40)).some(row => row.includes('reply 11'))).toBe(true)
+    const bottom = harness.screen.renderRequests
+    panel.component.handleInput(KEY.down)
+    expect(harness.screen.renderRequests).toBe(bottom)
+    harness.service.close()
+  })
+
+  it('holds a scrolled viewport on live pushes and follows again at the tail', async () => {
+    const { harness, panel } = await openLong()
+    for (let count = 0; count < 10; count += 1) panel.component.handleInput(pageUp)
+    const parked = plain(panel.component.render(40))
+    expect(parked.some(row => row.includes('line 0'))).toBe(true)
+
+    // A live push below a scrolled-away viewport keeps its rows stable.
+    harness.push('c1', 'blueConversation', longConversation(13), 26)
+    expect(plain(panel.component.render(40))).toEqual(parked)
+
+    // Scrolled back to the tail, the next push follows it.
+    for (let count = 0; count < 200; count += 1) panel.component.handleInput(KEY.down)
+    expect(plain(panel.component.render(40)).some(row => row.includes('reply 12'))).toBe(true)
+    harness.push('c1', 'blueConversation', longConversation(14), 28)
+    await vi.waitFor(() => {
+      expect(plain(panel.component.render(40)).some(row => row.includes('reply 13'))).toBe(true)
+    })
+    harness.service.close()
+  })
+
+  it('scrolls the one-shot read-only form without touching the footer', async () => {
+    const { harness, panel } = await openLong({ id: 'c1', mode: 'one-shot' })
+    for (let count = 0; count < 10; count += 1) panel.component.handleInput(pageUp)
+    const rows = plain(panel.component.render(40))
+    expect(rows.some(row => row.includes('line 0'))).toBe(true)
+    expect(rows.some(row => row.includes(ATTACH_CHROME.oneShotReadonly))).toBe(true)
     harness.service.close()
   })
 })

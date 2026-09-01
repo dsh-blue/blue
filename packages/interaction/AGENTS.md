@@ -55,8 +55,12 @@ the editor slot (the D30 panel stack, so q/Escape pops back to the browser)
 for a framed view over one child's official projections — `childCut` seeds the
 initial value, `subscribeChild` follows live pushes, a continuable child gets
 a follow-up input crossing `childFollowup`, and Ctrl+C interrupts through
-`interruptChild`. A main-session switch, session unload, or fiber unload
-force-closes the view and restores the pre-attach editor.
+`interruptChild`. While the attach view is focused, Up/Down (also the wheel,
+normalized to arrows by core's dock route) and PageUp/PageDown scroll the
+child transcript window — tail-following at the bottom, holding its rows
+stable under live pushes when scrolled up — while the input row keeps text,
+cursor, and submit keys. A main-session switch, session unload, or fiber
+unload force-closes the view and restores the pre-attach editor.
 
 `CanonicalPanelAdapter` leases stable field editors by semantic path/id across
 compiler rebuilds and delegates rows, secret masking, cursor/IME/paste,

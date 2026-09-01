@@ -9,9 +9,13 @@
  * the child's `blueConversationFacts`/`subagentTiming` projections. A
  * continuable child gets a bottom input row whose submit crosses
  * `blueSessionActions.childFollowup`; a one-shot child degrades to
- * read-only with an explanatory footer. Ctrl+C clears a pending follow-up
- * first and otherwise interrupts the child through `interruptChild`;
- * q/Escape closes. The current session never switches — the child is
+ * read-only with an explanatory footer. While the view is focused, Up/Down
+ * (also the wheel, which core's dock route normalizes to arrows) and
+ * PageUp/PageDown scroll the transcript window: the viewport tail-follows
+ * at the bottom and holds its rows stable under live pushes when scrolled
+ * up; text, cursor, and submit keys stay with the input row. Ctrl+C clears
+ * a pending follow-up first and otherwise interrupts the child through
+ * `interruptChild`; q/Escape closes. The current session never switches — the child is
  * addressed by (current session, child id) — while a main-session switch,
  * session unload, or fiber unload force-closes the view and restores the
  * pre-attach editor (buffer and draft survive the swap). At most one attach
@@ -61,6 +65,17 @@ const ATTACH_MIN_BODY_LINES = 3
 
 /** The attach panel may occupy at most this fraction of the terminal height. */
 const ATTACH_HEIGHT_FRACTION = 2
+
+/**
+ * Scroll keys the attach viewport consumes while focused. The panel is
+ * focused in the editor dock, so core already delivers these — plus the
+ * wheel, normalized to Up/Down by the terminal's bottom-dock route — instead
+ * of the main transcript's viewport (the `terminal.ts` contextual chain).
+ */
+const KEY_UP = '\x1b[A'
+const KEY_DOWN = '\x1b[B'
+const KEY_PAGE_UP = '\x1b[5~'
+const KEY_PAGE_DOWN = '\x1b[6~'
 
 /** Projection keys one attach view reads and follows. */
 const ATTACH_PROJECTION_KEYS = ['blueConversation', 'blueConversationFacts', 'subagentTiming'] as const
@@ -169,8 +184,11 @@ export interface ChildAttachViewOptions {
 
 /**
  * The attach view: one child session's transcript framed in the editor slot.
- * Tail-follow only (no scrollback); every subscription and the elapsed
- * ticker release on {@link ChildAttachView.dispose}.
+ * The viewport tail-follows while pinned to the bottom; Up/Down (also the
+ * wheel, arriving as arrows), PageUp/PageDown scroll the transcript window
+ * inside the frame and a live push keeps a scrolled-away viewport stable.
+ * Every subscription and the elapsed ticker release on
+ * {@link ChildAttachView.dispose}.
  */
 export class ChildAttachView implements BlueFocusable {
   focused = false
@@ -185,6 +203,10 @@ export class ChildAttachView implements BlueFocusable {
   private note: string | undefined
   private disposed = false
   private opened = false
+  /** Rows scrolled up from the transcript tail; 0 pins the viewport to it. */
+  private scrollOffset = 0
+  /** The transcript row count from the latest render; clamps the offset. */
+  private bodyTotal = 0
   private offChild: (() => void) | undefined
   private ticker: ReturnType<typeof setInterval> | undefined
   private readonly requestRender: () => void
@@ -316,6 +338,21 @@ export class ChildAttachView implements BlueFocusable {
       this.close()
       return
     }
+    // Scroll keys own the transcript viewport in both modes — while the
+    // panel is focused they never reach editor history (the /sessions panel
+    // precedent), and the input row keeps only text, cursor, and submit.
+    if (data === KEY_UP) {
+      this.scrollBy(1)
+      return
+    }
+    if (data === KEY_DOWN) {
+      this.scrollBy(-1)
+      return
+    }
+    if (data === KEY_PAGE_UP || data === KEY_PAGE_DOWN) {
+      this.scrollBy((data === KEY_PAGE_UP ? 1 : -1) * Math.max(1, this.bodyBudget() - 1))
+      return
+    }
     if (!this.continuable) return
     if (data === '\r') {
       const text = this.buffer.trim()
@@ -345,6 +382,20 @@ export class ChildAttachView implements BlueFocusable {
   }
 
   /**
+   * Move the transcript viewport by `delta` rows (positive scrolls toward
+   * older rows), clamped to both bounds; at a bound the key is a no-op. The
+   * clamp reads the latest rendered row count, so scrolling is inert until
+   * the first frame laid the transcript out.
+   */
+  private scrollBy(delta: number): void {
+    const maxOffset = Math.max(0, this.bodyTotal - this.bodyBudget())
+    const next = Math.min(maxOffset, Math.max(0, this.scrollOffset + delta))
+    if (next === this.scrollOffset) return
+    this.scrollOffset = next
+    this.invalidate()
+  }
+
+  /**
    * The framed panel rows: the `topRule` title/hint, the tail of the child
    * transcript padded to a stable height, and the footer (input row for a
    * continuable child, an explanatory line for a one-shot) above the
@@ -370,7 +421,19 @@ export class ChildAttachView implements BlueFocusable {
       paint: colors.border,
     })]
     const budget = this.bodyBudget()
-    const body = this.transcript.render(contentWidth).slice(-budget)
+    const all = this.transcript.render(contentWidth)
+    // A live push appends below a scrolled viewport: carry the offset down
+    // with the growth so the visible rows hold stable (the tail viewport,
+    // offset 0, follows instead).
+    if (this.scrollOffset > 0 && all.length > this.bodyTotal) {
+      this.scrollOffset += all.length - this.bodyTotal
+    }
+    this.bodyTotal = all.length
+    // Re-clamp against the freshest row count (a model rebuild can shrink
+    // the transcript under a scrolled viewport), then window the body.
+    this.scrollOffset = Math.min(this.scrollOffset, Math.max(0, all.length - budget))
+    const end = all.length - this.scrollOffset
+    const body = all.slice(Math.max(0, end - budget), end)
     // Pad to the full budget so the panel height never jitters as content grows.
     while (body.length < budget) body.push('')
     for (const line of body) lines.push(this.frame(line, contentWidth))
