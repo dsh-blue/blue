@@ -17,12 +17,15 @@ compatibility entries. Validation is static and script-disabled packing is
 mandatory. Conformance uses a throwaway npm project, normal peer resolution,
 the exact lines listed by `supportedHarnessLines`, native ESM exports, and
 always reports cleanup. `0.1.2-alpha.1` lists only Harness `0.1.2-alpha.2`;
-no RC line is implied or tested. Neither command is a security sandbox.
+no RC line is implied or tested. Its external fixture derives the host Cordis
+range from the installed Blue API package instead of carrying a second pin.
+Neither command is a security sandbox.
 
 The generator refuses a non-empty destination and never creates a repository,
 commit, tag, profile installation, or npm release. Keep `README.md` and
 `README.zh.md` synchronized. Changes to the bin update package files/build
 claims, installed-tarball author fixture, author skill evals, tutorial packed
 fixtures, and this file together. `script/check-pack.mjs` installs the packed
-API/UI/kit artifacts in a throwaway npm project and executes the installed bin,
-so source-checkout success alone is insufficient.
+API/UI/frontend/core/kit artifacts in a throwaway npm project and executes the
+installed bin through create, validate, and conformance, so source-checkout
+success alone is insufficient.

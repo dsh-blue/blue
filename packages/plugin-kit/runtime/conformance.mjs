@@ -9,8 +9,9 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { createPackageImporter } from './import-from-directory.mjs'
 import { packWithoutScripts } from './pack-without-scripts.mjs'
 import { collectLocalPackageClosure, summarizeHarnessPackageInstances } from './plugin-fixture-contract.mjs'
@@ -18,6 +19,7 @@ const repositoryCandidate = resolve(import.meta.dirname, '../../..')
 const repositoryRoot = existsSync(join(repositoryCandidate, 'packages', 'api', 'package.json'))
   ? repositoryCandidate
   : undefined
+const runtimeRequire = createRequire(import.meta.url)
 const pinnedHarnessLine = '0.1.2-alpha.2'
 const argumentsList = process.argv.slice(2)
 let packageArgument = '.'
@@ -199,13 +201,30 @@ try {
   const dependencies = Object.fromEntries([...packages].map(([name, tarball]) => [name, `file:${tarball}`]))
   if (repositoryRoot === undefined) {
     const kitManifest = JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8'))
+    const apiManifestPath = runtimeRequire.resolve('@dsh-blue/blue-api/package.json')
+    const apiManifest = JSON.parse(readFileSync(apiManifestPath, 'utf8'))
+    const cordisRange = apiManifest.peerDependencies?.['@deepseek-ai/cordis']
+    ensure(typeof cordisRange === 'string' && cordisRange !== '', 'FIXTURE_BLUE_API_HOST_PEER_MISSING', '@dsh-blue/blue-api has no Cordis peer range')
+    const installedBlueManifests = new Map([['@dsh-blue/blue-api', apiManifestPath]])
+    for (const name of [
+      '@dsh-blue/blue-ui',
+      '@dsh-blue/blue-frontend',
+      '@dsh-blue/blue-core',
+    ]) {
+      try { installedBlueManifests.set(name, runtimeRequire.resolve(`${name}/package.json`)) } catch {}
+    }
     for (const name of [
       '@dsh-blue/blue-api',
       '@dsh-blue/blue-ui',
       '@dsh-blue/blue-frontend',
       '@dsh-blue/blue-core',
-    ]) dependencies[name] ??= kitManifest.version
-    dependencies['@deepseek-ai/cordis'] ??= '4.0.1'
+    ]) {
+      const installedManifest = installedBlueManifests.get(name)
+      dependencies[name] ??= installedManifest === undefined
+        ? kitManifest.version
+        : `file:${pack(dirname(installedManifest), false)}`
+    }
+    dependencies['@deepseek-ai/cordis'] ??= cordisRange
     dependencies['@deepseek-ai/dsh-invariants'] ??= requestedHarnessLine
   }
   const harnessPackageNames = new Set()

@@ -178,9 +178,9 @@ void node
   }
 }
 
-function verifyPluginKit(apiTarball, uiTarball, kitTarball) {
-  if (apiTarball === undefined || uiTarball === undefined || kitTarball === undefined) {
-    fail('plugin author kit fixture requires packed API, UI, and plugin-kit tarballs')
+function verifyPluginKit(apiTarball, uiTarball, frontendTarball, coreTarball, kitTarball) {
+  if ([apiTarball, uiTarball, frontendTarball, coreTarball, kitTarball].includes(undefined)) {
+    fail('plugin author kit fixture requires packed API, UI, frontend, core, and plugin-kit tarballs')
     return
   }
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'blue-plugin-kit-pack-'))
@@ -191,6 +191,8 @@ function verifyPluginKit(apiTarball, uiTarball, kitTarball) {
       dependencies: {
         '@dsh-blue/blue-api': `file:${apiTarball}`,
         '@dsh-blue/blue-ui': `file:${uiTarball}`,
+        '@dsh-blue/blue-frontend': `file:${frontendTarball}`,
+        '@dsh-blue/blue-core': `file:${coreTarball}`,
         '@dsh-blue/blue-plugin-kit': `file:${kitTarball}`,
       },
     }, null, 2)}\n`)
@@ -206,7 +208,17 @@ function verifyPluginKit(apiTarball, uiTarball, kitTarball) {
     if (validation.valid !== true || validation.package !== '@blue-pack-fixture/tutorial') {
       throw new Error('installed bin did not create and validate its package')
     }
-    console.log('plugin author kit: packed install, catalog, create, and validate passed')
+    const conformance = JSON.parse(execFileSync(bin, ['conformance', pluginRoot], {
+      cwd: fixtureRoot,
+      encoding: 'utf8',
+      timeout: 240_000,
+    }))
+    if (conformance.valid !== true || conformance.installed !== true || conformance.peerResolution !== 'normal' ||
+        conformance.skipped?.length !== 0 || conformance.failures?.length !== 0 ||
+        !isDeepStrictEqual(conformance.declared, conformance.executed)) {
+      throw new Error(`installed bin conformance failed: ${JSON.stringify(conformance)}`)
+    }
+    console.log('plugin author kit: packed install, catalog, create, validate, and conformance passed')
   } catch (error) {
     fail(`plugin author kit fixture failed: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
@@ -262,6 +274,8 @@ verifyExternalUiKit(tarballs.get('@dsh-blue/blue-api'), tarballs.get('@dsh-blue/
 verifyPluginKit(
   tarballs.get('@dsh-blue/blue-api'),
   tarballs.get('@dsh-blue/blue-ui'),
+  tarballs.get('@dsh-blue/blue-frontend'),
+  tarballs.get('@dsh-blue/blue-core'),
   tarballs.get('@dsh-blue/blue-plugin-kit'),
 )
 
