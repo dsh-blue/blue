@@ -17,7 +17,7 @@ import type { SessionFactsService } from './session-facts.ts'
 export const name = 'blue-status-cwd'
 
 /** Services required before the cwd entry can register. */
-export const inject = ['blueStatusEntries', 'blueSessionFacts']
+export const inject = ['blueStatus', 'blueSessionFacts']
 
 /** How many trailing path segments a deep cwd keeps. */
 const MAX_CWD_SEGMENTS = 3
@@ -51,16 +51,16 @@ export function shortenCwd(path: string, home: string): string {
  */
 export function apply(ctx: Context): void {
   const facts = ctx.get('blueSessionFacts') as SessionFactsService | undefined
-  let text = shortenCwd(facts?.currentSession?.cwd ?? process.cwd(), homedir())
+  let text = shortenCwd(facts?.currentAgent?.session.header.cwd ?? process.cwd(), homedir())
 
-  const offSession = facts?.subscribeSession((session) => {
-    const next = shortenCwd(session?.cwd ?? process.cwd(), homedir())
+  const offAgent = facts?.subscribeAgent((agent) => {
+    const next = shortenCwd(agent?.session.header.cwd ?? process.cwd(), homedir())
     if (next === text) return
     text = next
-    ctx.blueStatusEntries.refresh('blue.status.cwd')
+    ctx.blueStatus.refresh('blue.status.cwd')
   })
-  ctx.effect(() => () => offSession?.())
+  ctx.effect(() => () => offAgent?.())
 
   const model = (): BlueStatusEntry => ({ id: 'blue.status.cwd', priority: 5, node: { kind: 'text', content: text, tone: 'muted' }, visible: text !== '' })
-  ctx.effect(() => ctx.blueStatusEntries.register(model))
+  ctx.blueStatus.register(model)
 }

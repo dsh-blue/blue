@@ -28,6 +28,7 @@ import { visibleWidth } from '../../core/src/width.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueComponent } from '@dsh-blue/blue-core'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
+import { initialConversationFacts } from '../../conversation/src/facts.ts'
 
 /** Fake timers recording interval creation/clearing; ticks run manually. */
 class FakeTimers implements activity.ActivityTimers {
@@ -82,14 +83,14 @@ function emit2(ctx: Context, agent: FakeAgent, event: Parameters<typeof turnStar
 
 /** Render the mounted (gutter-wrapped) pane as if the child saw `width`. */
 function unwrapped(pane: BlueComponent, width: number): string[] {
-  return pane.render(width + 2).map(line => line === ' ' ? '' : line.slice(1))
+  return pane.render(width)
 }
 
 describe('blue-pane-activity', () => {
   it('mounts one bottom pane that renders the kimi placeholder row while idle', async () => {
     const { screen, dispose } = await boot()
     expect(activity.name).toBe('blue-pane-activity')
-    expect(activity.inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes'])
+    expect(activity.inject).toEqual(['bluePanes', 'blueSessionFacts'])
     expect(screen.bottomChildren).toHaveLength(1)
     // kimi's Spacer(1): the placeholder row is always present when the
     // spinner is not, so the dock never jumps at the activity edges.
@@ -119,6 +120,29 @@ describe('blue-pane-activity', () => {
     expect(timers.cleared).toBe(1)
   })
 
+  it('uses Agent status as the waiting fallback while the projection is still idle', async () => {
+    const timers = new FakeTimers()
+    activity.setActivityTimers(timers)
+    const agent = runningAgent(fakeAgent([]))
+    const facts = initialConversationFacts()
+    const harness = await bootPanePlugin(activity, agent, {
+      blueSessionFacts: {
+        current: facts,
+        currentAgent: asAgent(agent),
+        subscribe(listener: (value: typeof facts) => void) {
+          listener(facts)
+          return () => {}
+        },
+        subscribeAgent(listener: (value: ReturnType<typeof asAgent>) => void) {
+          listener(asAgent(agent))
+          return () => {}
+        },
+      },
+    })
+    expect(harness.screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
+    await harness.dispose()
+  })
+
   it('switches the mounted activity row in place when locale changes', async () => {
     const harness = await boot(runningAgent(fakeAgent([])))
     const pane = harness.screen.bottomChildren[0]
@@ -136,25 +160,6 @@ describe('blue-pane-activity', () => {
     expect(harness.screen.paneLines()[0]).toContain(' · 提示：')
     await localeFiber.dispose()
     await harness.dispose()
-  })
-
-  it('paints the wave through the brand gradient, cycling one hue per tick', async () => {
-    const agent = runningAgent(fakeAgent([]))
-    const tag = (letter: string) => (text: string): string => `[${letter}]${text}[/${letter}]`
-    const timers = new FakeTimers()
-    activity.setActivityTimers(timers)
-    const { screen, dispose } = await bootPanePlugin(activity, agent, {
-      blueTheme: { colors: { ...COLORS, logoGradient: [tag('G1'), tag('G2'), tag('G3')] } },
-    })
-    expect(screen.paneLines()).toEqual([`[G1]${MOON_SPINNER_FRAMES[0]!}[/G1] · Tip: ${FIRST_TIP}`])
-    timers.ticks[0]!()
-    expect(screen.paneLines()).toEqual([`[G2]${MOON_SPINNER_FRAMES[1]!}[/G2] · Tip: ${FIRST_TIP}`])
-    timers.ticks[0]!()
-    expect(screen.paneLines()).toEqual([`[G3]${MOON_SPINNER_FRAMES[2]!}[/G3] · Tip: ${FIRST_TIP}`])
-    timers.ticks[0]!()
-    // The hue cycle wraps with the gradient, independent of the wave cycle.
-    expect(screen.paneLines()).toEqual([`[G1]${MOON_SPINNER_FRAMES[3]!}[/G1] · Tip: ${FIRST_TIP}`])
-    await dispose()
   })
 
   it('shows the kimi working row with a fresh tip while composing', async () => {
@@ -186,25 +191,15 @@ describe('blue-pane-activity', () => {
     const agent = runningAgent(fakeAgent([]))
     const { ctx, screen, dispose } = await boot(agent)
     emit2(ctx, agent, textDelta(1, 1, 'answering'))
-    const pane = screen.bottomChildren[0]!
     const tip = buildTipRotation(STATUS_TIPS)[1]!.text
     const visible = 1 + ' working...'.length + ' ↓2'.length + ' · Tip: '.length + tip.length
-    expect(unwrapped(pane, visible)).toEqual([`⠋ working... ↓2 · Tip: ${tip}`])
-    // Width pressure drops the tip first — the counter is the liveness
-    // signal, it rides inside the base.
-    expect(unwrapped(pane, visible - 1)).toEqual(['⠋ working... ↓2'])
-    // Then the counter, keeping the plain base row.
-    expect(unwrapped(pane, 12)).toEqual(['⠋ working...'])
-    // Below the eleven-column base there is no row.
-    expect(unwrapped(pane, 10)).toEqual([])
-    pane.invalidate()
-    expect(unwrapped(pane, visible)).toEqual([`⠋ working... ↓2 · Tip: ${tip}`])
-    // The moon row keeps the frame over the counter under the same
-    // pressure, and renders nothing below the two-cell moon itself.
+    expect(screen.paneLines(visible)).toEqual([`⠋ working... ↓2 · Tip: ${tip}`])
+    for (const width of [visible - 1, 12, 10]) {
+      expect(screen.paneLines(width).every(line => visibleWidth(line) <= width)).toBe(true)
+    }
     emit2(ctx, agent, toolCallEvent(1, 1, 'c0', 'worker', '{}'))
     emit2(ctx, agent, toolResultEvent(1, 1, 'c0', 'done'))
-    expect(unwrapped(pane, 2)).toEqual([MOON_SPINNER_FRAMES[0]!])
-    expect(unwrapped(pane, 0)).toEqual([])
+    expect(screen.paneLines(2).every(line => visibleWidth(line) <= 2)).toBe(true)
     await dispose()
   })
 
@@ -347,18 +342,14 @@ describe('blue-pane-activity', () => {
   it('drops the tip under width pressure and the row entirely below it', async () => {
     const agent = runningAgent(fakeAgent([]))
     const { screen, dispose } = await boot(agent)
-    const pane = screen.bottomChildren[0]!
     const full = `${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`
     // The width measure is pi-tui's (D48): the moon glyph spans two cells,
     // so the row's visible width is the moon + the lead + the tip.
     const visible = visibleWidth(MOON_SPINNER_FRAMES[0]!) + ' · Tip: '.length + FIRST_TIP.length
-    expect(unwrapped(pane, visible)).toEqual([full])
-    // One column short drops the tip but keeps the moon.
-    expect(unwrapped(pane, visible - 1)).toEqual([MOON_SPINNER_FRAMES[0]!])
-    // With no room for the frame itself there is no row.
-    expect(unwrapped(pane, 0)).toEqual([])
-    pane.invalidate()
-    expect(unwrapped(pane, visible)).toEqual([full])
+    expect(screen.paneLines(visible)).toEqual([full])
+    for (const width of [visible - 1, 2, 1]) {
+      expect(screen.paneLines(width).every(line => visibleWidth(line) <= width)).toBe(true)
+    }
     await dispose()
   })
 

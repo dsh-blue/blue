@@ -156,16 +156,11 @@ describe('buildToolDetailSections', () => {
 })
 
 describe('registerToolsCommands', () => {
-  /** One fake standing key, identity-compared against what `schemas` receives. */
-  const STANDING_KEY = { agentPreset: 'alpha' }
-
   /** Mount the command plugin over the fake services; `schemas` is the recorded probe. */
   async function mount(options: {
     attach?: boolean
     display?: boolean
     schemas?: (scope?: unknown) => ToolSchema[]
-    /** Provide the roster fake answering `composedPreset`/`standingKeyFor`. */
-    roster?: { current?: string, key?: Promise<unknown>, keyError?: unknown }
   } = {}): Promise<{ ctx: Context, screen: FakeScreen, agent: Agent, fiber: { dispose(): Promise<void> } }> {
     const base = fakeBlueContext({ display: options.display })
     const { ctx } = base
@@ -178,16 +173,7 @@ describe('registerToolsCommands', () => {
       ctx.provide('testSession', { current: agent })
     }
     if (options.schemas !== undefined) {
-      ctx.provide('tools', { schemas: options.schemas } as never)
-    }
-    if (options.roster !== undefined) {
-      ctx.provide('agentPresets', {
-        composedPreset: () => options.roster!.current,
-        standingKeyFor: async () => {
-          if (options.roster!.keyError !== undefined) throw options.roster!.keyError
-          return options.roster!.key ?? Promise.resolve(STANDING_KEY)
-        },
-      } as never)
+      ctx.set('tools', { schemas: options.schemas } as never)
     }
     const fiber = await ctx.plugin(commandsPlugin)
     return { ctx, screen: screen as FakeScreen, agent, fiber }
@@ -250,57 +236,16 @@ describe('registerToolsCommands', () => {
     expect(overlay.hidden).toBe(true)
   })
 
-  it('enumerates through the preset standing key when the agent runs on a roster composition', async () => {
+  it('enumerates the native registry with the exact current Agent as scope', async () => {
     const scopes: unknown[] = []
     const { ctx, agent } = await mount({
       schemas: scope => {
         scopes.push(scope)
         return [tool('bash', 'Run a command')]
       },
-      roster: { current: 'alpha' },
     })
     expect(await run(ctx, agent, '/tools')).toEqual({ kind: 'success' })
-    expect(scopes).toEqual([undefined, STANDING_KEY])
-  })
-
-  it('falls back to the global view when the roster is absent or binds nothing', async () => {
-    const scopes: unknown[] = []
-    const noRoster = await mount({ schemas: scope => { scopes.push(scope); return [] } })
-    await run(noRoster.ctx, noRoster.agent, '/tools')
-    const unbound = await mount({
-      schemas: scope => { scopes.push(scope); return [] },
-      roster: { current: undefined },
-    })
-    await run(unbound.ctx, unbound.agent, '/tools')
-    expect(scopes).toEqual([undefined, undefined])
-  })
-
-  it('reports a failing standing-key resolution', async () => {
-    const { ctx, agent } = await mount({
-      schemas: () => [],
-      roster: { current: 'alpha', keyError: new Error('composition unreadable') },
-    })
-    expect(await run(ctx, agent, '/tools'))
-      .toEqual({ kind: 'error', text: 'could not resolve the preset composition: composition unreadable' })
-    const bare = await mount({
-      schemas: () => [],
-      roster: { current: 'alpha', keyError: 'roots missing' },
-    })
-    expect(await run(bare.ctx, bare.agent, '/tools'))
-      .toEqual({ kind: 'error', text: 'could not resolve the preset composition: roots missing' })
-  })
-
-  it('shows no panel when the fiber unloads while the standing key resolves', async () => {
-    const gate = Promise.withResolvers<unknown>()
-    const { ctx, agent, screen, fiber } = await mount({
-      schemas: () => [],
-      roster: { current: 'alpha', key: gate.promise },
-    })
-    const pending = run(ctx, agent, '/tools')
-    await fiber.dispose()
-    gate.resolve(STANDING_KEY)
-    expect(await pending).toEqual({ kind: 'success' })
-    expect(screen.overlays).toHaveLength(0)
+    expect(scopes).toEqual([agent])
   })
 
   it('refuses without a live session', async () => {
@@ -312,12 +257,6 @@ describe('registerToolsCommands', () => {
     const { ctx, agent } = await mount({ display: false, schemas: () => [] })
     expect(await run(ctx, agent, '/tools'))
       .toEqual({ kind: 'error', text: 'tools panel is unavailable: the Blue screen is not mounted' })
-  })
-
-  it('refuses without a tool registry', async () => {
-    const { ctx, agent } = await mount()
-    expect(await run(ctx, agent, '/tools'))
-      .toEqual({ kind: 'error', text: 'tool registry is unavailable: the host composes no tools service' })
   })
 
   it('unloading the command fiber removes the registration', async () => {

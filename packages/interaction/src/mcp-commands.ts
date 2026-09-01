@@ -17,7 +17,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { BlueSessionToolSchema } from '@dsh-blue/blue-app'
+import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 // Empty type imports carry the `commands` Context merge the registration
 // uses and the app-owned session action merge the collector resolves.
 import type {} from '@deepseek-ai/dsh-commands'
@@ -126,7 +126,7 @@ export function buildServerPickerRows(catalog: McpCatalog): SelectRow[] {
  * @param schema - the tool's schema.
  * @returns the name with the `mcp__<server>__` prefix stripped.
  */
-export function rawToolName(server: McpServerView, schema: BlueSessionToolSchema): string {
+export function rawToolName(server: McpServerView, schema: ToolSchema): string {
   return schema.name.slice(`${MCP_PREFIX}${server.serverName}__`.length)
 }
 
@@ -309,7 +309,7 @@ export function registerMcpCommands(ctx: Context): () => void {
       return { kind: 'success' }
     }
     const byEntryId = new Map(catalog.servers.map(server => [server.entryId, server]))
-    const openTool = (schema: BlueSessionToolSchema): void => {
+    const openTool = (schema: ToolSchema): void => {
       const restoreTool = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,

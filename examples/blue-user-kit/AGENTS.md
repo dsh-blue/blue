@@ -1,15 +1,10 @@
 # `@dsh-blue-example/user-kit`
 
-This validation-only package is a pure user component kit. It composes only
-public `@dsh-blue/blue-ui` builders through `defineBlueComponent`; it has no
-Cordis entry, manifest, capability, host state, timer, subscription, or
-renderer dependency. Callers own all input data and receive deeply frozen
-wire nodes.
+Pure renderer-neutral component kit shared by header and right-inspector. It
+uses only `@dsh-blue/blue-ui` builders and `defineBlueComponent`; it has no
+Cordis entry, Blue service registration, runtime state, timer, subscription,
+or renderer dependency.
 
-The component metadata targets the executable Blue API `^1.0.0-beta.1`; the
-kit is Beta ecosystem evidence rather than a Stable v1 artifact.
-
-The header and right-inspector examples must continue to consume this package
-through its published root export. Keep it outside Blue's release set and
-default bundle while retaining build, coverage, pack, and independent-install
-validation.
+Callers own input data and receive deeply frozen wire nodes. Keep the package
+outside Blue's release set while retaining build, coverage, pack, and
+independent-install validation.

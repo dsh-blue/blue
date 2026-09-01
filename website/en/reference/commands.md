@@ -18,7 +18,6 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 | `/provider` | — | `[list \| switch <name> \| add]` | List providers, switch the route, or add one | `blue-commands` (model-commands) |
 | `/preset` | — | `[name]` | List agent presets or switch (blank sessions only) | `blue-commands` (preset-commands) |
 | `/permission` | — | `[name]` | A bare line is intercepted at the input layer and opens the permission-preset panel; with an argument the line passes through to the host command | `blue-input` intercepts the bare form; the command is registered by `dsh-permission-presets` |
-| `/yolo` | `/yes` | `[on\|off]` | Toggle auto-approval of tool calls (questions still pop) | `blue-commands` (mode-commands) |
 | `/tools` | — | — | List the tools visible to the current session | `blue-commands` (tools-commands) |
 | `/mcp` | — | — | Browse the MCP servers the host connects to and their tools | `blue-commands` (mcp-commands, S34) |
 | `/skills` | — | — | List available skills (the `#` prompt invokes one) | `blue-commands` (skills-command) |
@@ -45,7 +44,7 @@ Typing `/` triggers fuzzy autocomplete and discovery hints (see [Input editor](/
 
 ## Modes and approval
 
-- **`/yolo [on|off]`** — toggles yolo session mode; `Shift+Tab` cycles normal → plan → yolo at any time (see [Session modes](/en/features/modes)). Under yolo, tool calls are auto-approved while **user questions still pop**.
+- **`Shift+Tab` mode cycle** — normal → plan → yolo only orchestrates native dsh commands: `/plan`, `/plan off`, `/permission danger-full-access`, and `/permission workspace-write` (see [Session modes](/en/features/modes)). Blue does not register `/yolo` or `/yes`.
 - **`/permission`** — lists/switches permission presets (named bundles of sandbox mode + approval policy). Same single-select panel shape as `/preset`; a danger preset requires a typed `y`. A bare `/permission` is intercepted by the input layer to open the panel; the command itself is registered by the upstream `dsh-permission-presets` (both completion and `/help` list it), and an argumented call passes through to the host command.
 - **`/mcp`** — a three-level panel browsing the MCP servers the host connects to: server picker → server panel (a config pseudo-row + raw tool rows) → detail (config status / redacted connection / policy, or a tool's schema). Read-only — servers are added via profile patch (see [dsh/mcp](/en/dsh/mcp)); the empty state points the way.
 - **`/init`** — the agent analyzes the codebase and writes `AGENTS.md` in the project root: if one exists it is read first, still-accurate content carries forward, and the file is rewritten into one coherent, up-to-date document (not appended), in the language the project's own docs mainly use.

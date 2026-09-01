@@ -1,24 +1,18 @@
-/**
- * Pane-owner bridge lifecycle, event ordering, viewport, and navigation tests.
- *
- * @module @dsh-blue/blue-core/tests/plugin-surface-bridge-pane
+/** Direct pane registry renderer lifecycle and event tests.
+ * @module @dsh-blue/blue-core/tests/surface-renderer-pane
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import { renderLayoutFrame } from '@earendil-works/pi-tui/dist/layout.js'
+import { getLayoutNode } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BluePluginHostService, createBluePluginControl } from '../../api/src/host.ts'
+import { apply as applyApi } from '../../api/src/index.ts'
 import type {
+  BluePaneContribution,
   BluePaneRegistration,
-  BluePluginApi,
-  BlueResult,
-  BlueUiEvent,
   BlueUiEventContext,
-  BlueUiNode,
 } from '../../api/src/contracts.ts'
-import type { BluePluginManifest } from '../../api/src/manifest.ts'
 import { ui } from '../../ui/src/index.ts'
-import { mountPluginSurfaceBridge } from '../src/plugin-surface-bridge.ts'
+import { mountBlueSurfaceRenderer } from '../src/surface-renderer.ts'
 import { SurfaceManager, type SurfaceLaneEntry, type SurfaceLayout } from '../src/surface-manager.ts'
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueKeyAction, BlueSemanticColors } from '../src/types.ts'
 import type { BlueTerminalRuntime } from '../src/terminal.ts'
@@ -33,11 +27,19 @@ const components = { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth, 
 const placements = ['header', 'left', 'right', 'bottom'] as const
 
 class Scope {
-  private readonly cleanups: (() => void)[] = []
+  private readonly cleanups: Array<() => void> = []
 
-  effect(callback: () => void | (() => void)): void {
+  effect(callback: () => void | (() => void)): () => void {
     const cleanup = callback()
-    if (typeof cleanup === 'function') this.cleanups.push(cleanup)
+    if (typeof cleanup !== 'function') return () => {}
+    let live = true
+    const dispose = (): void => {
+      if (!live) return
+      live = false
+      cleanup()
+    }
+    this.cleanups.push(dispose)
+    return dispose
   }
 
   dispose(): void {
@@ -65,7 +67,6 @@ interface RuntimeHarness {
   readonly surfaces: SurfaceManager
   readonly editor: BlueFocusable
   readonly focused: () => BlueComponent | null
-  readonly rendered: () => number
   setCapturing(value: boolean): void
   resize(columns: number, rows: number): void
 }
@@ -76,7 +77,6 @@ function createRuntime(mode: 'main' | 'alternate' = 'alternate', initialColumns 
   let columns = initialColumns
   let rows = initialRows
   let capturing = false
-  let renders = 0
   const assignFocus = (component: BlueComponent | null): void => {
     if (focused !== null && 'focused' in focused) (focused as BlueFocusable).focused = false
     focused = component
@@ -118,46 +118,62 @@ function createRuntime(mode: 'main' | 'alternate' = 'alternate', initialColumns 
       assignFocus(component)
     },
     showOverlay() { throw new Error('pane test opened an overlay') },
-    requestRender() { renders += 1 },
+    requestRender() {},
   } as unknown as BlueTerminalRuntime
   return {
     runtime,
     surfaces,
     editor,
     focused: () => focused,
-    rendered: () => renders,
     setCapturing: value => { capturing = value },
     resize: (nextColumns, nextRows) => { columns = nextColumns; rows = nextRows },
   }
 }
 
-function mount(host: BluePluginHostService, runtime: BlueTerminalRuntime, compilerComponents: BlueComponents = components): { readonly scope: Scope, readonly keymap: KeymapHarness } {
-  const scope = new Scope()
+interface Fixture {
+  readonly root: Context
+  readonly runtime: RuntimeHarness
+  readonly owner: Scope
+  readonly keymap: KeymapHarness
+  mount(): Scope
+  register(contribution: Omit<BluePaneContribution, 'placement'> & { readonly placement?: BluePaneContribution['placement'] }): BluePaneRegistration
+  dispose(): Promise<void>
+}
+
+async function fixture(runtime = createRuntime(), compilerComponents: BlueComponents = components): Promise<Fixture> {
+  const root = new Context()
+  await root.plugin({ name: 'test-blue-api', apply: applyApi })
   const keymap = new KeymapHarness()
-  Object.assign(scope, {
-    bluePluginControl: createBluePluginControl(host),
-    blueComponents: compilerComponents,
-    blueTheme: { colors },
-    blueKeymap: keymap,
-  })
-  mountPluginSurfaceBridge(scope as never, runtime)
-  return { scope, keymap }
-}
-
-let manifestSequence = 0
-function openPanes(host: BluePluginHostService): { readonly scope: Scope, readonly api: BluePluginApi } {
-  const scope = new Scope()
-  const manifest: BluePluginManifest = {
-    id: `@tests/pane-${String(manifestSequence++)}`,
-    api: '^1.0.0-beta.1',
-    capabilities: ['panes'],
+  const owners: Scope[] = []
+  const mount = (): Scope => {
+    const owner = new Scope()
+    Object.assign(owner, {
+      bluePanes: root.bluePanes,
+      blueOverlays: root.blueOverlays,
+      blueComponents: compilerComponents,
+      blueTheme: { colors },
+      blueKeymap: keymap,
+    })
+    mountBlueSurfaceRenderer(owner as never, runtime.runtime)
+    owners.push(owner)
+    return owner
   }
-  const opened = host.open(scope, manifest)
-  if (!opened.ok) throw new Error(opened.message)
-  return { scope, api: opened.value }
+  const owner = mount()
+  return {
+    root,
+    runtime,
+    owner,
+    keymap,
+    mount,
+    register: contribution => root.bluePanes.register({ placement: 'bottom', ...contribution }),
+    async dispose() {
+      for (const mounted of owners.splice(0).reverse()) mounted.dispose()
+      await root.fiber.dispose()
+    },
+  }
 }
 
-async function flushMicrotasks(turns = 8): Promise<void> {
+async function flush(turns = 8): Promise<void> {
   for (let turn = 0; turn < turns; turn += 1) await Promise.resolve()
 }
 
@@ -172,799 +188,483 @@ function entry(surfaces: SurfaceManager, id: string): SurfaceLaneEntry {
   return found
 }
 
-function registerPane(api: BluePluginApi, contribution: {
-  readonly id: string
-  readonly title?: string
-  readonly placement?: 'header' | 'left' | 'right' | 'bottom'
-  readonly priority?: number
-  readonly size?: { readonly min?: number, readonly preferred?: number | 'auto', readonly max?: number }
-  readonly narrow?: 'bottom' | 'overlay' | 'hidden'
-  readonly render: () => BlueUiNode | null
-  readonly onEvent?: (event: BlueUiEvent, context: BlueUiEventContext) => BlueResult | Promise<BlueResult>
-}): BluePaneRegistration {
-  const registered = api.panes!.register({
-    id: contribution.id,
-    ...(contribution.title === undefined ? {} : { title: contribution.title }),
-    placement: contribution.placement ?? 'right',
-    ...(contribution.priority === undefined ? {} : { priority: contribution.priority }),
-    ...(contribution.size === undefined ? {} : { size: contribution.size }),
-    ...(contribution.narrow === undefined ? {} : { narrow: contribution.narrow }),
-    render: contribution.render,
-    ...(contribution.onEvent === undefined ? {} : { onEvent: contribution.onEvent }),
-  })
-  if (!registered.ok) throw new Error(registered.message)
-  return registered.value
+function deferred<T>(): { readonly promise: Promise<T>, resolve(value?: T): void, reject(error: unknown): void } {
+  const result = Promise.withResolvers<T>()
+  return { promise: result.promise, resolve: result.resolve as (value?: T) => void, reject: result.reject }
 }
 
-function deferred<T>(): { readonly promise: Promise<T>, resolve(value: T): void, reject(error: unknown): void } {
-  let resolve!: (value: T) => void
-  let reject!: (error: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, resolve, reject }
-}
+afterEach(() => { vi.useRealTimers() })
 
-function success(): BlueResult {
-  return { ok: true, value: undefined }
-}
-
-afterEach(() => {
-  vi.useRealTimers()
-  vi.restoreAllMocks()
-})
-
-describe('plugin surface bridge panes', () => {
-  it('replays retained panes across owner reload and removes them on consumer unload', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const firstOwner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    let renders = 0
-    let eventCount = 0
-    registerPane(consumer.api, {
-      id: 'replay',
-      render: () => { renders += 1; return ui.actions({ id: 'replay-actions', items: [{ id: 'go', label: 'Go' }] }) },
-      onEvent: () => { eventCount += 1; return success() },
-    })
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['replay'])
-    expect(renders).toBe(1)
-
-    firstOwner.scope.dispose()
-    expect(runtime.surfaces.empty).toBe(true)
-    expect(consumer.api.panes!.list().map(item => item.id)).toEqual(['replay'])
-
-    const secondOwner = mount(host, runtime.runtime)
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['replay'])
-    expect(renders).toBe(2)
-
-    const staleComponent = entry(runtime.surfaces, 'replay').component
-    consumer.scope.dispose()
-    staleComponent.handleInput?.('\r')
-    await flushMicrotasks()
-    expect(runtime.surfaces.empty).toBe(true)
-    expect(eventCount).toBe(0)
-    secondOwner.scope.dispose()
+describe('direct pane surface renderer', () => {
+  it('replays direct registry state across renderer gaps', async () => {
+    const f = await fixture()
+    try {
+      f.register({ id: 'owned', placement: 'right', render: () => ui.text('owned pane') })
+      await flush()
+      expect(entries(f.runtime.surfaces).map(item => item.id)).toEqual(['owned'])
+      f.owner.dispose()
+      expect(entries(f.runtime.surfaces)).toEqual([])
+      expect(f.root.bluePanes.list().map(item => item.id)).toEqual(['owned'])
+      f.mount()
+      await flush()
+      expect(entry(f.runtime.surfaces, 'owned').component.render(40)).toEqual(['owned pane'])
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('cancels scheduled admission and mounted resources when the owner unloads', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    let renders = 0
-    registerPane(consumer.api, { id: 'pending', render: () => { renders += 1; return ui.text('pending') } })
-    owner.scope.dispose()
-    await flushMicrotasks()
-    expect(renders).toBe(0)
-    expect(runtime.surfaces.empty).toBe(true)
-    expect(owner.keymap.actions.size).toBe(0)
-    consumer.scope.dispose()
+  it('contains null, thrown, hostile, and over-wide renderer output', async () => {
+    const f = await fixture()
+    try {
+      let nullable = false
+      const nullableHandle = f.register({ id: 'nullable', render: () => nullable ? null : ui.text('visible') })
+      f.register({ id: 'thrown', placement: 'header', render: () => { throw new Error('pane exploded') } })
+      f.register({ id: 'unknown', placement: 'left', render: () => { throw undefined } })
+      f.register({ id: 'invalid', render: () => ({ kind: 'unknown' }) as never })
+      await flush()
+      expect(entry(f.runtime.surfaces, 'thrown').component.render(30).join(' ')).toContain('pane exploded')
+      expect(entry(f.runtime.surfaces, 'unknown').component.render(30).join(' ')).toContain('Plugin pane failed')
+      const invalid = entry(f.runtime.surfaces, 'invalid').component.render(12)
+      expect(invalid.join(' ')).toContain('Blue UI')
+      expect(invalid.every(row => visibleWidth(row) <= 12)).toBe(true)
+      const nullableComponent = entry(f.runtime.surfaces, 'nullable').component
+      expect((nullableComponent as BlueFocusable).focused).toBe(false)
+      nullableComponent.invalidate()
+      nullable = true
+      nullableHandle.refresh()
+      await flush()
+      expect(entries(f.runtime.surfaces).map(item => item.id)).not.toContain('nullable')
+      expect(nullableComponent.render(20)).toEqual([])
+      expect(getLayoutNode(nullableComponent)).toMatchObject({ type: 'vstack', entries: [] })
+      nullable = false
+      nullableHandle.refresh()
+      await flush()
+      expect(entry(f.runtime.surfaces, 'nullable').component.render(20)).toEqual(['visible'])
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('cancels an admitted render when its consumer unloads before the render microtask', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    let renders = 0
-    registerPane(consumer.api, { id: 'consumer-pending', render: () => { renders += 1; return ui.text('pending') } })
-    await Promise.resolve()
-    consumer.scope.dispose()
-    await flushMicrotasks()
-    expect(renders).toBe(0)
-    expect(runtime.surfaces.empty).toBe(true)
-    owner.scope.dispose()
+  it('keeps component identity and resets local drafts only on external refresh', async () => {
+    const f = await fixture()
+    try {
+      let renders = 0
+      const handle = f.register({
+        id: 'profile',
+        render: () => {
+          renders += 1
+          return ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'A' }] })
+        },
+      })
+      await flush()
+      const surface = entry(f.runtime.surfaces, 'profile')
+      f.runtime.runtime.setFocus(surface.focusTarget!)
+      surface.focusTarget!.handleInput?.('\x1b')
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      f.runtime.runtime.setFocus(surface.focusTarget!)
+      surface.focusTarget!.handleInput?.('B')
+      await flush()
+      expect(renders).toBe(2)
+      expect(entry(f.runtime.surfaces, 'profile').component).toBe(surface.component)
+      expect(surface.component.render(80).join('\n')).toContain('Name: AB')
+
+      surface.focusTarget!.handleInput?.('C')
+      handle.refresh()
+      await flush()
+      expect(surface.component.render(80).join('\n')).toContain('Name: A')
+      expect(surface.component.render(80).join('\n')).not.toContain('Name: ABC')
+      expect(entry(f.runtime.surfaces, 'profile').focusTarget).toBe(surface.focusTarget)
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('replaces a rapidly reused id without retaining the old render, handler, or placement', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const first = openPanes(host)
-    let oldRenders = 0
-    let oldEvents = 0
-    registerPane(first.api, {
-      id: 'reused',
-      placement: 'right',
-      render: () => { oldRenders += 1; return ui.actions({ id: 'old', items: [{ id: 'old-go', label: 'Old' }] }) },
-      onEvent: () => { oldEvents += 1; return success() },
-    })
-    await Promise.resolve()
-
-    first.scope.dispose()
-    const second = openPanes(host)
-    let newRenders = 0
-    let newEvents = 0
-    registerPane(second.api, {
-      id: 'reused',
-      title: 'Replacement',
-      placement: 'bottom',
-      render: () => { newRenders += 1; return ui.actions({ id: 'new', items: [{ id: 'new-go', label: 'New' }] }) },
-      onEvent: () => { newEvents += 1; return success() },
-    })
-    await flushMicrotasks()
-
-    expect(oldRenders).toBe(0)
-    expect(newRenders).toBe(1)
-    expect(entry(runtime.surfaces, 'reused')).toMatchObject({ placement: 'bottom', title: 'Replacement' })
-    entry(runtime.surfaces, 'reused').focusTarget?.handleInput?.('\r')
-    await flushMicrotasks()
-    expect([oldEvents, newEvents]).toEqual([0, 1])
-
-    second.scope.dispose()
-    owner.scope.dispose()
+  it('hides and restores a stable pane shell without stealing focus', async () => {
+    const f = await fixture()
+    try {
+      let renders = 0
+      const handle = f.register({ id: 'toggle', render: () => { renders += 1; return ui.actions({ id: 'a', items: [{ id: 'go', label: 'Go' }] }) } })
+      await flush()
+      const surface = entry(f.runtime.surfaces, 'toggle')
+      f.runtime.runtime.setFocus(surface.focusTarget!)
+      handle.setHidden(true)
+      await flush()
+      expect(entries(f.runtime.surfaces).map(item => item.id)).not.toContain('toggle')
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      handle.setHidden(false)
+      await flush()
+      expect(entry(f.runtime.surfaces, 'toggle').component).toBe(surface.component)
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      expect(renders).toBe(3)
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('mounts and unmounts null transitions while isolating refresh revisions and hidden state', async () => {
-    let now = 0
-    const host = new BluePluginHostService(new Context(), { now: () => now })
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    let nullable: BlueUiNode | null = null
-    let nullableRenders = 0
-    let peerRenders = 0
-    const nullableHandle = registerPane(consumer.api, {
-      id: 'nullable',
-      render: () => { nullableRenders += 1; return nullable },
-    })
-    const peerHandle = registerPane(consumer.api, {
-      id: 'peer',
-      render: () => { peerRenders += 1; return ui.text('peer') },
-    })
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['peer'])
-    expect([nullableRenders, peerRenders]).toEqual([1, 1])
+  it('aborts stale latest-wins events and refreshes from only the current result', async () => {
+    const f = await fixture()
+    try {
+      const calls: Array<{ context: BlueUiEventContext, result: ReturnType<typeof deferred<void>> }> = []
+      let renders = 0
+      const handle = f.register({
+        id: 'latest',
+        render: () => { renders += 1; return ui.form({ id: 'form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] }) },
+        onEvent: (_event, context) => {
+          const result = deferred<void>()
+          calls.push({ context, result })
+          return result.promise
+        },
+      })
+      await flush()
+      const target = entry(f.runtime.surfaces, 'latest').focusTarget!
+      f.runtime.runtime.setFocus(target)
+      target.handleInput?.('a')
+      await flush()
+      target.handleInput?.('b')
+      await flush()
+      expect(calls).toHaveLength(2)
+      expect(calls[0]!.context.signal.aborted).toBe(true)
+      calls[0]!.result.resolve()
+      calls[1]!.result.resolve()
+      await flush()
+      expect(renders).toBe(2)
 
-    nullable = ui.text('mounted')
-    for (let count = 0; count < 20; count += 1) expect(nullableHandle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['nullable', 'peer'])
-    expect([nullableRenders, peerRenders]).toEqual([2, 1])
-    expect(entry(runtime.surfaces, 'nullable').component.render(80)).toEqual(['mounted'])
-    const nullableComponent = entry(runtime.surfaces, 'nullable').component
-    nullableComponent.invalidate()
-    expect((nullableComponent as BlueFocusable).focused).toBe(false)
-
-    expect(nullableHandle.setHidden(true)).toEqual(success())
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['peer'])
-    expect(nullableRenders).toBe(2)
-    expect(nullableHandle.setHidden(true)).toEqual(success())
-    expect(nullableHandle.setHidden(false)).toEqual(success())
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['nullable', 'peer'])
-    expect(nullableRenders).toBe(2)
-
-    expect(peerHandle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect([nullableRenders, peerRenders]).toEqual([2, 2])
-    nullable = null
-    now = 1_001
-    expect(nullableHandle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).toEqual(['peer'])
-    expect(nullableRenders).toBe(3)
-    expect(nullableComponent.render(80)).toEqual([])
-    nullableComponent.invalidate()
-    ;(nullableComponent as BlueFocusable).focused = true
-    expect((nullableComponent as BlueFocusable).focused).toBe(true)
-    expect(renderLayoutFrame(nullableComponent, 80, 3, () => {}).root.children).toEqual([])
-
-    nullable = ui.text('mounted again')
-    now = 2_002
-    expect(nullableHandle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(entry(runtime.surfaces, 'nullable').component).toBe(nullableComponent)
-    expect(entry(runtime.surfaces, 'nullable').component.render(80)).toEqual(['mounted again'])
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+      target.handleInput?.('c')
+      await flush()
+      handle.refresh()
+      await flush()
+      expect(calls[2]!.context.signal.aborted).toBe(true)
+      calls[2]!.result.resolve()
+      await flush()
+      expect(renders).toBe(3)
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('contains render failures and uses the live lane viewport through narrow fallback', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime('alternate', 120, 12)
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    registerPane(consumer.api, {
-      id: 'responsive',
-      placement: 'right',
-      render: () => ui.stack.column([
-        ui.child(ui.text('side'), { when: { maxWidth: 39 } }),
-        ui.child(ui.text('bottom'), { when: { minWidth: 40 } }),
-      ]),
-    })
-    registerPane(consumer.api, { id: 'thrown', placement: 'header', render: () => { throw new Error('pane exploded') } })
-    registerPane(consumer.api, { id: 'unknown-failure', placement: 'left', render: () => { throw undefined } })
-    registerPane(consumer.api, { id: 'invalid', placement: 'bottom', render: () => ({ kind: 'unknown' }) as never })
-    await flushMicrotasks()
-
-    const wide = runtime.surfaces.layout(120, 12)
-    expect(wide.right?.entries.map(item => item.id)).toEqual(['responsive'])
-    expect(entry(runtime.surfaces, 'responsive').component.render(80)).toEqual(['side'])
-    expect(entry(runtime.surfaces, 'thrown').component.render(80).join('\n')).toContain('pane exploded')
-    expect(entry(runtime.surfaces, 'unknown-failure').component.render(80).join('\n')).toContain('render failed')
-    expect(entry(runtime.surfaces, 'invalid').component.render(80).join('\n')).toContain('unknown Blue UI kind')
-    expect(renderLayoutFrame(entry(runtime.surfaces, 'invalid').component, 80, 4, () => {}).lines.join('\n')).toContain('unknown Blue UI kind')
-
-    runtime.resize(40, 12)
-    const narrow = runtime.surfaces.layout(40, 12)
-    expect(narrow.right).toBeUndefined()
-    expect(narrow.bottom?.entries.map(item => item.id)).toContain('responsive')
-    expect(entry(runtime.surfaces, 'responsive').component.render(40)).toEqual(['bottom'])
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+  it('serializes FIFO events and contains handler rejection', async () => {
+    const f = await fixture()
+    try {
+      const calls: Array<ReturnType<typeof deferred<void>>> = []
+      let renders = 0
+      f.register({
+        id: 'fifo',
+        render: () => { renders += 1; return ui.actions({ id: 'actions', items: [{ id: 'go', label: 'Go' }] }) },
+        onEvent: () => {
+          const result = deferred<void>()
+          calls.push(result)
+          return result.promise
+        },
+      })
+      await flush()
+      const target = entry(f.runtime.surfaces, 'fifo').focusTarget!
+      f.runtime.runtime.setFocus(target)
+      target.handleInput?.('\r')
+      target.handleInput?.('\r')
+      await flush()
+      expect(calls).toHaveLength(1)
+      calls[0]!.resolve()
+      await flush()
+      expect(calls).toHaveLength(2)
+      expect(renders).toBe(2)
+      calls[1]!.reject(new Error('rejected'))
+      await flush()
+      expect(entries(f.runtime.surfaces).map(item => item.id)).toContain('fifo')
+      expect(renders).toBe(2)
+      target.handleInput?.('\r')
+      await flush()
+      calls[2]!.resolve()
+      await flush()
+      expect(renders).toBe(3)
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('deactivates old pane input across render and validation fallback gaps, then restores its editor', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const editors: BlueFocusable[] = []
-    const localComponents = {
-      ...components,
-      createEditor: () => {
-        const editor = createFakeEditor()
-        editors.push(editor)
-        return editor
-      },
-    } as BlueComponents
-    const owner = mount(host, runtime.runtime, localComponents)
-    const consumer = openPanes(host)
-    const events: BlueUiEvent[] = []
-    let value = 'AB'
-    let mode: 'valid' | 'passive' | 'throw' | 'invalid' = 'valid'
-    const handle = registerPane(consumer.api, {
-      id: 'recoverable-form',
-      render: () => {
-        if (mode === 'throw') throw new Error('temporary render failure')
-        if (mode === 'invalid') return { kind: 'unknown' } as never
-        if (mode === 'passive') return ui.text('temporarily passive')
-        return ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
-      },
-      onEvent: event => {
-        events.push(event)
-        if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
-        return success()
-      },
-    })
-    await flushMicrotasks()
-    const component = entry(runtime.surfaces, 'recoverable-form').component
-    const target = entry(runtime.surfaces, 'recoverable-form').focusTarget!
-    runtime.runtime.setFocus(target)
-    component.render(80)
-    target.handleInput?.('X')
-    await flushMicrotasks()
-    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'ABX' })
-    expect(editors).toHaveLength(1)
-
-    mode = 'throw'
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(component.render(80).join('\n')).toContain('temporary render failure')
-    expect(editors[0]!.focused).toBe(false)
-    expect((editors[0] as ReturnType<typeof createFakeEditor>).onChange).toBeUndefined()
-    target.handleInput?.('ignored')
-    expect(events).toHaveLength(1)
-
-    mode = 'valid'
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(entry(runtime.surfaces, 'recoverable-form').component).toBe(component)
-    component.render(80)
-    expect(editors).toHaveLength(1)
-    runtime.runtime.setFocus(target)
-    component.render(80)
-    expect(editors[0]!.focused).toBe(true)
-    target.handleInput?.('Y')
-    await flushMicrotasks()
-    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'ABXY' })
-
-    mode = 'passive'
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(component.render(80)).toEqual(['temporarily passive'])
-    expect(editors[0]!.focused).toBe(false)
-    expect(runtime.focused()).toBe(runtime.editor)
-    target.handleInput?.('ignored')
-    expect(events).toHaveLength(2)
-
-    mode = 'valid'
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(editors).toHaveLength(1)
-
-    mode = 'invalid'
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(component.render(80).join('\n')).toContain('unknown Blue UI kind')
-    target.handleInput?.('ignored')
-    expect(events).toHaveLength(2)
-
-    mode = 'valid'
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(component.render(80).join('\n')).toContain('Name: ABXY')
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+  it('coalesces independent latest-wins pane events into one internal render', async () => {
+    const f = await fixture()
+    try {
+      let renders = 0
+      const release = deferred<void>()
+      f.register({
+        id: 'coalesced',
+        render: () => {
+          renders += 1
+          return ui.stack.column([
+            ui.tabs({ id: 'views', activeId: 'summary', items: [
+              { id: 'summary', label: 'Summary' },
+              { id: 'details', label: 'Details' },
+            ] }),
+            ui.form({ id: 'profile', fields: [{ kind: 'toggle', id: 'enabled', label: 'Enabled', value: false }] }),
+          ])
+        },
+        onEvent: () => release.promise,
+      })
+      await flush()
+      const target = entry(f.runtime.surfaces, 'coalesced').focusTarget!
+      f.runtime.runtime.setFocus(target)
+      target.handleInput?.('\x1b[C')
+      target.handleInput?.('\t')
+      target.handleInput?.('\r')
+      await flush()
+      expect(renders).toBe(1)
+      release.resolve()
+      await flush()
+      expect(renders).toBe(2)
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('runs latest-wins independently per control and ignores late superseded completion', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const pending: { event: BlueUiEvent, context: BlueUiEventContext, result: ReturnType<typeof deferred<BlueResult>> }[] = []
-    let renders = 0
-    const handle = registerPane(consumer.api, {
-      id: 'latest',
-      render: () => {
-        renders += 1
-        return ui.form({ id: 'fields', fields: [
-          { kind: 'input', id: 'first', label: 'First', value: '' },
-          { kind: 'input', id: 'second', label: 'Second', value: '' },
-        ] })
-      },
-      onEvent: (event, context) => {
-        const result = deferred<BlueResult>()
-        pending.push({ event, context, result })
-        return result.promise
-      },
-    })
-    await flushMicrotasks()
-    let target = entry(runtime.surfaces, 'latest').focusTarget!
-    runtime.runtime.setFocus(target)
-    target.handleInput?.('a')
-    await flushMicrotasks()
-    target.handleInput?.('\t')
-    target.handleInput?.('\x1b[B')
-    target.handleInput?.('b')
-    await flushMicrotasks()
-    expect(pending).toHaveLength(3)
-    expect(pending.map(call => 'controlId' in call.event ? call.event.controlId : 'dismiss')).toEqual(['first', 'first', 'second'])
-    expect(pending[0]!.context.signal.aborted).toBe(true)
-    expect(pending[1]!.context.signal.aborted).toBe(false)
-    expect(pending[2]!.context.signal.aborted).toBe(false)
+  it('keeps or drops a queued pane render against the pending registry snapshot', async () => {
+    const f = await fixture()
+    try {
+      let renders = 0
+      const handle = f.register({
+        id: 'pending',
+        render: () => { renders += 1; return ui.actions({ id: 'actions', items: [{ id: 'go', label: 'Go' }] }) },
+      })
+      await flush()
+      const target = entry(f.runtime.surfaces, 'pending').focusTarget!
+      f.runtime.runtime.setFocus(target)
 
-    target.handleInput?.('\x1b[Z')
-    target.handleInput?.('\x1b[A')
-    target.handleInput?.('c')
-    await flushMicrotasks()
-    expect(pending).toHaveLength(5)
-    expect(pending[0]!.context.signal.aborted).toBe(true)
-    expect(pending[1]!.context.signal.aborted).toBe(true)
-    expect(pending[2]!.context.signal.aborted).toBe(true)
-    expect(pending[3]!.context.signal.aborted).toBe(false)
-    expect(pending[4]!.context.signal.aborted).toBe(false)
+      const retainedTasks: VoidFunction[] = []
+      const retainedQueue = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation(task => { retainedTasks.push(task) })
+      target.handleInput?.('\r')
+      await flush()
+      target.handleInput?.('\r')
+      await flush()
+      f.register({ id: 'sibling', render: () => ui.text('sibling') })
+      expect(retainedTasks.length).toBeGreaterThanOrEqual(2)
+      while (retainedTasks.length > 0) retainedTasks.shift()!()
+      retainedQueue.mockRestore()
+      await flush()
+      expect(renders).toBe(2)
 
-    pending[3]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(renders).toBe(2)
-    pending[4]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(renders).toBe(3)
-    pending[0]!.result.resolve(success())
-    pending[1]!.result.resolve(success())
-    pending[2]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(renders).toBe(3)
-
-    target = entry(runtime.surfaces, 'latest').focusTarget!
-    target.handleInput?.('d')
-    await flushMicrotasks()
-    expect(pending).toHaveLength(6)
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(pending[5]!.context.signal.aborted).toBe(true)
-    expect(renders).toBe(4)
-    expect(entry(runtime.surfaces, 'latest').component.render(80).join('\n')).not.toContain('First: d')
-    pending[5]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(renders).toBe(4)
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+      const droppedTasks: VoidFunction[] = []
+      const droppedQueue = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation(task => { droppedTasks.push(task) })
+      target.handleInput?.('\r')
+      await flush()
+      handle.dispose()
+      expect(droppedTasks.length).toBeGreaterThanOrEqual(2)
+      while (droppedTasks.length > 0) droppedTasks.shift()!()
+      droppedQueue.mockRestore()
+      await flush()
+      expect(renders).toBe(2)
+    } finally {
+      vi.restoreAllMocks()
+      await f.dispose()
+    }
   })
 
-  it('keeps one semantic field and editor draft across successful pane recompilation', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    let value = 'A'
-    let reordered = false
-    let renders = 0
-    registerPane(consumer.api, {
-      id: 'continuous-form',
-      render: () => {
-        renders += 1
-        const form = ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
-        return reordered
-          ? ui.stack.column([ui.actions({ id: 'leading', items: [{ id: 'other', label: 'Other' }] }), form])
-          : ui.stack.column([form, ui.text('tail')])
-      },
-      onEvent: event => {
-        if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
-        reordered = true
-        return success()
-      },
-    })
-    await flushMicrotasks()
-    const target = entry(runtime.surfaces, 'continuous-form').focusTarget!
-    const component = entry(runtime.surfaces, 'continuous-form').component
-    const repaintBaseline = runtime.rendered()
-    runtime.runtime.setFocus(target)
-    target.handleInput?.('B')
-    await flushMicrotasks()
-    expect(value).toBe('AB')
-    expect(renders).toBe(2)
-    expect(runtime.rendered()).toBe(repaintBaseline + 1)
-    expect(entry(runtime.surfaces, 'continuous-form').component).toBe(component)
-    expect(entry(runtime.surfaces, 'continuous-form').focusTarget).toBe(target)
+  it('aborts queued work and atomically replaces a disposed same-id pane', async () => {
+    const f = await fixture()
+    try {
+      const calls: Array<{ context: BlueUiEventContext, result: ReturnType<typeof deferred<void>> }> = []
+      const original = f.register({
+        id: 'replace',
+        render: () => ui.actions({ id: 'actions', items: [{ id: 'go', label: 'Go' }] }),
+        onEvent: (_event, context) => {
+          const result = deferred<void>()
+          calls.push({ context, result })
+          return result.promise
+        },
+      })
+      await flush()
+      const oldComponent = entry(f.runtime.surfaces, 'replace').component as BlueFocusable
+      f.runtime.runtime.setFocus(oldComponent)
+      oldComponent.handleInput?.('\r')
+      oldComponent.handleInput?.('\r')
+      await flush()
+      expect(calls).toHaveLength(1)
+      original.refresh()
+      await flush()
+      expect(calls[0]!.context.signal.aborted).toBe(true)
+      calls[0]!.result.resolve()
+      await flush()
 
-    target.handleInput?.('C')
-    await flushMicrotasks()
-    expect(value).toBe('ABC')
-    expect(entry(runtime.surfaces, 'continuous-form').component.render(80).join('\n')).toContain('Name: ABC')
-    expect(runtime.rendered()).toBe(repaintBaseline + 2)
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+      const refreshed = entry(f.runtime.surfaces, 'replace').focusTarget!
+      f.runtime.runtime.setFocus(refreshed)
+      refreshed.handleInput?.('\r')
+      refreshed.handleInput?.('\r')
+      await flush()
+      expect(calls).toHaveLength(2)
+      original.dispose()
+      f.register({
+        id: 'replace',
+        title: 'Replacement',
+        priority: 9,
+        size: { preferred: 8 },
+        narrow: 'hidden',
+        render: () => ui.text('new pane'),
+      })
+      await flush()
+      expect(calls[1]!.context.signal.aborted).toBe(true)
+      calls[1]!.result.resolve()
+      await flush()
+      expect(entry(f.runtime.surfaces, 'replace').component.render(30)).toEqual(['new pane'])
+      expect((oldComponent as BlueFocusable).focused).toBe(false)
+      expect(oldComponent.render(30)).toEqual([])
+      expect(getLayoutNode(oldComponent)).toMatchObject({ type: 'vstack', entries: [] })
+      oldComponent.invalidate()
+      oldComponent.handleInput?.('\r')
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('keeps a form draft dormant across pane hide and show without stealing focus', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const events: BlueUiEvent[] = []
-    let renders = 0
-    const handle = registerPane(consumer.api, {
-      id: 'dormant-form',
-      render: () => {
-        renders += 1
-        return ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'A' }] })
-      },
-      onEvent: event => { events.push(event); return success() },
-    })
-    await flushMicrotasks()
-    const component = entry(runtime.surfaces, 'dormant-form').component
-    const target = entry(runtime.surfaces, 'dormant-form').focusTarget!
-    runtime.runtime.setFocus(target)
-    target.handleInput?.('B')
-    await flushMicrotasks()
-    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'AB' })
-    expect(component.render(80).join('\n')).toContain('Name: AB')
-    expect(renders).toBe(2)
-
-    expect(handle.setHidden(true)).toEqual(success())
-    await flushMicrotasks()
-    expect(entries(runtime.surfaces).map(item => item.id)).not.toContain('dormant-form')
-    expect(runtime.focused()).toBe(runtime.editor)
-    expect(renders).toBe(2)
-
-    expect(handle.setHidden(false)).toEqual(success())
-    await flushMicrotasks()
-    const restored = entry(runtime.surfaces, 'dormant-form')
-    expect(restored.component).toBe(component)
-    expect(restored.focusTarget).toBe(target)
-    expect(runtime.focused()).toBe(runtime.editor)
-    expect(component.render(80).join('\n')).toContain('Name: AB')
-    expect(renders).toBe(2)
-
-    runtime.runtime.setFocus(target)
-    target.handleInput?.('C')
-    await flushMicrotasks()
-    expect(events.at(-1)).toEqual({ kind: 'value-change', controlId: 'name', value: 'ABC' })
-    expect(component.render(80).join('\n')).toContain('Name: ABC')
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
-  })
-
-  it('preserves FIFO events across success refreshes and contains handler failures', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const pending: { context: BlueUiEventContext, result: ReturnType<typeof deferred<BlueResult>> }[] = []
-    let renders = 0
-    const handle = registerPane(consumer.api, {
-      id: 'fifo',
-      render: () => { renders += 1; return ui.actions({ id: 'actions', items: [{ id: 'go', label: 'Go' }] }) },
-      onEvent: (_event, context) => {
-        const result = deferred<BlueResult>()
-        pending.push({ context, result })
-        return result.promise
-      },
-    })
-    await flushMicrotasks()
-    const target = entry(runtime.surfaces, 'fifo').focusTarget!
-    runtime.runtime.setFocus(target)
-    target.handleInput?.('\r')
-    target.handleInput?.('\r')
-    await flushMicrotasks()
-    expect(pending).toHaveLength(1)
-    expect(pending[0]!.context.revision).toBe(1)
-
-    pending[0]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(pending).toHaveLength(2)
-    expect(pending[1]!.context.revision).toBe(2)
-    expect(pending[1]!.context.signal.aborted).toBe(false)
-    expect(renders).toBe(2)
-    pending[1]!.result.reject(new Error('handler failed'))
-    await flushMicrotasks()
-    expect(renders).toBe(2)
-    expect(entries(runtime.surfaces).map(item => item.id)).toContain('fifo')
-    target.handleInput?.('\r')
-    await flushMicrotasks()
-    expect(pending).toHaveLength(3)
-    pending[2]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(renders).toBe(3)
-
-    target.handleInput?.('\r')
-    target.handleInput?.('\r')
-    await flushMicrotasks()
-    expect(pending).toHaveLength(4)
-    expect(handle.refresh()).toEqual(success())
-    await flushMicrotasks()
-    expect(pending[3]!.context.signal.aborted).toBe(true)
-    pending[3]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(pending).toHaveLength(4)
-    expect(renders).toBe(4)
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
-  })
-
-  it('aborts timed out and unloaded pane events without accepting late completion', async () => {
+  it('aborts timed-out and unloaded pane work without accepting late completion', async () => {
     vi.useFakeTimers()
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const calls: { context: BlueUiEventContext, result: ReturnType<typeof deferred<BlueResult>> }[] = []
-    let renders = 0
-    registerPane(consumer.api, {
-      id: 'abort',
-      render: () => { renders += 1; return ui.actions({ id: 'actions', items: [{ id: 'go', label: 'Go' }] }) },
-      onEvent: (_event, context) => {
-        const result = deferred<BlueResult>()
-        calls.push({ context, result })
-        return result.promise
-      },
-    })
-    await flushMicrotasks()
-    let target = entry(runtime.surfaces, 'abort').focusTarget!
-    target.handleInput?.('\r')
-    target.handleInput?.('\r')
-    await flushMicrotasks()
-    expect(calls).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(30_000)
-    await flushMicrotasks()
-    expect(calls[0]!.context.signal.aborted).toBe(true)
-    expect(renders).toBe(1)
-    expect(entries(runtime.surfaces).map(item => item.id)).toContain('abort')
-    expect(calls).toHaveLength(2)
-    target = entry(runtime.surfaces, 'abort').focusTarget!
-    target.handleInput?.('\r')
-    await flushMicrotasks()
-    expect(calls).toHaveLength(2)
-    consumer.scope.dispose()
-    await flushMicrotasks()
-    expect(calls[1]!.context.signal.aborted).toBe(true)
-    expect(runtime.surfaces.empty).toBe(true)
-    calls[0]!.result.resolve(success())
-    calls[1]!.result.resolve(success())
-    await flushMicrotasks()
-    expect(renders).toBe(1)
-    expect(runtime.surfaces.empty).toBe(true)
-    owner.scope.dispose()
+    const f = await fixture()
+    try {
+      const contexts: BlueUiEventContext[] = []
+      const results: Array<ReturnType<typeof deferred<void>>> = []
+      let renders = 0
+      const handle = f.register({
+        id: 'abort',
+        render: () => { renders += 1; return ui.actions({ id: 'actions', items: [{ id: 'go', label: 'Go' }] }) },
+        onEvent: (_event, context) => {
+          contexts.push(context)
+          const result = deferred<void>()
+          results.push(result)
+          return result.promise
+        },
+      })
+      await flush()
+      const target = entry(f.runtime.surfaces, 'abort').focusTarget!
+      f.runtime.runtime.setFocus(target)
+      target.handleInput?.('\r')
+      await flush()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(contexts[0]!.signal.aborted).toBe(true)
+      expect(entries(f.runtime.surfaces).map(item => item.id)).toContain('abort')
+      results[0]!.resolve()
+      await flush()
+      expect(renders).toBe(1)
+
+      target.handleInput?.('\r')
+      await flush()
+      handle.dispose()
+      await flush()
+      expect(contexts[1]!.signal.aborted).toBe(true)
+      results[1]!.resolve()
+      await flush()
+      expect(entries(f.runtime.surfaces).map(item => item.id)).not.toContain('abort')
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('coalesces default event refreshes and ignores events from a disposed component', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    let renders = 0
-    registerPane(consumer.api, {
-      id: 'defaults',
-      title: 'Defaults',
-      placement: 'left',
-      priority: 10,
-      size: { min: 20, preferred: 'auto', max: 40 },
-      narrow: 'hidden',
-      render: () => {
-        renders += 1
-        return ui.form({ id: 'fields', fields: [
-          { kind: 'input', id: 'first', label: 'First', value: '' },
-          { kind: 'input', id: 'second', label: 'Second', value: '' },
-        ] })
-      },
-    })
-    await flushMicrotasks()
-    const component = entry(runtime.surfaces, 'defaults').component
-    const target = entry(runtime.surfaces, 'defaults').focusTarget!
-    target.handleInput?.('a')
-    target.handleInput?.('\t')
-    target.handleInput?.('\x1b[B')
-    target.handleInput?.('b')
-    await flushMicrotasks()
-    expect(renders).toBe(2)
-    expect(entry(runtime.surfaces, 'defaults')).toMatchObject({
-      title: 'Defaults',
-      priority: 10,
-      size: { min: 20, preferred: 'auto', max: 40 },
-      narrow: 'hidden',
-    })
+  it('routes F6 across direct panes and respects capturing overlays', async () => {
+    const f = await fixture()
+    try {
+      f.register({ id: 'header', placement: 'header', render: () => ui.actions({ id: 'h', items: [{ id: 'go', label: 'Header' }] }) })
+      f.register({ id: 'left-passive', placement: 'left', render: () => ui.text('passive') })
+      f.register({ id: 'bottom', render: () => ui.actions({ id: 'b', items: [{ id: 'go', label: 'Bottom' }] }) })
+      await flush()
 
-    consumer.scope.dispose()
-    await flushMicrotasks()
-    target.handleInput?.('c')
-    component.invalidate()
-    ;(component as BlueFocusable).focused = true
-    await flushMicrotasks()
-    expect(renders).toBe(2)
-    expect(component.render(80)).toEqual([])
-    expect((component as BlueFocusable).focused).toBe(false)
-    expect(renderLayoutFrame(component, 80, 3, () => {}).root.children).toEqual([])
-    owner.scope.dispose()
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.surfaces.focusedId).toBe('header')
+      const firstFocus = f.runtime.focused()
+      f.runtime.setCapturing(true)
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.focused()).toBe(firstFocus)
+      f.runtime.setCapturing(false)
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.surfaces.focusedId).toBeUndefined()
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.surfaces.focusedId).toBe('bottom')
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      f.keymap.invoke('blue.surface.previous')
+      expect(f.runtime.surfaces.focusedId).toBe('bottom')
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('navigates core-managed implicit focus targets in main-screen order', () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime('main')
-    const owner = mount(host, runtime.runtime)
-    const implicit: BlueFocusable = { focused: false, render: () => ['implicit'], invalidate: () => {} }
-    const focused = runtime.surfaces.register({ id: 'implicit', placement: 'header', component: implicit })
-    const passive = runtime.surfaces.register({ id: 'passive', placement: 'bottom', component: { render: () => ['passive'], invalidate: () => {} } })
+  it('navigates main-layout components without explicit focus targets and handles an empty surface set', async () => {
+    const f = await fixture(createRuntime('main'))
+    try {
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
 
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('implicit')
-    expect(runtime.focused()).toBe(implicit)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.linearLayout(120, 20).bottom?.active.id).toBe('passive')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-
-    focused.dispose()
-    passive.dispose()
-    owner.scope.dispose()
+      const focusable: BlueFocusable = { focused: false, render: () => ['focusable'], invalidate: () => {} }
+      const passive: BlueComponent = { render: () => ['passive'], invalidate: () => {} }
+      const focusableRegistration = f.runtime.surfaces.register({ id: 'direct-focusable', placement: 'header', component: focusable })
+      const passiveRegistration = f.runtime.surfaces.register({ id: 'direct-passive', placement: 'bottom', component: passive })
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.focused()).toBe(focusable)
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.focused()).toBe(f.runtime.editor)
+      passiveRegistration.dispose()
+      focusableRegistration.dispose()
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('cycles same-lane and cross-lane panes, restores passive focus, and obeys modal blocking', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const handles = [
-      registerPane(consumer.api, { id: 'header-a', placement: 'header', render: () => ui.actions({ id: 'a', items: [{ id: 'go-a', label: 'A' }] }) }),
-      registerPane(consumer.api, { id: 'header-b', placement: 'header', render: () => ui.actions({ id: 'b', items: [{ id: 'go-b', label: 'B' }] }) }),
-      registerPane(consumer.api, { id: 'left-passive', placement: 'left', render: () => ui.text('passive') }),
-      registerPane(consumer.api, { id: 'bottom-c', placement: 'bottom', render: () => ui.actions({ id: 'c', items: [{ id: 'go-c', label: 'C' }] }) }),
-    ]
-    await flushMicrotasks()
-
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('header-a')
-    expect(runtime.focused()).toBe(entry(runtime.surfaces, 'header-a').focusTarget)
-    owner.keymap.invoke('blue.surface.previous')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('header-a')
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('header-b')
-    expect(runtime.surfaces.linearLayout(120, 20).header?.active.id).toBe('header-b')
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.linearLayout(120, 20).left?.active.id).toBe('left-passive')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('bottom-c')
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-
-    owner.keymap.invoke('blue.surface.previous')
-    expect(runtime.surfaces.focusedId).toBe('bottom-c')
-    expect(entry(runtime.surfaces, 'bottom-c').component.render(80).at(-1)).toBe('  Enter run · Esc leave')
-    entry(runtime.surfaces, 'bottom-c').focusTarget?.handleInput?.('\x1b')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-
-    runtime.setCapturing(true)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    runtime.setCapturing(false)
-
-    for (const handle of handles) handle.dispose()
-    await flushMicrotasks()
-    expect(runtime.surfaces.empty).toBe(true)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.focused()).toBe(runtime.editor)
-    consumer.scope.dispose()
-    owner.scope.dispose()
+  it('retains navigation placement while the active pane is removed', async () => {
+    const f = await fixture()
+    try {
+      const first = f.register({ id: 'a-remove', placement: 'left', render: () => ui.actions({ id: 'a', items: [{ id: 'go', label: 'A' }] }) })
+      const second = f.register({ id: 'b-remove', placement: 'left', render: () => ui.actions({ id: 'b', items: [{ id: 'go', label: 'B' }] }) })
+      await flush()
+      f.keymap.invoke('blue.surface.next')
+      expect(f.runtime.surfaces.focusedId).toBe('a-remove')
+      first.dispose()
+      await flush()
+      expect(entries(f.runtime.surfaces).map(item => item.id)).toEqual(['b-remove'])
+      second.dispose()
+      await flush()
+      expect(entries(f.runtime.surfaces)).toEqual([])
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('continues after a passive same-lane successor when the focused pane unloads', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const first = registerPane(consumer.api, { id: 'header-a', placement: 'header', render: () => ui.actions({ id: 'a', items: [{ id: 'go-a', label: 'A' }] }) })
-    registerPane(consumer.api, { id: 'header-b', placement: 'header', render: () => ui.text('passive successor') })
-    registerPane(consumer.api, { id: 'left-c', placement: 'left', render: () => ui.actions({ id: 'c', items: [{ id: 'go-c', label: 'C' }] }) })
-    await flushMicrotasks()
-
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('header-a')
-    first.dispose()
-    await flushMicrotasks()
-    expect(runtime.surfaces.linearLayout(120, 20).header?.active.id).toBe('header-b')
-    expect(runtime.surfaces.focusedId).toBeUndefined()
-    expect(runtime.focused()).toBe(runtime.editor)
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('left-c')
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+  it('falls back from navigation state when a hidden pane is removed', async () => {
+    const f = await fixture()
+    try {
+      const handle = f.register({ id: 'hidden-remove', placement: 'left', render: () => ui.actions({ id: 'a', items: [{ id: 'go', label: 'A' }] }) })
+      await flush()
+      f.keymap.invoke('blue.surface.next')
+      handle.setHidden(true)
+      await flush()
+      handle.dispose()
+      await flush()
+      expect(entries(f.runtime.surfaces)).toEqual([])
+    } finally {
+      await f.dispose()
+    }
   })
 
-  it('falls back to an externally focused successor when the navigation pane unloads', async () => {
-    const host = new BluePluginHostService(new Context())
-    const runtime = createRuntime()
-    const owner = mount(host, runtime.runtime)
-    const consumer = openPanes(host)
-    const first = registerPane(consumer.api, { id: 'header-a', placement: 'header', render: () => ui.actions({ id: 'a', items: [{ id: 'go-a', label: 'A' }] }) })
-    registerPane(consumer.api, { id: 'header-b', placement: 'header', render: () => ui.actions({ id: 'b', items: [{ id: 'go-b', label: 'B' }] }) })
-    registerPane(consumer.api, { id: 'left-c', placement: 'left', render: () => ui.actions({ id: 'c', items: [{ id: 'go-c', label: 'C' }] }) })
-    await flushMicrotasks()
-
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('header-a')
-    expect(runtime.surfaces.activate('header', 'header-b')).toBe(true)
-    expect(runtime.surfaces.focusedId).toBe('header-b')
-    first.dispose()
-    await flushMicrotasks()
-    expect(runtime.surfaces.focusedId).toBe('header-b')
-    owner.keymap.invoke('blue.surface.next')
-    expect(runtime.surfaces.focusedId).toBe('left-c')
-
-    consumer.scope.dispose()
-    owner.scope.dispose()
+  it('passes the live allocated viewport to responsive pane nodes', async () => {
+    const runtime = createRuntime('alternate', 100, 20)
+    const f = await fixture(runtime)
+    try {
+      const handle = f.register({
+        id: 'responsive',
+        placement: 'left',
+        size: { preferred: 30 },
+        render: () => ui.stack.column([
+          ui.child(ui.text('wide'), { when: { minWidth: 20 } }),
+          ui.child(ui.text('narrow'), { when: { maxWidth: 19 } }),
+        ]),
+      })
+      await flush()
+      expect(entry(runtime.surfaces, 'responsive').component.render(30)).toContain('wide')
+      runtime.resize(18, 20)
+      handle.refresh()
+      await flush()
+      const rows = entry(runtime.surfaces, 'responsive').component.render(18)
+      expect(rows).toContain('narrow')
+      expect(rows.every(row => visibleWidth(row) <= 18)).toBe(true)
+    } finally {
+      await f.dispose()
+    }
   })
 })

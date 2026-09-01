@@ -13,7 +13,7 @@
  * from `child-agent-model.ts` overlays projected child-session depth: the running/waiting split (which also
  * corrects the background ack's premature "finished"), per-child tool and
  * token counts, the model/effort line, and the running activity second
- * line. Missing child projection capability degrades to the parent facts.
+ * line. Missing child projection data degrades to the parent facts.
  *
  * Kimi's 200ms group throttle is not ported: it rate-limits a push model
  * (snapshot listeners rebuilding on every child event). This component pulls

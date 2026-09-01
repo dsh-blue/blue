@@ -13,7 +13,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
-import type { BlueModelSelectionRef } from '@dsh-blue/blue-app'
 import type { Action } from '@dsh-blue/blue-frontend'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import { createModelListCache, cycleSessionModel, type ModelListCache } from '../src/model-commands.ts'
@@ -35,8 +34,10 @@ afterEach(() => {
   notices = []
 })
 
-/** A mutable stand-in for the app's three-tier selection handle. */
-function fakeModelRef(selection: ModelSelection): { ref: BlueModelSelectionRef, writes: ModelSelection[] } {
+interface TestModelRef { current: ModelSelection }
+
+/** Mutable projection source used by the native dsh service doubles. */
+function fakeModelRef(selection: ModelSelection): { ref: TestModelRef, writes: ModelSelection[] } {
   const writes: ModelSelection[] = []
   const state = { current: selection }
   const ref = {
@@ -46,7 +47,7 @@ function fakeModelRef(selection: ModelSelection): { ref: BlueModelSelectionRef, 
       writes.push(next)
     },
     assembled: undefined,
-  } as BlueModelSelectionRef
+  }
   return { ref, writes }
 }
 
@@ -54,36 +55,38 @@ function fakeModelRef(selection: ModelSelection): { ref: BlueModelSelectionRef, 
 function provideModelBoundary(
   ctx: Context,
   agent: Agent | undefined,
-  modelRef?: BlueModelSelectionRef,
+  modelRef?: TestModelRef,
 ): void {
-  ctx.provide('blueSessionReader', {
-    current: () => agent === undefined
-      ? null
-      : { id: String(agent.id), cwd: process.cwd(), status: 'idle', mode: 'normal' },
-    subscribe: () => ({ disposed: false, dispose() {} }),
-    request: async () => ({ ok: true, value: undefined }),
-  } as never)
-  ctx.provide('blueSessionActions', {
-    modelSelection: () => modelRef?.current,
-    hasRequestHeader: () => agent?.session.requestHeader() !== undefined,
-    selectModel: (selection: ModelSelection) => {
-      if (modelRef === undefined) {
-        return { ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }
-      }
-      const previous = modelRef.current
-      modelRef.current = selection
-      return { ok: true, value: previous }
+  ctx.provide('blueCurrentAgent', {
+    current: () => agent ?? null,
+    revision: () => 0,
+    subscribe: (listener: (current: Agent | null, revision: number) => void) => {
+      listener(agent ?? null, 0)
+      return () => {}
     },
   } as never)
-  if (ctx.get('blueSessionProjections') === undefined) {
-    ctx.provide('blueSessionProjections', {
-      current: () => undefined,
-      currentMany: () => undefined,
-      subscribe: () => () => {},
-      children: () => [],
-      subscribeChildren: () => () => {},
-    })
-  }
+  ctx.provide('sessionProjections', {
+    snapshot: () => ({
+      asOfSeq: 0,
+      values: modelRef === undefined
+        ? {}
+        : { modelSelection: { lastUsed: modelRef.current, next: modelRef.current } },
+    }),
+    onChanged: () => () => {},
+  } as never)
+  ctx.provide('sessionController', {
+    selectModel: async (request: ModelSelection & { sessionId: string }) => {
+      if (modelRef === undefined) throw new Error('model selection is unavailable for this session')
+      const selected = {
+        provider: request.provider,
+        model: request.model,
+        ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
+      }
+      modelRef.current = selected
+      return { selected }
+    },
+  } as never)
+  ctx.provide('tools', { schemas: () => [] } as never)
   if (ctx.get('blueSkillsCatalog') === undefined) {
     ctx.provide('blueSkillsCatalog', {
       userInvocable: () => [],
@@ -150,7 +153,7 @@ function fakeLlm(catalog: FakeCatalog = {}): LlmRuntime {
 async function mount(options: {
   catalog?: FakeCatalog
   attach?: boolean
-  modelRef?: BlueModelSelectionRef
+  modelRef?: TestModelRef
   defaults?: { selection: ModelSelection, saveError?: Error } | false
   headerConfig?: { provider: string, model: string }
   llm?: LlmRuntime
@@ -161,7 +164,7 @@ async function mount(options: {
   ctx: Context
   screen: FakeScreen
   agent: Agent
-  modelRef: BlueModelSelectionRef
+  modelRef: TestModelRef
   writes: ModelSelection[]
   saveSelection: ReturnType<typeof vi.fn>
   fiber: { dispose(): Promise<void> }
@@ -247,7 +250,7 @@ describe('model-family commands', () => {
     handleless.ctx.provide('testSession', { current: bareAgent, modelRef: undefined })
     await handleless.ctx.plugin(commandsPlugin)
     expect((await handleless.ctx.commands.execute(bareAgent, '/model', [], signal()))?.result)
-      .toEqual({ kind: 'error', text: 'model selection is unavailable for this session' })
+      .toEqual({ kind: 'error', text: 'no session is live yet' })
   })
 
   it('/model reports the llm guard before anything else', async () => {
@@ -367,6 +370,30 @@ describe('model-family commands', () => {
     expect(notices[0]).toBe('Switched to mock-pro (mock) · thinking high · session only')
   })
 
+  it('/model picker contains a commit after the current Agent disappears', async () => {
+    const { ctx, screen, agent, writes } = await mount()
+    await ctx.commands.execute(agent, '/model', [], signal())
+    ;(ctx.get('testSession') as { current: Agent | null }).current = null
+    const options = (screen.overlays.at(-1)!.component as unknown as {
+      options: { onAction(action: Action): void }
+    }).options
+    options.onAction({ kind: 'model.select', provider: 'mock', model: 'mock-pro' })
+    await vi.waitFor(() => { expect(notices).toEqual(['no session is live yet']) })
+    expect(writes).toEqual([])
+  })
+
+  it('/model picker contains a commit after its selection projection disappears', async () => {
+    const { ctx, screen, agent, writes } = await mount({ defaults: false })
+    await ctx.commands.execute(agent, '/model', [], signal())
+    ;(ctx.get('testSession') as { current: Agent, modelRef?: TestModelRef }).modelRef = undefined
+    const options = (screen.overlays.at(-1)!.component as unknown as {
+      options: { onAction(action: Action): void }
+    }).options
+    options.onAction({ kind: 'model.select', provider: 'mock', model: 'mock-pro' })
+    await vi.waitFor(() => { expect(notices).toEqual(['no session is live yet']) })
+    expect(writes).toEqual([])
+  })
+
   it('/model adjusts the effort on the focused row instead of the saved model', async () => {
     const { ctx, screen, agent, writes } = await mount({
       catalog: { models: { mock: [
@@ -428,11 +455,11 @@ describe('model-family commands', () => {
 
   it('/model surfaces a rejected structured selection action', async () => {
     const mounted = await mount()
-    ;(mounted.ctx.blueSessionActions as unknown as {
-      selectModel: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
-    }).selectModel = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'selection rejected' })
-    expect((await mounted.ctx.commands.execute(mounted.agent, '/model mock-pro', [], signal()))?.result)
-      .toEqual({ kind: 'success', text: 'selection rejected' })
+    ;(mounted.ctx.get('sessionController') as unknown as {
+      selectModel: () => Promise<never>
+    }).selectModel = async () => { throw new Error('selection rejected') }
+    await expect(mounted.ctx.commands.execute(mounted.agent, '/model mock-pro', [], signal()))
+      .rejects.toThrow('selection rejected')
   })
 
   it('/effort guards: no reasoning metadata and resolve failure', async () => {
@@ -631,8 +658,8 @@ describe('model-family commands', () => {
     await ctx.commands.execute(agent, '/model', [], signal())
     await ctx.commands.execute(agent, '/effort', [], signal())
     await fiber.dispose()
-    // The panels stay mounted on the fake screen; their commits still write
-    // the selection but no longer reach for the shared editor.
+    // The panels stay mounted on the fake screen, but stale callbacks are
+    // inert once the command fiber has unloaded.
     const modelEntry = screen.overlays.find(entry => !entry.hidden)
     const modelPanel = modelEntry!.component as unknown as { handleInput(d: string): void }
     modelPanel.handleInput(KEY.tab)
@@ -641,9 +668,35 @@ describe('model-family commands', () => {
     effortPanel.handleInput(KEY.enter)
     effortPanel.handleInput(KEY.tab)
     effortPanel.handleInput(KEY.enter)
-    // Both panels commit their selections; neither reaches the editor.
-    await vi.waitFor(() => { expect(writes).toHaveLength(2) })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(writes).toEqual([])
     expect(notices).toEqual([])
+  })
+
+  it('/model and /effort suppress late commit notices after the tree unloads', async () => {
+    for (const command of ['model', 'effort'] as const) {
+      notices = []
+      const mounted = await mount()
+      let resolveSelection: (value: { selected: ModelSelection }) => void = () => {}
+      const selectModel = vi.fn(() => new Promise<{ selected: ModelSelection }>(resolve => {
+        resolveSelection = resolve
+      }))
+      ;(mounted.ctx.get('sessionController') as unknown as { selectModel: unknown }).selectModel = selectModel
+      await mounted.ctx.commands.execute(mounted.agent, `/${command}`, [], signal())
+      const options = (mounted.screen.overlays.at(-1)!.component as unknown as {
+        options: { onAction(action: Action): void }
+      }).options
+      if (command === 'model') {
+        options.onAction({ kind: 'model.select', provider: 'mock', model: 'mock-pro' })
+      } else {
+        options.onAction({ kind: 'effort.select', effort: 'low' })
+      }
+      await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledOnce() })
+      await mounted.fiber.dispose()
+      resolveSelection({ selected: { provider: 'mock', model: command === 'model' ? 'mock-pro' : 'mock', reasoningEffort: 'low' as never } })
+      await new Promise(resolve => setImmediate(resolve))
+      expect(notices).toEqual([])
+    }
   })
 
   it('pickers seed from a live effort', async () => {

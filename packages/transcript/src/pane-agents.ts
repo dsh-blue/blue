@@ -23,10 +23,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { BlueTone, BlueUiNode } from '@dsh-blue/blue-api'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
-import type { BlueBottomPaneNode } from './dock-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
-import { AgentGroupComponent, type AgentLiveLookup } from './agent-group.ts'
+import type { AgentLiveLookup } from './agent-group.ts'
 import { trackChildAgentModels } from './child-agent-model.ts'
 import { parseToolArguments } from './present.ts'
 import type { TranscriptToolItem } from './types.ts'
@@ -35,11 +35,61 @@ import type { TranscriptToolItem } from './types.ts'
 export const name = 'blue-pane-agents'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
+export const inject = ['bluePanes', 'blueSessionFacts']
 
 /** One pane-local member shaped for the existing group-card renderer. */
 interface PaneMember {
   readonly item: TranscriptToolItem
+}
+
+function argument(item: TranscriptToolItem, key: string): string | undefined {
+  const args = item.parsedArguments
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return undefined
+  const value = (args as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
+
+function agentPhase(member: PaneMember, live: AgentLiveLookup | undefined): {
+  readonly label: string
+  readonly tone: BlueTone
+} {
+  const phase = live?.(member.item)?.phase
+  if (phase === 'failed' || member.item.result?.isError === true) return { label: 'failed', tone: 'danger' }
+  if (phase === 'waiting') return { label: 'waiting', tone: 'warning' }
+  if (phase === 'running' || member.item.result === undefined) return { label: 'running', tone: 'accent' }
+  return { label: 'done', tone: 'success' }
+}
+
+function agentsNode(members: readonly PaneMember[], live: AgentLiveLookup | undefined): BlueUiNode | null {
+  if (members.length === 0) return null
+  const children: { readonly node: BlueUiNode }[] = [{
+    node: { kind: 'rich-text', spans: [{ text: `Agents (${String(members.length)})`, tone: 'accent', emphasis: 'strong' }] },
+  }]
+  for (const member of members) {
+    const snapshot = live?.(member.item)
+    const phase = agentPhase(member, live)
+    const label = argument(member.item, 'name') ?? argument(member.item, 'description') ?? member.item.name
+    const detail = argument(member.item, 'description')
+    const metrics = [
+      snapshot?.model,
+      snapshot?.effort,
+      snapshot?.toolCount === undefined ? undefined : `${String(snapshot.toolCount)} tools`,
+      snapshot?.tokens === undefined ? undefined : `${String(snapshot.tokens)} tokens`,
+    ].filter((value): value is string => value !== undefined)
+    children.push({
+      node: {
+        kind: 'rich-text',
+        spans: [
+          { text: `${phase.label} `, tone: phase.tone, emphasis: 'strong' },
+          { text: label },
+          ...(detail === undefined || detail === label ? [] : [{ text: ` · ${detail}`, tone: 'muted' as const }]),
+          ...(metrics.length === 0 ? [] : [{ text: ` · ${metrics.join(' · ')}`, tone: 'muted' as const }]),
+        ],
+      },
+    })
+    if (snapshot?.activity !== undefined) children.push({ node: { kind: 'text', content: `  ${snapshot.activity}`, tone: 'muted' } })
+  }
+  return { kind: 'stack', direction: 'column', gap: 0, children }
 }
 
 /**
@@ -48,26 +98,10 @@ interface PaneMember {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
-  const screen = ctx.blueScreen
   let members: PaneMember[] = []
-  let card: AgentGroupComponent | undefined
   let tracker: ReturnType<typeof trackChildAgentModels> | undefined
   let liveLookup: AgentLiveLookup | undefined
-
-  /** Rebuild the card over the current members (they change rarely). */
-  const rebuild = (): void => {
-    card?.dispose()
-    card = undefined
-    if (members.length === 0) return
-    card = new AgentGroupComponent(
-      members[0]!.item, colors, components,
-      () => { screen.requestRender() },
-      liveLookup,
-    )
-    for (const member of members.slice(1)) card.attach(member.item)
-  }
+  let refresh = (): void => undefined
 
   /**
    * Whether every current member truly finished: the parent projection alone
@@ -103,42 +137,37 @@ export function apply(ctx: Context): void {
       if (parsed !== undefined) item.parsedArguments = parsed
       return { item }
     })
-    rebuild()
-    ctx.blueBottomPanes.refresh('blue.dock.agents')
+    refresh()
   }
   tracker = trackChildAgentModels(facts, () => {
-    card?.invalidate()
-    screen.requestRender()
+    refresh()
   })
   liveLookup = tracker.snapshot
   const offFacts = facts.subscribe(sync)
   ctx.effect(() => () => offFacts())
-  let sessionId = facts.currentSession?.id
-  const offSession = facts.subscribeSession((session) => {
-    if (session?.id === sessionId) return
-    sessionId = session?.id
+  let sessionId = facts.currentAgent?.id
+  const offAgent = facts.subscribeAgent((agent) => {
+    if (agent?.id === sessionId) return
+    sessionId = agent?.id
     lastTurn = -1
     members = []
-    rebuild()
-    ctx.blueBottomPanes.refresh('blue.dock.agents')
+    refresh()
   })
-  ctx.effect(() => () => offSession())
+  ctx.effect(() => () => offAgent())
 
-  // A non-empty model and its card are rebuilt synchronously before the
-  // registry invokes this adapter.
-  const renderPane = (width: number): string[] => card!.render(width)
-
-  const model = (): BlueBottomPaneNode => ({
-    id: 'blue.dock.agents', priority: 50,
-    node: { kind: 'text', content: members.length === 0 ? '' : `Agents (${String(members.length)})`, tone: 'accent' },
-    collapsed: members.length === 0,
+  const pane = ctx.bluePanes.register({
+    id: 'blue.pane.agents',
+    title: 'Agents',
+    placement: 'bottom',
+    priority: 50,
+    narrow: 'bottom',
+    render: () => agentsNode(members, liveLookup),
   })
+  refresh = () => pane.refresh()
   ctx.effect(() => {
-    const dispose = ctx.blueBottomPanes.register(model, (_node, width) => renderPane(width))
     return () => {
-      card?.dispose()
       tracker?.dispose()
-      dispose()
+      pane.dispose()
     }
   })
 }

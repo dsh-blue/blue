@@ -45,9 +45,24 @@ describe('blueConversationFacts projection', () => {
     let state = initialConversationFacts()
     const unchanged = foldConversationFacts(state, event('user/message', {}))
     expect(unchanged).toBe(state)
+    expect(foldConversationFacts(state, event('user/message', {
+      source: { kind: 'user' },
+      content: [],
+    }))).toBe(state)
+    state = foldConversationFacts(state, event('user/message', {
+      source: { kind: 'user' },
+      content: [{ type: 'image' }, { type: 'text', text: 'ship it' }],
+    }))
+    expect(state.promptText).toBe('ship it')
+    expect(foldConversationFacts(state, event('user/message', {
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: 'ship it' }],
+    }))).toBe(state)
     state = foldConversationFacts(state, event('turn/start', { turn: 1 }))
     expect(state).toMatchObject({ phase: 'waiting', active: true, turn: 1, flowDownChars: 0 })
     state = foldConversationFacts(state, event('step/start', { turn: 1, step: 0 }))
+    state = foldConversationFacts(state, event('assistant/chunk', { turn: 1, step: 0, chunk: { type: 'reasoning-delta', text: '  ' } }))
+    expect(state).toMatchObject({ phase: 'waiting', active: true })
     state = foldConversationFacts(state, event('assistant/chunk', { turn: 1, step: 0, chunk: { type: 'reasoning-delta', text: 'think' } }))
     state = foldConversationFacts(state, event('assistant/chunk', { turn: 1, step: 0, chunk: { type: 'text-delta', text: 'answer' } }))
     expect(foldConversationFacts(state, event('assistant/chunk', { turn: 1, step: 0, chunk: { type: 'audio-delta', text: '' } }))).toBe(state)
@@ -59,9 +74,11 @@ describe('blueConversationFacts projection', () => {
     state = foldConversationFacts(state, event('assistant/message', { usage: { inputTokens: 4 } }))
     expect(state.contextTokens).toBe(4)
     state = foldConversationFacts(state, event('request/context', { contextWindow: 32 }))
+    expect(foldConversationFacts(state, event('request/context', { contextWindow: 32 }))).toBe(state)
     state = foldConversationFacts(state, event('request/header', { header: { config: { model: 'm', provider: 'p', reasoningEffort: 'high' } } }))
+    state = foldConversationFacts(state, event('request/header', { header: { config: { model: 'm2', provider: 'p2' } } }))
     state = foldConversationFacts(state, event('todo/write', { todos: [{ content: 'ship', status: 'pending' }] }))
-    expect(state).toMatchObject({ contextWindow: 32, model: 'm', provider: 'p', reasoningEffort: 'high', todos: [{ content: 'ship' }] })
+    expect(state).toMatchObject({ contextWindow: 32, model: 'm2', provider: 'p2', reasoningEffort: undefined, todos: [{ content: 'ship' }] })
     state = foldConversationFacts(state, event('tool/call', { turn: 1, step: 0, callId: 'agent-1', name: 'subagent', arguments: '{}', }, 88))
     state = foldConversationFacts(state, event('tool/call', { turn: 1, step: 0, callId: 'agent-2', name: 'subagent_fork', arguments: '{}' }, 89))
     state = foldConversationFacts(state, event('tool/call', { turn: 1, step: 0, callId: 'plain', name: 'read', arguments: '{}' }))
@@ -70,11 +87,24 @@ describe('blueConversationFacts projection', () => {
     expect(state.agentCalls[0]).toMatchObject({ callId: 'agent-1', result: { text: 'done', isError: true, endedAt: 99 } })
     state = foldConversationFacts(state, event('tool/result', toolResult('agent-1', [{ type: 'text', text: 'ok' }]), 100))
     expect(state.agentCalls[0]?.result).toMatchObject({ text: 'ok', isError: false, endedAt: 100 })
+    state = foldConversationFacts(state, event('tool/result', {
+      ...toolResult('agent-1', [{ type: 'text', text: 'failed' }]),
+      error: { name: 'ToolError', code: 'FAILED' },
+    }, 101))
+    expect(state.agentCalls[0]?.result).toMatchObject({ text: 'failed', isError: true, endedAt: 101 })
+    state = foldConversationFacts(state, event('tool/result', {
+      turn: 1,
+      step: 0,
+      message: { content: [{ type: 'tool-result', toolCallId: 'agent-1', content: null }] },
+    }, 102))
+    expect(state.agentCalls[0]?.result).toMatchObject({ text: '', isError: false, endedAt: 102 })
     const unchangedResult = foldConversationFacts(state, event('tool/result', toolResult('missing', [{ type: 'text', text: 'ignored' }])))
     expect(unchangedResult).toBe(state)
     state = foldConversationFacts(state, event('step/end', { turn: 1, step: 0 }))
     state = foldConversationFacts(state, event('turn/end', { turn: 1, reason: { kind: 'completed' } }))
-    expect(state).toMatchObject({ phase: 'idle', active: false, turn: 1 })
+    expect(state).toMatchObject({ phase: 'idle', active: false, turn: 1, runOutcome: 'completed' })
+    state = foldConversationFacts(state, event('turn/end', { turn: 2, reason: { kind: 'interrupted' } }))
+    expect(state).toMatchObject({ phase: 'idle', active: false, turn: 2, runOutcome: 'failed' })
   })
 
   it('guards malformed tool results and validates the wire value', () => {
@@ -89,6 +119,8 @@ describe('blueConversationFacts projection', () => {
     })).epochToolCount).toBe(1)
     expect(foldConversationFacts(state, event('tool/result', { message: { content: [] } }))).toBe(state)
     expect(foldConversationFacts(state, event('tool/result', { message: { content: [{ type: 'text', content: [] }] } }))).toBe(state)
+    expect(foldConversationFacts(state, event('tool/result', { message: undefined }))).toBe(state)
+    expect(foldConversationFacts(state, event('session/end-seed', {}))).toBe(state)
     expect(conversationFactsSchema.safeParse(state).success).toBe(true)
     expect(conversationFactsSchema.safeParse({ ...state, phase: 'bad' }).success).toBe(false)
     expect(conversationFactsProjectionDefinition.wire.view({ ...state, todos: [{ content: 'x', status: 'pending' }] })).toEqual({ ...state, todos: [{ content: 'x', status: 'pending' }] })

@@ -20,6 +20,7 @@ interface Recorded {
   suspends: unknown[]
   titles: string[]
   scrolls: { direction: 'up' | 'down', amount: number | undefined }[]
+  contentChanges: number
 }
 
 function recordingRuntime(): BlueTerminalRuntime & Recorded {
@@ -31,9 +32,10 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     unfocus: () => {},
     isFocused: () => true,
   }
-  const recorded: Recorded = { added: [], bottomAdded: [], dockAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [], titles: [], scrolls: [] }
+  const recorded: Recorded = { added: [], bottomAdded: [], dockAdded: [], removed: [], focused: [], overlays: [], renders: [], suspends: [], titles: [], scrolls: [], contentChanges: 0 }
   return {
     ...recorded,
+    get contentChanges() { return recorded.contentChanges },
     columns: 120,
     rows: 24,
     addChild(component) {
@@ -60,6 +62,10 @@ function recordingRuntime(): BlueTerminalRuntime & Recorded {
     },
     scrollContent(direction, amount) {
       recorded.scrolls.push({ direction, amount })
+      return true
+    },
+    contentChanged() {
+      recorded.contentChanges += 1
       return true
     },
     async suspend<T>(fn: () => Promise<T>): Promise<T> {
@@ -129,6 +135,8 @@ describe('BlueScreenService', () => {
 
     expect(screen.scrollContent('up', 3)).toBe(true)
     expect(runtime.scrolls).toEqual([{ direction: 'up', amount: 3 }])
+    expect(screen.contentChanged()).toBe(true)
+    expect(runtime.contentChanges).toBe(1)
 
     await expect(screen.suspend(async () => 'ok')).resolves.toBe('ok')
     expect(runtime.suspends).toEqual(['ok'])

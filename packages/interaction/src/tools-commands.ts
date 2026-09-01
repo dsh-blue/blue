@@ -17,7 +17,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { BlueSessionToolSchema } from '@dsh-blue/blue-app'
+import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 // Empty type imports carry the commands registration and app-owned session
 // action services.
 import type {} from '@deepseek-ai/dsh-commands'
@@ -90,7 +90,7 @@ export function wrapLines(text: string): string[] {
  * @param schemas - the live per-scope tool enumeration.
  * @returns the panel rows, display order.
  */
-export function buildToolPickerRows(schemas: readonly BlueSessionToolSchema[]): SelectRow[] {
+export function buildToolPickerRows(schemas: readonly ToolSchema[]): SelectRow[] {
   return [...schemas]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(schema => {
@@ -143,7 +143,7 @@ export function readParameters(parameters: Readonly<Record<string, unknown>> | u
  * @param schema - the tool's schema.
  * @returns the panel sections, display order.
  */
-export function buildToolDetailSections(schema: BlueSessionToolSchema): InfoSection[] {
+export function buildToolDetailSections(schema: ToolSchema): InfoSection[] {
   const sections: InfoSection[] = [{
     heading: 'Tool',
     rows: [
@@ -191,30 +191,20 @@ function emptyCatalogSections(): InfoSection[] {
  * @returns the disposer removing the registration.
  */
 export function registerToolsCommands(ctx: Context): () => void {
-  const reader = ctx.blueSessionReader
-  const actions = ctx.blueSessionActions
-  // The fiber-unload flag: the standing-key await can span a tree unload.
-  let unloaded = false
-  ctx.effect(() => () => {
-    unloaded = true
-  })
-
   /**
    * The `/tools` handler: guards, resolve the view scope, enumerate, mount.
    * @returns the command outcome.
    */
   async function showTools(): Promise<CommandResult> {
-    if (reader.current() === null) {
+    const agent = ctx.blueCurrentAgent.current()
+    if (agent === null) {
       return { kind: 'error', text: 'no session is live yet' }
     }
-    const catalog = await actions.toolCatalog()
-    if (!catalog.ok) return { kind: 'error', text: catalog.message }
-    if (unloaded) return { kind: 'success' }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'tools panel is unavailable: the Blue screen is not mounted' }
     }
-    const schemas = catalog.value.visible
+    const schemas = ctx.tools.schemas(agent)
     if (schemas.length === 0) {
       // Nothing to select: the read-only empty panel stays the honest view.
       const restoreEmpty = mountEditorReplacement(ctx, new InfoPanel({
@@ -232,7 +222,7 @@ export function registerToolsCommands(ctx: Context): () => void {
     const byName = new Map(schemas.map(schema => [schema.name, schema]))
     // The picker stays mounted under the detail panel: closing the detail
     // pops the stack back onto the picker instead of rebuilding it.
-    const openDetail = (schema: BlueSessionToolSchema): void => {
+    const openDetail = (schema: ToolSchema): void => {
       const restoreDetail = mountEditorReplacement(ctx, new InfoPanel({
         keymap: display.keymap,
         theme: display.theme,

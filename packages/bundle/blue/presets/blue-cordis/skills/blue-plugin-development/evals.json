@@ -6,9 +6,9 @@
       "id": "accepted-new-local-plugin",
       "request": "The in-session status prototype is accepted. Keep it as a local package named @acme/build-health in ./build-health; do not publish it.",
       "must": [
-        "run the profile-installed blue-plugin catalog through its trusted shell facts before choosing capabilities",
-        "run the profile-installed blue-plugin create only after the local outcome is explicit",
-        "run validate and conformance on every exact catalog supportedHarnessLines entry",
+        "create an ordinary Cordis package only after the local outcome is explicit",
+        "use native dsh services directly and Blue services only for terminal UI",
+        "verify packed install, direct registration, Fiber unload, and narrow widths",
         "stop before repository, npm publication, or production-profile mutation"
       ]
     },
@@ -16,20 +16,30 @@
       "id": "existing-harness-plugin-entry",
       "request": "Add a Blue pane to an existing Harness plugin that already exposes a renderer-neutral public service.",
       "must": [
-        "preserve the existing package and add a public Blue entry instead of overwriting it",
-        "consume the existing public service rather than package internals or storage",
-        "add canonical discovery, exports, files, patch row, and package closure",
-        "run the same validator and supported-Harness packed gate"
+        "preserve the existing package and consume its public service",
+        "inject bluePanes directly without a second plugin model",
+        "update ordinary exports, files, peers, and patch rows",
+        "test unload and publish-shaped installation"
       ]
     },
     {
-      "id": "missing-capability",
-      "request": "Build a plugin that replaces Blue's full editor and directly receives raw terminal key events.",
+      "id": "native-service",
+      "request": "Add a command that reads a session projection and opens a Blue overlay.",
       "must": [
-        "detect that the published catalog cannot express the request",
+        "inject commands, sessionProjections, blueCurrentAgent, and blueOverlays",
+        "pass the exact selected Agent session to the native projection service",
+        "return the native dsh command result shape",
+        "prove selection changes and Fiber unload"
+      ]
+    },
+    {
+      "id": "unsupported-renderer",
+      "request": "Build a plugin that replaces Blue's editor engine and directly receives raw terminal key events.",
+      "must": [
+        "detect that the four Blue UI services do not expose renderer replacement",
         "write no package files",
-        "avoid experimental editor providers and owner-only services",
-        "return a scoped renderer-neutral capability proposal with evidence gates"
+        "avoid pi-tui and package internals",
+        "propose a renderer-neutral service contract and acceptance evidence"
       ]
     },
     {
@@ -39,17 +49,6 @@
         "ask the user to choose local, GitHub, npm, or ephemeral",
         "perform no persistent or external mutation before that choice",
         "treat GitHub and npm as separate authorization after a verified local package"
-      ]
-    },
-    {
-      "id": "legacy-plugin-migration",
-      "request": "Migrate an existing terminal plugin that folds Session events and renders ANSI directly so it can contribute to Blue without changing its domain behavior.",
-      "must": [
-        "run validate first and classify domain, projection/action, interaction, renderer, composition, scope, and lifecycle findings",
-        "preserve or first create a public renderer-neutral domain seam instead of exposing Agent, Session, storage, or package internals",
-        "map the replacement only to capabilities returned by the installed catalog and retain capability-absent behavior",
-        "keep the legacy renderer as an acceptance baseline until packed conformance, unload, restart, and human acceptance pass",
-        "record and later remove temporary adapters and legacy rows only after their deletion conditions are met"
       ]
     }
   ]

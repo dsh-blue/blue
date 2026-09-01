@@ -34,9 +34,6 @@ type ChildOptions = Omit<BlueUiChild, 'node'>
 type StackOptions = Omit<BlueStackNode, 'kind' | 'direction' | 'children'>
 type ScrollOptions = Omit<BlueScrollNode, 'kind' | 'child'>
 const COMPONENT_ID_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
-const API_RANGE_PATTERN = /^[~^=<>*0-9xX|.\-+\s]+$/
-const PRERELEASE_PATTERN = /-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*/gu
-const SUPPORTED_API_RANGE = /^\^?1(?:\.|$)/
 
 /** Deeply freeze a value in place while tolerating object cycles. */
 export function deepFreeze<Value>(value: Value): Value {
@@ -186,17 +183,15 @@ export const ui = Object.freeze({
   divider,
 })
 
-/** User-kit component metadata and renderer before runtime hardening. */
+/** User-kit component definition before runtime hardening. */
 export interface BlueComponentDefinition<Props> {
   readonly id: string
-  readonly api: string
   readonly render: (props: Props) => BlueUiNode
 }
 
 /** Pure component factory returned to official packages and third-party kits. */
 export interface BlueComponentFactory<Props> {
   readonly id: string
-  readonly api: string
   readonly render: (props: Props) => BlueUiNode
 }
 
@@ -204,12 +199,9 @@ export interface BlueComponentFactory<Props> {
 export function defineBlueComponent<Props>(definition: BlueComponentDefinition<Props>): BlueComponentFactory<Props> {
   if (definition === null || typeof definition !== 'object') throw new TypeError('Blue component definition must be an object')
   if (typeof definition.id !== 'string' || !COMPONENT_ID_PATTERN.test(definition.id)) throw new TypeError('Blue component id must be a namespaced lowercase identifier')
-  if (typeof definition.api !== 'string' || definition.api.trim().length === 0 || !API_RANGE_PATTERN.test(definition.api.replace(PRERELEASE_PATTERN, '-0'))) throw new TypeError('Blue component api must be a semver-compatible range')
-  if (!SUPPORTED_API_RANGE.test(definition.api)) throw new TypeError(`Unsupported Blue component API range "${definition.api}"`)
   if (typeof definition.render !== 'function') throw new TypeError('Blue component render must be a function')
   return Object.freeze({
     id: definition.id,
-    api: definition.api,
     render: (props: Props): BlueUiNode => frozen(definition.render(props)),
   })
 }

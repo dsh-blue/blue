@@ -10,8 +10,6 @@ Blue's configuration lives on two layers: **in-app slash commands** (the everyda
 | New provider / custom gateway | `/provider add` | the `llm-pi-ai:` section of `settings.yaml` + the credentials file |
 | DeepSeek official endpoint tuning | — (files only) | the `llm-deepseek:` section of `settings.yaml` |
 | Theme | `/theme` (session-level); `/settings` or the file for the persisted default | the `blue:` section of `settings.yaml` ([Theming](/en/guide/theme)) |
-| Status provider | — (files only) | `blue.statusProvider` in `settings.yaml` ([Status bar](/en/plugins/status#exclusive-status-provider)) |
-| Editor provider | — (files only) | `blue.editorProvider` in `settings.yaml` ([Editor providers](/en/plugins/editor-providers)) |
 | Blue preferences (update check, fold defaults, …) | `/settings` | the `blue:` section of `settings.yaml` |
 | Plugin rows / composition | — | the profile's `cordis.patch.yml` ([Profiles & directories](/en/dsh/profiles)) |
 
@@ -153,7 +151,7 @@ Notes:
 
 ### blue: Blue's own settings section
 
-The `/settings` panel writes the fields below except `statusProvider` and `editorProvider`, which are edited directly in the file. Every key is optional; defaults are shown:
+The `/settings` panel writes the fields below. Every key is optional; defaults are shown:
 
 ```yaml
 blue:
@@ -169,11 +167,9 @@ blue:
   userFoldChars: 1000      # long user message fold threshold (chars)
   editorCommand: ''        # external editor command (empty = auto-detect via $VISUAL/$EDITOR)
   pasteImageBackend: auto  # Linux clipboard backend: auto | wayland | x11
-  statusProvider: blue.default # exclusive status-provider id; built-in additive footer by default
-  editorProvider: blue.default # exclusive editor-provider id; built-in editor shell by default
 ```
 
-The panel is two-level: level one starts with `locale` and groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; language and `blue.theme` changes both apply live (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). `statusProvider` and `editorProvider` are not panel rows; enter third-party provider ids in the file. If a desired id is absent or fails activation, Blue preserves that value and uses its fallback instead of rewriting settings. Level one's last row opens the whole settings.yaml in `$EDITOR`.
+The panel is two-level: level one starts with `locale` and groups rows by namespace (host sections like `shell:`, `agent-loop:`, and `web-search-deepseek:` included), Enter steps into level two's per-key rows, and `Enter`/`Space` there steps the preset value with every change landing on disk; language and `blue.theme` changes both apply live (`/theme` stays the session-level switch — see [Theming](/en/guide/theme)), and folding-default and transcript-number changes apply to the running session just as immediately (an active Ctrl-O expansion still dominates). Level one's last row opens the whole settings.yaml in `$EDITOR`.
 
 ### Verifying your edits
 
@@ -189,7 +185,7 @@ settings.yaml effects show up right in the UI: the `/model` panel lists each rou
 
 ## Other configuration surfaces
 
-- **Permissions & sandbox** — permission presets (workspace-write / danger-full-access), approval policies, see [Modes & permissions](/en/dsh/modes); in-session `Shift+Tab` cycles normal → plan → yolo, `/yolo` toggles.
+- **Permissions & sandbox** — permission presets (workspace-write / danger-full-access), approval policies, see [Modes & permissions](/en/dsh/modes); in-session `Shift+Tab` cycles normal → plan → yolo through native `/plan` and `/permission` commands.
 - **Agent presets** — `/preset` switches tool surface and persona across upstream shipped `standard` / `minimal` / `ptc` / `cordis` and Blue's `blue-cordis` (blank sessions only). Blue does not provide the old `code` alias.
 - **Skills** — user-level skills live under `~/.dsh/skills/`, see [Skills](/en/dsh/skills).
 - **MCP** — wiring MCP servers is covered in [MCP setup](/en/dsh/mcp).

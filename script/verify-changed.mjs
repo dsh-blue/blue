@@ -40,8 +40,6 @@ function runFull(smoke, website) {
     'build',
     'check:lib',
     'check:agent-docs',
-    'check:plugin-authoring-docs',
-    'fixture:plugin-tutorial',
     'check:examples',
     'test:coverage',
   ]) runPnpm('run', script)
@@ -60,9 +58,7 @@ function runChanged(plan) {
   if (plan.checks.diagrams) runPnpm('run', 'diagrams:check')
   if (plan.checks.website) runPnpm('run', 'website:build')
   if (plan.checks.build) runPnpm('run', 'build:changed', '--', '--files-json', JSON.stringify(plan.files))
-  if (plan.checks.authorDocs) runPnpm('run', 'check:plugin-authoring-docs')
   if (plan.checks.checkLib) runPnpm('run', 'check:lib')
-  for (const packageDir of plan.validatePackages) run('node', ['script/blue-plugin-validate.mjs', packageDir])
 
   const coverage = []
   if (plan.tests.coverage.length > 0) {

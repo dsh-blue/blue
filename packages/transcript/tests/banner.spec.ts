@@ -8,7 +8,8 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type {
   BlueComponent,
   BlueOverlayHandle,
@@ -240,31 +241,48 @@ class BannerFakeScreen implements BlueScreen {
   setTitle(): void {}
 }
 
-/** Renderer-neutral current-session reader used by the banner plugin fixture. */
-function bannerSessionReader(initial: BlueSessionSnapshot | null = null): {
-  service: { current(): BlueSessionSnapshot | null, subscribe(listener: (session: BlueSessionSnapshot | null) => void): { readonly disposed: boolean, dispose(): void } }
-  publish(session: BlueSessionSnapshot | null): void
-} {
+/** Native current-Agent/projection pair used by the banner plugin fixture. */
+function bannerState(initial: Agent | null = null) {
   let current = initial
-  const listeners = new Set<(session: BlueSessionSnapshot | null) => void>()
+  const agentListeners = new Set<(agent: Agent | null, revision: number) => void>()
+  const projectionListeners = new Set<(session: Session, key: string, value: unknown, seq: number) => void>()
+  const selections = new Map<Session, unknown>()
   return {
-    service: {
+    currentAgent: {
       current: () => current,
-      subscribe(listener) {
-        listeners.add(listener)
-        listener(current)
-        let disposed = false
-        return {
-          get disposed() { return disposed },
-          dispose() { disposed = true; listeners.delete(listener) },
-        }
+      revision: () => 0,
+      subscribe(listener: (agent: Agent | null, revision: number) => void) {
+        agentListeners.add(listener)
+        listener(current, 0)
+        return () => { agentListeners.delete(listener) }
       },
     },
-    publish(session) {
-      current = session
-      for (const listener of listeners) listener(session)
+    projections: {
+      snapshot(session: Session) {
+        return { asOfSeq: 0, values: { modelSelection: selections.get(session) } }
+      },
+      onChanged(listener: (session: Session, key: string, value: unknown, seq: number) => void) {
+        projectionListeners.add(listener)
+        return () => { projectionListeners.delete(listener) }
+      },
+    },
+    select(agent: Agent | null) {
+      current = agent
+      for (const listener of agentListeners) listener(agent, 1)
+    },
+    setSelection(agent: Agent, value: unknown) {
+      selections.set(agent.session, value)
+      for (const listener of projectionListeners) listener(agent.session, 'modelSelection', value, 1)
     },
   }
+}
+
+function bannerAgent(model: string, provider: string): Agent {
+  const session = {
+    id: `session-${model}`,
+    requestHeader: () => ({ config: { model, provider } }),
+  } as unknown as Session
+  return { id: session.id, session } as unknown as Agent
 }
 
 /** Boot the banner plugin on a fresh root context with faked services. */
@@ -278,10 +296,12 @@ async function bootBanner(config: banner.Config = {}, localeId?: 'en' | 'zh'): P
     ? undefined
     : new BlueLocaleService(ctx, { systemLocale: localeId })
   const screen = new BannerFakeScreen()
+  const state = bannerState()
   ctx.reflect.provide('blueScreen', screen)
   ctx.reflect.provide('blueTheme', { colors: COLORS })
   ctx.reflect.provide('blueComponents', fakeBlueComponents())
-  ctx.reflect.provide('blueSessionReader', bannerSessionReader().service)
+  ctx.reflect.provide('blueCurrentAgent', state.currentAgent)
+  ctx.reflect.provide('sessionProjections', state.projections)
   ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
   const fiber = await ctx.plugin(banner, config)
   return { screen, locale, dispose: () => fiber.dispose() }
@@ -290,7 +310,7 @@ async function bootBanner(config: banner.Config = {}, localeId?: 'en' | 'zh'): P
 describe('blue-banner plugin', () => {
   it('declares its name and injects', () => {
     expect(name).toBe('blue-banner')
-    expect(inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'agentDefaultModel'])
+    expect(inject).toEqual(['blueScreen', 'blueTheme', 'blueComponents', 'blueCurrentAgent', 'sessionProjections', 'agentDefaultModel'])
   })
 
   it('mounts one scroll child with the snapshotted facts and requests a render', async () => {
@@ -321,7 +341,7 @@ describe('blue-banner plugin', () => {
     const { screen } = await bootBanner({ displayVersion })
     const joined = screen.children[0]?.render(100).join('\n') ?? ''
     expect(joined).toContain(`Version:   ${displayVersion}`)
-    expect(BLUE_VERSION).toBe('0.1.2-alpha.1')
+    expect(BLUE_VERSION).toBe('0.2.0-alpha.1')
   })
 
   it('switches the mounted banner language without replacing its component', async () => {
@@ -342,15 +362,22 @@ describe('blue-banner plugin', () => {
     ctx.reflect.provide('blueTheme', { colors: COLORS })
     ctx.reflect.provide('blueComponents', fakeBlueComponents())
     ctx.reflect.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'p', model: 'm' }) })
-    const sessions = bannerSessionReader()
-    ctx.reflect.provide('blueSessionReader', sessions.service)
+    const state = bannerState()
+    ctx.reflect.provide('blueCurrentAgent', state.currentAgent)
+    ctx.reflect.provide('sessionProjections', state.projections)
     await ctx.plugin(banner)
     expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
     // A committed pick shows through the live ref.
-    sessions.publish({ id: 'a', cwd: '/tmp', status: 'idle', mode: 'normal', model: { id: 'mock-pro', provider: 'mock' } })
+    const selected = bannerAgent('mock-pro', 'mock')
+    state.select(selected)
     expect(screen.children[0]?.render(100).join('\n')).toContain('mock-pro · mock')
-    // A session switch without a published ref falls back to the default.
-    sessions.publish({ id: 'b', cwd: '/tmp', status: 'idle', mode: 'normal' })
+    state.setSelection(selected, { next: { model: 'projected', provider: 'route' } })
+    expect(screen.children[0]?.render(100).join('\n')).toContain('projected · route')
+    // Clearing the current Agent falls back to the default.
+    state.select(null)
+    expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
+    // A stale projection update from the detached session is ignored.
+    state.setSelection(selected, { next: { model: 'stale', provider: 'stale-route' } })
     expect(screen.children[0]?.render(100).join('\n')).toContain('m · p')
   })
 

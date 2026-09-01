@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install-dev.sh — one-shot local development install of Blue into a dsh profile.
 #
-# Builds the Blue workspace and link-installs the product plugin closure plus
-# the OpenPencil/Lark validation adapters into a dev profile (no npm publish).
+# Builds the Blue workspace and link-installs the product plugin closure into
+# a dev profile (no npm publish).
 # Code changes take effect after `pnpm run build`;
 # re-run this script only when the dependency graph changes.
 #
@@ -44,15 +44,11 @@ echo "==> Link-installing Blue packages into profile '$PROFILE'"
   "link:$REPO_ROOT/packages/bundle/blue" \
   "link:$REPO_ROOT/packages/api" \
   "link:$REPO_ROOT/packages/ui" \
-  "link:$REPO_ROOT/packages/plugin-kit" \
   "link:$REPO_ROOT/packages/frontend" \
-  "link:$REPO_ROOT/packages/harness-adapter" \
   "link:$REPO_ROOT/packages/conversation" \
   "link:$REPO_ROOT/packages/core" \
   "link:$REPO_ROOT/packages/interaction" \
   "link:$REPO_ROOT/packages/transcript" \
-  "link:$REPO_ROOT/packages/openpencil" \
-  "link:$REPO_ROOT/packages/lark" \
   "link:$REPO_ROOT/packages/app"
 
 # Harness packages the bundle patch references as loader entries resolve from

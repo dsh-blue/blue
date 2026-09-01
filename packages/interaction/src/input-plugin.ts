@@ -58,6 +58,7 @@ import type {
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Carries the app-owned retraction service and event/service declaration merges.
 import type {} from '@dsh-blue/blue-app'
 // Empty type import carries the `permissionPresets` Context merge the
@@ -95,10 +96,13 @@ const KEY_END = '\x1b[F'
 
 /** Command descriptors projected through the app-owned session boundary. */
 function availableCommands(ctx: Context) {
-  return ctx.blueSessionActions.commands().map(command => ({
+  const agent = ctx.blueCurrentAgent.current()
+  /* v8 ignore next -- slashHint checks the current Agent immediately before this sole call site. */
+  if (agent === null) return []
+  return ctx.commands.list(agent).map(command => ({
     name: command.name,
-    ...(command.description === undefined ? {} : { description: command.description }),
-    ...(command.inputHint === undefined ? {} : { input: { hint: command.inputHint } }),
+    description: command.description,
+    ...(command.input?.hint === undefined ? {} : { input: { hint: command.input.hint } }),
   }))
 }
 
@@ -118,7 +122,7 @@ function wheelDirection(data: string): 'up' | 'down' | undefined {
 /** Stable Cordis plugin name. */
 export const name = 'blue-input'
 /** Services required before the editor can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands', 'blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions', 'blueSkillsCatalog', 'blueInteractionState']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'commands', 'sessionProjections', 'blueCurrentAgent', 'blueRequests', 'blueRetractions', 'blueSkillsCatalog', 'blueInteractionState', 'blueEditorExtensions']
 
 /**
  * The single-line hint rendered under the input editor. Only the transient
@@ -246,7 +250,7 @@ export function apply(ctx: Context): void {
     editor,
     notice: text => setNotice(text),
     shouldTransformSubmit: text => !connectedAbove
-      && ctx.blueSessionReader.current() !== null
+      && ctx.blueCurrentAgent.current() !== null
       && draft.getStashedInputMode() !== 'bash'
       && parseCommand(text.trim()) === undefined,
   })
@@ -261,7 +265,7 @@ export function apply(ctx: Context): void {
     const parsed = parseCommand(currentText)
     // A bare slash cannot parse (parseCommand requires a leading letter).
     if (parsed === undefined && currentText !== '/') return undefined
-    if (ctx.blueSessionReader.current() === null) return undefined
+    if (ctx.blueCurrentAgent.current() === null) return undefined
     // The same S14 fuzzy filter the dropdown uses, so the feedback agrees
     // with what the dropdown just failed to list. The dropdown closes
     // itself on an empty match, so this notice is the only signal.
@@ -329,7 +333,8 @@ export function apply(ctx: Context): void {
     // entry must reach the reload stash before the swap tears the
     // component down.
     draft.stashHistory(editor.getHistory())
-    if (ctx.blueSessionReader.current() === null) {
+    const agent = ctx.blueCurrentAgent.current()
+    if (agent === null) {
       setNotice('no active session')
       return
     }
@@ -345,17 +350,19 @@ export function apply(ctx: Context): void {
               ? { ...block, text: rewriteSkillTokens(ctx, block.text) }
               : block),
           }
-      const submitted = ctx.blueSessionActions.followup(transformed.blocks)
-      if (!submitted.ok) {
+      try {
+        const message = createUserMessage({ content: transformed.blocks, source: { kind: 'user' } })
+        agent.followup(message)
+        retractionCandidate = {
+          messageId: String(message.id),
+          editorText: value,
+          historyText: line,
+          ...(transformed.rollback === undefined ? {} : { rollback: transformed.rollback }),
+        }
+      } catch (error) {
         transformed.rollback?.()
-        setNotice(colors.error(submitted.message))
+        setNotice(colors.error(error instanceof Error ? error.message : String(error)))
         return
-      }
-      retractionCandidate = {
-        messageId: submitted.value.messageId,
-        editorText: value,
-        historyText: line,
-        ...(transformed.rollback === undefined ? {} : { rollback: transformed.rollback }),
       }
       ctx.blueRequests.begin('main')
       // The S29 skill pipeline rewrites only model-facing text; the editor
@@ -377,8 +384,10 @@ export function apply(ctx: Context): void {
     // the canonical name owns the handler and the session log. The raw
     // input after the name travels untouched.
     const canonical = aliases.canonicalOf(parsed.name)
-    void ctx.blueSessionActions.executeCommand(
+    void ctx.commands.execute(
+      agent,
       canonical === undefined ? line : `/${canonical}${parsed.rawInput}`,
+      [],
       new AbortController().signal,
     ).then(
       (execution) => {
@@ -386,7 +395,7 @@ export function apply(ctx: Context): void {
         // the reloaded fiber repaints, so a late notice is moot.
         if (unloaded) return
         if (execution === undefined) setNotice(`unknown command: ${line}`)
-        else if (execution.result.kind === 'error') setNotice(colors.error(execution.result.text ?? 'command failed'))
+        else if (execution.result.kind === 'error') setNotice(colors.error(execution.result.text))
         else if (execution.result.text !== undefined) setNotice(execution.result.text)
       },
       (error: unknown) => {
@@ -452,8 +461,10 @@ export function apply(ctx: Context): void {
   /** Request an ordinary interrupt; this path must never retract a message. */
   function interrupt(): boolean {
     retractionCandidate = undefined
-    const interrupted = ctx.blueSessionActions.interrupt()
-    if (!interrupted.ok) return false
+    const agent = ctx.blueCurrentAgent.current()
+    if (agent === null || agent.status !== 'running') return false
+    ctx.blueRequests.interrupt()
+    agent.cancel({ kind: 'user' })
     setNotice('interrupt requested')
     return true
   }
@@ -467,7 +478,7 @@ export function apply(ctx: Context): void {
   /** Escape clears a draft, then attempts safe retraction before interruption. */
   function escapeClearOrRetract(): boolean {
     if (clearDraft()) return true
-    if (ctx.blueSessionReader.current()?.status === 'running') {
+    if (ctx.blueCurrentAgent.current()?.status === 'running') {
       const candidate = retractionCandidate
       if (candidate !== undefined
         && ctx.blueRetractions.tryRetract(candidate.messageId)) {
@@ -528,23 +539,27 @@ export function apply(ctx: Context): void {
     // a turn, a running one consumes it at the next step boundary.
     if (keymap.matches(data, ACTION_STEER)) {
       const text = editor.getText().trim()
-      if (text.length === 0 || ctx.blueSessionReader.current() === null) return false
+      const agent = ctx.blueCurrentAgent.current()
+      if (text.length === 0 || agent === null) return false
       // Steered text runs the same `#name` → `/name` skill rewrite as a
       // submitted follow-up: the gesture reaches the model either way.
+      const blocks = applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, text)).blocks
+      try {
+        agent.steer(createUserMessage({ content: blocks, source: { kind: 'user' } }))
+      } catch (error) {
+        setNotice(colors.error(error instanceof Error ? error.message : String(error)))
+        return true
+      }
       ctx.blueRequests.begin('main')
-      const steered = ctx.blueSessionActions.steer(
-        applyReversibleSubmitTransformers(ctx, rewriteSkillTokens(ctx, text)).blocks,
-      )
-      if (!steered.ok) return false
       editor.setText('')
       // Steered text is consumed too: keep no stashed copy for a reload.
       draft.clearDraft()
       return true
     }
-    // Shift+Tab: cycle the session mode (normal → plan → yolo, S24a). The
-    // cycle dispatches one explicit command whose result text is the
-    // feedback, so the press is always consumed. It fires in bash mode too
-    // — the input mode and the session mode are orthogonal axes.
+    // Shift+Tab: cycle the session mode (normal → plan → yolo, S24a) through
+    // dsh's native plan command and permission presets. The press is always
+    // consumed. It fires in bash mode too — the input mode and the session
+    // mode are orthogonal axes.
     if (keymap.matches(data, ACTION_CYCLE_MODE)) {
       void cycleMode(ctx)
       return true
@@ -575,7 +590,6 @@ export function apply(ctx: Context): void {
     ctx.emit('blue/editor-model-changed')
     // Mirror every edit so a theme-swap reload loses nothing.
     draft.stashDraft(text)
-    extensionRuntime.refreshProviderSnapshot()
     // Slash context highlights the frame in `primary`; any other text
     // returns the neutral border. `blue-editor-plus` re-asserts its shell
     // hue on top while bash mode is active.
@@ -610,18 +624,18 @@ export function apply(ctx: Context): void {
   // A session switch settles navigation notices such as "resuming" and
   // "creating rewind branch". Clear the old session's transient text before
   // re-deriving slash feedback against the new agent.
-  let sessionId = ctx.blueSessionReader.current()?.id
-  const sessionRegistration = ctx.blueSessionReader.subscribe((session) => {
-    const nextId = session?.id
+  let sessionId = ctx.blueCurrentAgent.current()?.id
+  const sessionRegistration = ctx.blueCurrentAgent.subscribe((agent) => {
+    const nextId = agent?.id
     if (nextId !== sessionId) {
       sessionId = nextId
       retractionCandidate = undefined
     }
-    extensionRuntime.updateSession(session)
+    extensionRuntime.invalidateSession()
     notice = undefined
     refreshHint()
   })
-  ctx.effect(() => () => sessionRegistration.dispose())
+  ctx.effect(() => sessionRegistration)
   // The side-question pane docks above the editor; its flag switches the
   // editor's top corners to the spliced `├┤` and gates the Esc/Enter plus
   // contextual page/wheel chain; its busy flag refuses a submit while the side agent answers.

@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-core",
   "description": "Blue terminal UI core: the tree's only @earendil-works/pi-tui adapter, owning terminal lifecycle and the blueScreen/blueKeymap/blueTerminalInfo/blueComponents services plus the blue-theme-dark/light/ocean/paper/auto/custom palette entries",
-  "version": "0.1.2-alpha.1",
+  "version": "0.2.0-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -61,12 +61,12 @@
   },
   "peerDependencies": {
     "@dsh-blue/blue-frontend": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.3",
     "@deepseek-ai/cordis": "^4.0.2"
   },
   "devDependencies": {
     "@dsh-blue/blue-frontend": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.2",
+    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.3",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3"

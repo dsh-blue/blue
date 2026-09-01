@@ -1,10 +1,10 @@
 /**
  * The global version-control guard: Blue has ONE release version (the
- * current release line, `0.1.2-alpha.1` — the number the website's tagline and
+ * current release line, `0.2.0-alpha.1` — the number the website's tagline and
  * quickstart promise) and ONE harness dependency line (the `dsh-*` pins,
  * which stay on their own prerelease line while Blue's number moves).
  *
- * Blue side: the twelve release package.json versions plus the website (whose
+ * Blue side: the ten release package.json versions plus the website (whose
  * package.json must agree with its own tagline),
  * and the `BLUE_VERSION` constant the banner title and the `/version`
  * notice read, all equal. The website's user-facing version mentions
@@ -29,13 +29,9 @@ import { BLUE_VERSION } from '../src/banner-content.ts'
 import { BLUE_VERSION as API_BLUE_VERSION } from '@dsh-blue/blue-api'
 
 /** The published release version (the website's advertised number). */
-const RELEASE_VERSION = '0.1.2-alpha.1'
-/** The compatibility window used by validation-only packages. */
-const BLUE_PEER_RANGE = '>=0.1.2-alpha.1 <0.1.2'
-/** Validation-only package versions remain outside the product lockstep. */
-const VALIDATION_VERSION = '0.1.0-rc.2'
+const RELEASE_VERSION = '0.2.0-alpha.1'
 /** The harness prerelease line the dsh pins ride. */
-const HARNESS_LINE = '0.1.2-alpha.2'
+const HARNESS_LINE = '0.1.2-alpha.3'
 
 /** One workspace package manifest. */
 interface Manifest {
@@ -47,13 +43,11 @@ interface Manifest {
   readonly devDependencies?: Readonly<Record<string, string>>
 }
 
-/** The twelve release manifests plus website whose version must equal the release. */
+/** The ten release manifests plus website whose version must equal the release. */
 const MANIFESTS: readonly string[] = [
   '../../api/package.json',
   '../../ui/package.json',
-  '../../plugin-kit/package.json',
   '../../frontend/package.json',
-  '../../harness-adapter/package.json',
   '../../conversation/package.json',
   '../../core/package.json',
   '../package.json',
@@ -65,13 +59,6 @@ const MANIFESTS: readonly string[] = [
 ]
 /** Publishable manifests that carry harness dependencies. */
 const HARNESS_MANIFESTS = MANIFESTS.filter(rel => !rel.endsWith('/website/package.json'))
-/** Independently packed packages outside the product release set. */
-const VALIDATION_MANIFESTS: readonly string[] = [
-  '../../context/package.json',
-  '../../remote/package.json',
-  '../../openpencil/package.json',
-  '../../lark/package.json',
-]
 
 /** Read one manifest relative to this spec. */
 function manifest(rel: string): Manifest {
@@ -85,7 +72,7 @@ function dshEntries(table: Readonly<Record<string, string>> | undefined): Readon
 
 describe('the Blue release line', () => {
   it('BLUE_VERSION is the version of all release manifests and website', () => {
-    expect(MANIFESTS).toHaveLength(13)
+    expect(MANIFESTS).toHaveLength(11)
     for (const rel of MANIFESTS) {
       const pkg = manifest(rel)
       expect(pkg.version, `${pkg.name} version`).toBe(RELEASE_VERSION)
@@ -119,16 +106,6 @@ describe('the Blue release line', () => {
           expect(spec, `${pkg.name} ${table} ${name}`).toBe('workspace:*')
         }
       }
-    }
-  })
-
-  it('validation-only packages retain their version and accept this preview line', () => {
-    for (const rel of VALIDATION_MANIFESTS) {
-      const pkg = manifest(rel)
-      expect(pkg.version, `${pkg.name} validation version`).toBe(VALIDATION_VERSION)
-      const bluePeers = Object.entries(pkg.peerDependencies ?? {}).filter(([name]) => name.startsWith('@dsh-blue/'))
-      expect(bluePeers.length, `${pkg.name} Blue peers exist`).toBeGreaterThan(0)
-      for (const [name, spec] of bluePeers) expect(spec, `${pkg.name} peerDependencies ${name}`).toBe(BLUE_PEER_RANGE)
     }
   })
 })
@@ -191,17 +168,6 @@ describe('the harness dependency line', () => {
     const source = readFileSync(new URL('../../interaction/src/session-commands.ts', import.meta.url), 'utf8')
     expect(source).toContain(`const HARNESS_LINE = '${HARNESS_LINE}'`)
     expect(source).not.toContain("BLUE_VERSION.split('-')")
-  })
-
-  it('the author fixture carries the same Harness line', () => {
-    const source = readFileSync(new URL('../../plugin-kit/src/index.ts', import.meta.url), 'utf8')
-    expect(source).toContain(`BLUE_PLUGIN_HARNESS_LINE = '${HARNESS_LINE}'`)
-    expect(source).toContain('BLUE_PLUGIN_SUPPORTED_HARNESS_LINES = [BLUE_PLUGIN_HARNESS_LINE]')
-    const fixture = readFileSync(new URL('../../plugin-kit/runtime/conformance.mjs', import.meta.url), 'utf8')
-    expect(fixture).toContain(`const pinnedHarnessLine = '${HARNESS_LINE}'`)
-    expect(fixture).toContain("runtimeRequire.resolve('@dsh-blue/blue-api/package.json')")
-    expect(fixture).toContain("apiManifest.peerDependencies?.['@deepseek-ai/cordis']")
-    expect(fixture).not.toMatch(/dependencies\['@deepseek-ai\/cordis'\] \?\?= '\d/u)
   })
 
   it('ci.yml derives the CLI pin from HARNESS_LINE, not a literal', () => {

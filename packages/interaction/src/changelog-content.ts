@@ -31,18 +31,18 @@ export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
     version: '0.1.2-alpha.1',
     summary: 'Blue now runs on the DeepSeek Harness 0.1.2 alpha line and delegates the standard preset roster to Harness itself.',
     highlights: [
-      'Exact Harness alpha contract — every runtime, peer, launcher archive, fixture, version surface, and author catalog targets Harness 0.1.2-alpha.2; Harness RC releases are explicitly unsupported.',
+      'Exact Harness alpha contract — every runtime, peer, launcher archive, fixture, version surface, and author catalog targets Harness 0.1.2-alpha.3; Harness RC releases are explicitly unsupported.',
       'Upstream-owned shipped presets — Harness supplies standard, minimal, ptc, and cordis, while Blue ships only its uniquely named blue-cordis preset. The obsolete code alias and copied upstream preset trees are gone.',
       'Alpha preset capabilities retained — blue-cordis includes the upstream command-goal row, selectable subagent models, and Web fetch support while preserving Blue\'s creative persona and authoring skills.',
       'Harness API migration — settings use the scoped installSection API, user questions participate in the request waterfall, Todo types come from dsh-tool-todo, and tool-call construction uses ToolCallId.',
-      "Single-line plugin conformance — the machine catalog publishes supportedHarnessLines: ['0.1.2-alpha.2'], generated plugins declare that exact line, and author fixtures reject RC overrides.",
+      "Single-line plugin conformance — the machine catalog publishes supportedHarnessLines: ['0.1.2-alpha.3'], generated plugins declare that exact line, and author fixtures reject RC overrides.",
       'Alpha release and update flow — the launcher, direct install docs, updater settings, drift monitor, and release promotion all use the alpha channel for this release phase.',
       'Truthful marketplace compatibility — the pinned blue-doudizhu@0.3.0 RC snapshot remains visible but is marked incompatible and has no install action until that plugin declares and proves alpha support.',
       'Layered interaction alignment — plugin surfaces and built-in panels now use outer tabs → nested tabs → content groups → editing; tab strips use non-wrapping Left/Right plus Enter, Tab moves only among content groups, and Escape climbs one layer at a time. Multiple lists use Space then Enter, filters retain their query until Clear filter, disabled rows are skipped, and session-only model picks are explicit actions instead of Alt+S. The model picker keeps provider as its only tab layer, then uses Up/Down for models and Left/Right for each model\'s thinking level; its two commit actions share one visual level. The same control state derives the contextual hint row.',
     ],
     knownIssues: [
       'Temporary React peer override — Harness alpha\'s Web closure still needs use-sync-external-store@1.6.0 forced beside React 19; the override can be removed when upstream resolves a compatible version itself.',
-      'Title cadence bridge remains — Harness 0.1.2-alpha.2 still does not refresh an all-prompts title on every human-message boundary by itself, so Blue retains its narrow app-owned refresh bridge.',
+      'Title cadence bridge remains — Harness 0.1.2-alpha.3 still does not refresh an all-prompts title on every human-message boundary by itself, so Blue retains its narrow app-owned refresh bridge.',
     ],
   },
   {

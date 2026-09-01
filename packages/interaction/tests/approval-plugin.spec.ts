@@ -18,12 +18,6 @@ import * as approvalPlugin from '../src/approval-plugin.ts'
 import { INTERACTION_LOCALE } from '../src/locale.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
 
-const contexts = new WeakMap<Agent, Context>()
-
-function setYolo(agent: Agent, enabled: boolean): void {
-  contexts.get(agent)?.blueSessionActions.setYolo(enabled)
-}
-
 async function mount(options: { attach?: boolean, locale?: 'en' | 'zh' } = {}): Promise<{
   ctx: Context
   screen: FakeScreen
@@ -41,7 +35,6 @@ async function mount(options: { attach?: boolean, locale?: 'en' | 'zh' } = {}): 
   const session = ctx.sessions.create(SessionId('approval-spec'))
   const steer = vi.fn()
   const agent = { id: session.id, session, steer } as unknown as Agent
-  contexts.set(agent, ctx)
   ctx.provide('testSession', { current: options.attach === false ? null : agent, modelRef: undefined })
   await ctx.plugin(approvalPlugin)
   return { ctx, screen, components, agent, steer, locale }
@@ -216,6 +209,20 @@ describe('blue-approval answerer', () => {
     expect(screen.overlays).toHaveLength(2)
   })
 
+  it('does not retain an allowance after the prompt Agent becomes stale', async () => {
+    const { ctx, screen, agent } = await mount()
+    const pending = decide(ctx, request(agent))
+    ;(ctx.get('testSession') as { current: Agent | null }).current = { id: 'stale' } as Agent
+    overlay(screen).handleInput('2')
+    await expect(pending).resolves.toBe('allowed-once')
+
+    ;(ctx.get('testSession') as { current: Agent | null }).current = agent
+    const retry = decide(ctx, request(agent))
+    expect(screen.overlays).toHaveLength(2)
+    overlay(screen).handleInput(KEY.escape)
+    await expect(retry).resolves.toBe('rejected')
+  })
+
   it('steers the agent with the reason on "Reject with feedback"', async () => {
     const { ctx, screen, agent, steer } = await mount()
     const pending = decide(ctx, request(agent))
@@ -246,6 +253,17 @@ describe('blue-approval answerer', () => {
     overlay(screen).handleInput(KEY.enter)
     expect(steer).toHaveBeenCalledOnce()
     screen.overlays[0]?.component.invalidate()
+  })
+
+  it('does not steer after the feedback prompt Agent becomes stale', async () => {
+    const { ctx, screen, agent, steer } = await mount()
+    const pending = decide(ctx, request(agent))
+    overlay(screen).handleInput('4')
+    overlay(screen).handleInput('too risky')
+    ;(ctx.get('testSession') as { current: Agent | null }).current = { id: 'stale' } as Agent
+    overlay(screen).handleInput(KEY.enter)
+    await expect(pending).resolves.toBe('rejected')
+    expect(steer).not.toHaveBeenCalled()
   })
 
   it('treats an empty feedback reason as a plain Reject without steering', async () => {
@@ -318,14 +336,13 @@ describe('blue-approval answerer', () => {
     await expect(second).resolves.toBe('cancelled')
   })
 
-  it('delegates when the reader has no committed snapshot despite matching ownership', async () => {
+  it('delegates after the current Agent is cleared', async () => {
     const { ctx, screen, agent } = await mount()
-    const current = ctx.blueSessionReader.current
-    ctx.blueSessionReader.current = () => null
+    ;(ctx.get('testSession') as { current: Agent | null }).current = null
+    ctx.emit('test/session-changed', null)
     const pending = decide(ctx, request(agent))
     await expect(pending).resolves.toBe('unavailable')
     expect(screen.overlays).toHaveLength(0)
-    ctx.blueSessionReader.current = current
   })
 
   it('rejects a queued prompt whose request owner becomes stale before it mounts', async () => {
@@ -339,14 +356,15 @@ describe('blue-approval answerer', () => {
     expect(screen.overlays).toHaveLength(1)
   })
 
-  it('does not retain a session allowance after the reader identity changes', async () => {
+  it('does not retain a session allowance after the exact current Agent changes', async () => {
     const { ctx, screen, agent } = await mount()
-    const current = ctx.blueSessionReader.current
     const first = decide(ctx, request(agent))
-    ctx.blueSessionReader.current = () => ({ id: 'next', cwd: '/', status: 'idle', mode: 'normal' })
     overlay(screen).handleInput('2')
     await expect(first).resolves.toBe('allowed-once')
-    ctx.blueSessionReader.current = current
+    ;(ctx.get('testSession') as { current: Agent | null }).current = { id: 'next' } as Agent
+    ctx.emit('test/session-changed')
+    ;(ctx.get('testSession') as { current: Agent | null }).current = agent
+    ctx.emit('test/session-changed', agent)
     const second = decide(ctx, request(agent))
     expect(screen.overlays).toHaveLength(2)
     overlay(screen).handleInput(KEY.escape)
@@ -369,35 +387,4 @@ describe('blue-approval answerer', () => {
     expect(screen.overlays).toHaveLength(0)
   })
 
-  it('yolo auto-allows without an overlay for the attached agent', async () => {
-    const { ctx, screen, agent } = await mount()
-    setYolo(agent, true)
-    await expect(decide(ctx, request(agent))).resolves.toBe('allowed-once')
-    expect(screen.overlays).toHaveLength(0)
-    // Turning yolo off restores the interactive prompt.
-    setYolo(agent, false)
-    const pending = decide(ctx, request(agent))
-    expect(screen.overlays).toHaveLength(1)
-    overlay(screen).handleInput(KEY.escape)
-    await expect(pending).resolves.toBe('rejected')
-  })
-
-  it('yolo cancels a pre-aborted request rather than allowing it', async () => {
-    const { ctx, screen, agent } = await mount()
-    setYolo(agent, true)
-    const controller = new AbortController()
-    controller.abort()
-    await expect(decide(ctx, request(agent, { signal: controller.signal }))).resolves.toBe('cancelled')
-    expect(screen.overlays).toHaveLength(0)
-  })
-
-  it('yolo delegates for an agent the UI does not own', async () => {
-    const { ctx, screen, agent } = await mount()
-    setYolo(agent, true)
-    const other = { id: 'other' } as unknown as Agent
-    const pending = decide(ctx, request(other))
-    await expect(pending).resolves.toBe('unavailable')
-    expect(pending.fallback).toHaveBeenCalledOnce()
-    expect(screen.overlays).toHaveLength(0)
-  })
 })

@@ -17,8 +17,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { BlueUiNode } from '@dsh-blue/blue-api'
-import type { Action } from '@dsh-blue/blue-frontend'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 // Empty type imports carry the `commands` merge the registration uses and
 // the app-owned session boundary every handler reads.
@@ -26,10 +24,10 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@dsh-blue/blue-app'
 import type { InfoRow, InfoSection, InfoSegment, InfoStyle } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
-import { CanonicalDocumentController } from './frontend-panel.ts'
 import { CHANGELOG_ENTRIES, type ChangelogEntry } from './changelog-content.ts'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
+import { currentModelSelection } from './model-commands.ts'
 import { wrapLines } from './tools-commands.ts'
 import {
   formatTokens,
@@ -50,23 +48,13 @@ import {
  * while {@link BLUE_VERSION} is Blue's first-release number. Guarded by
  * the global version spec against the dsh pins.
  */
-const HARNESS_LINE = '0.1.2-alpha.2'
+const HARNESS_LINE = '0.1.2-alpha.3'
 
 /** The model facts the `/status` panel lists. */
 export interface StatusModelFacts {
   readonly provider: string
   readonly model: string
   readonly effort?: string
-}
-
-interface ContextFeatureFace {
-  readonly model: { readonly state: string, readonly panel: { readonly title: string, readonly node: BlueUiNode, readonly refresh?: Action } } | undefined
-  subscribe(listener: () => void): () => void
-  execute(action: Action): Promise<unknown>
-}
-
-function contextFeature(ctx: Context): ContextFeatureFace | undefined {
-  return (ctx as unknown as { get(name: string): unknown }).get('blueContextFeature') as ContextFeatureFace | undefined
 }
 
 /**
@@ -400,8 +388,8 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
    * @returns the command outcome.
    */
   function showStatus(): CommandResult {
-    const details = ctx.blueSessionActions.sessionDetails()
-    if (details === undefined) {
+    const agent = ctx.blueCurrentAgent.current()
+    if (agent === null) {
       return { kind: 'error', text: 'no session is live yet' }
     }
     const display = displayServices(ctx)
@@ -409,7 +397,8 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
       return { kind: 'error', text: 'status panel is unavailable: the Blue screen is not mounted' }
     }
     const counts = readTurnCounts(ctx)
-    const selection = details.model
+    const selection = currentModelSelection(ctx)
+    const usage = readUsageFacts(ctx)
     const model: StatusModelFacts = selection === undefined
       ? { provider: 'unknown', model: 'not set' }
       : {
@@ -423,12 +412,16 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
       components: display.components,
       title: 'status',
       sections: buildStatusSections({
-        header: details.header,
+        header: {
+          id: String(agent.id),
+          ...(agent.session.header.cwd === undefined ? {} : { cwd: agent.session.header.cwd }),
+          createdAt: agent.session.header.createdAt,
+        },
         turns: counts.turns,
         steps: counts.steps,
-        agentStatus: details.status,
+        agentStatus: agent.status,
         model,
-        context: details.usage.context,
+        context: usage.context,
       }, displayVersion),
       onClose: () => {
         restore()
@@ -443,43 +436,15 @@ export function registerSessionCommands(ctx: Context, displayVersion = BLUE_VERS
    * @returns the command outcome.
    */
   function showContext(): CommandResult {
-    const details = ctx.blueSessionActions.sessionDetails()
-    if (details === undefined) {
+    if (ctx.blueCurrentAgent.current() === null) {
       return { kind: 'error', text: 'no session is live yet' }
     }
     const display = displayServices(ctx)
     if (display === undefined) {
       return { kind: 'error', text: 'context panel is unavailable: the Blue screen is not mounted' }
     }
-    const projected = contextFeature(ctx)
-    if (projected?.model !== undefined) {
-      const cleanups: Array<() => void> = []
-      const close = (): void => {
-        for (const cleanup of cleanups.splice(0)) cleanup()
-      }
-      const panel = new CanonicalDocumentController({
-        keymap: display.keymap,
-        theme: display.theme,
-        components: display.components,
-        model: () => {
-          const model = projected.model
-          if (model === undefined) return { mode: 'error', title: 'Context', view: { kind: 'text', content: 'context unavailable' } }
-          return {
-            mode: model.state === 'loading' ? 'loading' : model.state === 'error' || model.state === 'absent' ? 'error' : 'info',
-            title: model.panel.title,
-            view: model.panel.node,
-            ...(model.panel.refresh === undefined ? {} : { submit: model.panel.refresh }),
-          }
-        },
-        onAction: async action => { await projected.execute(action) },
-        onClose: close,
-      })
-      cleanups.push(mountEditorReplacement(ctx, panel))
-      cleanups.push(projected.subscribe(() => panel.invalidate()))
-      return { kind: 'success' }
-    }
     const facts = readUsageFacts(ctx)
-    const selection = details.model
+    const selection = currentModelSelection(ctx)
     const model = selection === undefined
       ? { provider: 'unknown', model: 'not set' }
       : { provider: selection.provider, model: selection.model }

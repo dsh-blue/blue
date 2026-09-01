@@ -1,29 +1,13 @@
-# 收录指南
+# 提交插件
 
-插件市场开放收录。收录即向 [`dsh-blue/marketplace`](https://github.com/dsh-blue/marketplace) 提交 PR，合并后网站数分钟内自动重建上线（每日定时重建兜底）。
+收录前请确认：
 
-## 收录状态
+1. package 是普通 Cordis entry，并通过自己的 `cordis.patch.yml` 激活；
+2. README 列出 native dsh 与 Blue UI `inject`；
+3. tarball 在空目录可独立安装，export/type/files 完整；
+4. 测试覆盖 Fiber unload、Agent/session scope、异步 abort 与 UI 窄宽；
+5. 在专用 Blue profile 完成真实启动与主流程验收；
+6. package 名、repository、license、版本、支持矩阵与维护者明确。
 
-每个插件处于三种状态之一，市场卡片徽章按此展示：
-
-- **已验证**（`verified`）：通过下方机器契约与人工验收，可在 TUI `/plugin` 面板一键安装；
-- **未验证**（`unverified`）：可通过 CLI 安装，但尚未完成完整兼容性验证——**新收录默认以此状态进入**；
-- **适配中**（`adapting`）：正与维护者合作适配当前 Harness 线，须在条目中附 `adaptingIssue` 跟踪 issue。
-
-## 提交流程
-
-1. 按[快速开始](/plugins/quickstart)开发插件，package root 通过 `package.json.blue.manifest` 指向 canonical `blue.plugin.json`；
-2. 用已发布的 `blue-plugin validate/conformance` 完成[调试与验证](/plugins/testing)；
-3. Fork `dsh-blue/marketplace`，在 `registry.json` 增加条目（字段见仓内 README，新收录 `status` 填 `unverified`），并提供 `content/<id>/zh.md` 与 `en.md` 双语详情页；
-4. 提交 PR；仓内 validate CI 校验字段白名单、id 唯一性、双语 content 齐全；
-5. 维护者 review 通过后合并；完成兼容性验收的条目由维护者把 `status` 改为 `verified`。
-
-## 「已验证」门禁
-
-- manifest `id` 等于 package name，entry 是公开 exports subpath；
-- required/optional、capability version 与 exact resource 通过共享 parser/validator；
-- 只使用七项 Public Beta capability，不把 Experimental/reference facet 写进 canonical manifest；
-- packed install、受支持 Harness line、Fiber unload、宽度扫描与真实 profile 有可复现证据；
-- 中英文元信息、版本、license、仓库和安装源与实际 artifact 一致。
-
-[返回插件市场](/marketplace/)
+提交市场 PR 时附 npm package、repository、简短描述、服务列表、截图或录屏、
+验证命令与验收 profile。市场收录不替代 npm 发布授权或 package 自己的安全审查。

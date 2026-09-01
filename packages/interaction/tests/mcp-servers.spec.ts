@@ -66,11 +66,10 @@ function collectContext(over: {
   readonly global?: readonly ToolSchema[]
   readonly scoped?: readonly ToolSchema[]
   readonly session?: boolean
-  readonly roster?: boolean
   readonly drop?: 'loader' | 'tools'
 }): Context {
   const ctx = new Context()
-  let agentCtx: Context | undefined
+  let agent: { readonly ctx: Context } | null = null
   if (over.drop !== 'loader') {
     const entries = over.entries ?? []
     ctx.provide('loader', { entries: function* () { yield* entries } } as never)
@@ -83,36 +82,12 @@ function collectContext(over: {
     } as never)
   }
   if (over.session !== false) {
-    agentCtx = new Context()
-    ctx.provide('testSession', { current: { ctx: agentCtx } } as never)
-    if (over.roster !== false) {
-      const scope = { scope: true }
-      ctx.provide('agentPresets', {
-        composedPreset: () => 'standard',
-        standingKeyFor: () => Promise.resolve(scope),
-      } as never)
-    }
+    agent = { ctx: new Context() }
   }
-  ctx.provide('blueSessionActions', {
-    async toolCatalog() {
-      const tools = ctx.get('tools') as unknown as { schemas(scope?: unknown): readonly ToolSchema[] } | undefined
-      if (tools === undefined) {
-        return { ok: false as const, code: 'BLUE_CAPABILITY_ABSENT' as const, message: 'tool registry is unavailable: the host composes no tools service' }
-      }
-      const registered = tools.schemas()
-      if (agentCtx === undefined) return { ok: true as const, value: { sessionLive: false, registered, visible: registered } }
-      const roster = ctx.get('agentPresets') as unknown as {
-        composedPreset(scope: Context): string | undefined
-        standingKeyFor(id: string): Promise<unknown>
-      } | undefined
-      try {
-        const preset = roster?.composedPreset(agentCtx)
-        const scope = preset === undefined ? undefined : await roster?.standingKeyFor(preset)
-        return { ok: true as const, value: { sessionLive: true, registered, visible: scope === undefined ? registered : tools.schemas(scope) } }
-      } catch (error) {
-        return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: `could not resolve the preset composition: ${error instanceof Error ? error.message : String(error)}` }
-      }
-    },
+  ctx.provide('blueCurrentAgent', {
+    current: () => agent,
+    revision: () => 0,
+    subscribe: () => () => {},
   } as never)
   return ctx
 }
@@ -331,15 +306,6 @@ describe('collectMcpServers', () => {
     await expect(collectMcpServers(collectContext({ drop: 'tools' }))).rejects.toThrow(/tools/)
   })
 
-  it('propagates roster failures to the caller', async () => {
-    const ctx = collectContext({ entries: [], global: [] })
-    ctx.set('agentPresets', {
-      composedPreset: () => 'standard',
-      standingKeyFor: () => Promise.reject(new Error('roster boom')),
-    } as never)
-    await expect(collectMcpServers(ctx)).rejects.toThrow('roster boom')
-  })
-
   it('ignores non-mcp entries and covers the endpoint fallbacks', async () => {
     const ctx = collectContext({
       entries: [
@@ -358,11 +324,10 @@ describe('collectMcpServers', () => {
     expect(servers[3]).toMatchObject({ transport: 'unknown', endpoint: '(no command)', status: 'no-tools' })
   })
 
-  it('resolves the global view when the host composes no roster', async () => {
+  it('uses the exact Agent scope without a preset adapter', async () => {
     const ctx = collectContext({
       entries: [entry({ fiberConfig: STDIO_CONFIG })],
       global: [tool('mcp__github__create_issue')],
-      roster: false,
     })
     const catalog = await collectMcpServers(ctx)
     expect(catalog.sessionLive).toBe(true)

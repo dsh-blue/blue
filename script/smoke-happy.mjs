@@ -87,6 +87,12 @@ if (!(await waitFor(() => clean().includes('deepseek-v4-flash'), 'the statusline
   await server.close()
   process.exit(1)
 }
+if (!(await waitFor(() => clean().includes('│ > '), 'the focused input editor'))) {
+  console.error(clean().slice(-2500))
+  dsh.kill()
+  await server.close()
+  process.exit(1)
+}
 
 dsh.stdin.write('ping\r')
 if (!(await waitFor(() => clean().includes(PATHOLOGICAL.slice(0, 24)), 'the streamed reply'))) {

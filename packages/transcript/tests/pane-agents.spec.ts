@@ -1,17 +1,16 @@
 /**
  * `blue-pane-agents` plugin: the S33 subagent pane. Covers the zero-row
- * empty render, spawn-call collection into the pinned card, the settled
+ * empty render, spawn-call collection into the canonical pane, the settled
  * group clearing at the next turn start while a live-running group
  * persists, the resume snapshot rebuilding the settled card, the live
  * child-session overlay end-to-end, fork prompt correlation, and
  * session-change rebinding.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import * as paneAgents from '../src/pane-agents.ts'
-import { setAgentGroupTimers } from '../src/agent-group.ts'
 import {
   resetSeq,
   stepStart,
@@ -22,10 +21,6 @@ import {
 } from './helpers.ts'
 import { bootPanePlugin, type PanePluginHarness } from './pane-fakes.ts'
 
-afterEach(() => {
-  setAgentGroupTimers(undefined)
-})
-
 /** The frozen wall clock the injected timers report. */
 const T0 = 1_700_000_000_000
 
@@ -35,6 +30,7 @@ const PARENT = 'parent-1'
 /** A fake agent whose session carries the id the admission keys match. */
 function fakeAgent(events: SessionEvent[]): Agent {
   return {
+    id: PARENT,
     session: { id: PARENT, events, header: {} },
   } as unknown as Agent
 }
@@ -44,20 +40,8 @@ interface Rig extends PanePluginHarness {
   agent: Agent
 }
 
-/** Captured tick so a spec can fire the card's 1 Hz redraw path. */
-let fireTick: (() => void) | undefined
-
 async function boot(events: SessionEvent[] = []): Promise<Rig> {
   resetSeq()
-  fireTick = undefined
-  setAgentGroupTimers({
-    setInterval: cb => {
-      fireTick = cb
-      return 0 as unknown as ReturnType<typeof setInterval>
-    },
-    clearInterval: () => {},
-    now: () => T0 + 10_000,
-  })
   const agent = fakeAgent(events)
   const harness = await bootPanePlugin(paneAgents, agent)
   return { ...harness, agent }
@@ -88,12 +72,12 @@ describe('blue-pane-agents plugin', () => {
       toolCallEvent(1, 1, 'b1', 'bash', '{}', { time: T0 + 1_000 }),
     ])
     const rows = rig.screen.paneLines(140)
-    expect(rows[1]).toContain('Running 1 agents')
+    expect(rows.join('\n')).toContain('running Survey')
     expect(rows.join('\n')).not.toContain('bash')
     // No ack yet: the turn boundary keeps the pending group (a member
     // without a result is not settled).
     rig.ctx.emit('session/event', rig.agent.session, { ...turnStart(2), seq: 99, time: T0 + 10_000 })
-    expect(rig.screen.paneLines(140)[1]).toContain('Running 1 agents')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Survey')
   })
 
   it('survives result shapes without text and unparsable spawn arguments', async () => {
@@ -110,8 +94,7 @@ describe('blue-pane-agents plugin', () => {
       type: 'tool/call', seq: 51, time: T0 + 2_000,
       data: { turn: 1, step: 1, callId: 'bad1', name: 'subagent', arguments: 'not-json' },
     })
-    // The description chain falls to the ellipsized raw arguments.
-    expect(rig.screen.paneLines(140)[2]).toContain('not-json')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running subagent')
     // A result pairing into it with a non-text block yields empty text;
     // a block without a content field pairs the same empty way.
     rig.ctx.emit('session/event', agent.session, {
@@ -124,7 +107,7 @@ describe('blue-pane-agents plugin', () => {
         },
       },
     })
-    expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('done subagent')
     rig.ctx.emit('session/event', agent.session, {
       type: 'tool/call', seq: 53, time: T0 + 4_000,
       data: { turn: 1, step: 1, callId: 'bad2', name: 'subagent_fork', arguments: '{}' },
@@ -136,15 +119,10 @@ describe('blue-pane-agents plugin', () => {
         message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'bad2', isError: false }] },
       },
     })
-    expect(rig.screen.paneLines(140)[1]).toContain('2 agents finished')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('Agents (2)')
   })
 
   it('boots without an agent and survives a malformed result event', async () => {
-    setAgentGroupTimers({
-      setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
-      clearInterval: () => {},
-      now: () => T0 + 10_000,
-    })
     const harness = await bootPanePlugin(paneAgents, null)
     expect(harness.screen.paneLines(80)).toEqual([])
     // A result event without a toolCallId block pairs nothing and throws
@@ -168,13 +146,13 @@ describe('blue-pane-agents plugin', () => {
       toolResultEvent(1, 1, 'a2', 'started subagent bd317666afec47f4777c7ca701c1779e', { time: T0 + 45_000 }),
     ])
     const rows = screen.paneLines(140)
-    expect(rows[0]).toBe('')
-    expect(rows[1]).toContain('2 agents finished')
-    expect(rows[1]).toContain('1m 30s')
-    expect(rows[2]).toContain('├─ subagent · Survey tests')
-    expect(rows[3]).toContain('└─ subagent · Map docs')
-    // No live overlay on replay: no tool counts, no tokens.
-    expect(rows[1]).not.toContain('tok')
+    const text = rows.join('\n')
+    expect(rows[0]).toBe('Agents (2)')
+    expect(text).toContain('done Survey tests')
+    expect(text).toContain('done Map docs')
+    // No live projection on replay: no tool counts or tokens.
+    expect(text).not.toContain('tools')
+    expect(text).not.toContain('tokens')
   })
 
   it('clears a settled group at the next turn start', async () => {
@@ -184,7 +162,7 @@ describe('blue-pane-agents plugin', () => {
       subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey', { time: T0 }),
       toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
     ])
-    expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('done Survey')
     rig.ctx.emit('session/event', rig.agent.session, { ...turnStart(2), seq: 99, time: T0 + 10_000 })
     expect(rig.screen.paneLines(140)).toEqual([])
   })
@@ -202,11 +180,11 @@ describe('blue-pane-agents plugin', () => {
     rig.ctx.emit('session/event', child, childTurnStart())
     rig.ctx.emit('session/event', rig.agent.session, { ...turnStart(2), seq: 99, time: T0 + 10_000 })
     const running = rig.screen.paneLines(140).join('\n')
-    expect(running).toContain('Running 1 agents')
+    expect(running).toContain('waiting Survey')
     rig.ctx.emit('session/event', child, {
       type: 'turn/end', seq: 2, time: T0 + 30_000, data: { turn: 1, reason: { kind: 'completed' } },
     })
-    expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('done Survey')
     rig.ctx.emit('session/event', rig.agent.session, { ...turnStart(3), seq: 100, time: T0 + 60_000 })
     expect(rig.screen.paneLines(140)).toEqual([])
   })
@@ -233,14 +211,39 @@ describe('blue-pane-agents plugin', () => {
       },
     })
     const rows = rig.screen.paneLines(140)
-    expect(rows[1]).toContain('Running 1 agents')
-    expect(rows[2]).toContain('1 tool')
-    expect(rows[2]).toContain('3.1k tok')
-    expect(rows[3]).toContain('Using read')
-    // The pending tick redraws through the card's requestRender nudge.
-    const before = rig.screen.renderRequests.length
-    fireTick?.()
-    expect(rig.screen.renderRequests.length).toBeGreaterThan(before)
+    const text = rows.join('\n')
+    expect(text).toContain('running Survey')
+    expect(text).toContain('1 tools')
+    expect(text).toContain('3200 tokens')
+    expect(text).toContain('Using read')
+  })
+
+  it('shows distinct agent detail and a failed live child phase', async () => {
+    const rig = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      {
+        type: 'tool/call', seq: 3, time: T0,
+        data: {
+          turn: 1,
+          step: 1,
+          callId: 'a1',
+          name: 'subagent',
+          arguments: JSON.stringify({ name: 'Worker', description: 'Survey tests', prompt: 'survey' }),
+        },
+      } as SessionEvent<'tool/call'>,
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
+    rig.ctx.emit('session/event', child, childTurnStart())
+    rig.ctx.emit('session/event', child, {
+      type: 'turn/end',
+      seq: 2,
+      time: T0 + 2_000,
+      data: { turn: 1, reason: { kind: 'error', error: { message: 'failed' } } },
+    })
+    const text = rig.screen.paneLines(140).join('\n')
+    expect(text).toContain('failed Worker · Survey tests')
   })
 
   it('correlates a fork member through its delegation prompt', async () => {
@@ -260,7 +263,7 @@ describe('blue-pane-agents plugin', () => {
       },
     })
     rig.ctx.emit('session/event', child, childTurnStart())
-    expect(rig.screen.paneLines(140)[1]).toContain('Running 1 agents')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('waiting Map docs')
   })
 
   it('rebinds on session change, dropping the old group', async () => {
@@ -270,8 +273,11 @@ describe('blue-pane-agents plugin', () => {
       subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey', { time: T0 }),
       toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
     ])
-    expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
-    rig.ctx.emit('test/session-changed', fakeAgent([]))
+    expect(rig.screen.paneLines(140).join('\n')).toContain('done Survey')
+    const next = fakeAgent([])
+    ;(next as unknown as { id: string }).id = 'parent-2'
+    ;(next.session as unknown as { id: string }).id = 'parent-2'
+    rig.ctx.emit('test/session-changed', next)
     expect(rig.screen.paneLines(140)).toEqual([])
   })
 
@@ -292,8 +298,7 @@ describe('blue-pane-agents plugin', () => {
     ])
     const pane = rig.screen.bottomChildren[0]
     pane?.invalidate()
-    // The invalidated card rebuilds its rows on the next render.
-    expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('done Survey')
     await rig.dispose()
     expect(rig.screen.bottomChildren).toHaveLength(0)
   })

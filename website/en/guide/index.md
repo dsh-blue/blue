@@ -1,7 +1,7 @@
 # Quickstart
 
 ::: info Current release line
-`v0.1.2-alpha.1` is the current alpha. Ordinary installs follow the **`alpha`** channel; plugin adapters, CI, and reproducible environments should pin Blue `0.1.2-alpha.1` and Harness `0.1.2-alpha.2`. Harness RC releases are not supported. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+`v0.2.0-alpha.1` is the current alpha. Ordinary installs follow the **`alpha`** channel; plugins, CI, and reproducible environments should pin Blue `0.2.0-alpha.1` and Harness `0.1.2-alpha.3`. Harness RC releases are not supported. This page is the user install path; the contributor development install (checkout, link install, iteration loop) lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
 :::
 
 ## Prerequisites
@@ -10,7 +10,7 @@
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11 (needed for first assembly, upgrades, and `plugin` management; an already-calibrated profile does not check it on every boot. Run `npm i -g pnpm@11`, or `corepack enable && corepack prepare pnpm@11.7.0 --activate`) |
-| dsh CLI | the recommended `blue` launcher includes exactly `0.1.2-alpha.2`; only the direct-dsh path below installs it separately |
+| dsh CLI | the recommended `blue` launcher includes exactly `0.1.2-alpha.3`; only the direct-dsh path below installs it separately |
 
 ## Install (preview)
 

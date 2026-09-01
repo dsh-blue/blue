@@ -496,7 +496,7 @@ describe('blueConversation projection', () => {
 })
 
 describe('SessionProjectionRegistry integration', () => {
-  it('replays, checkpoints, restores, drives live changes, and removes the capability on unload', async () => {
+  it('replays, checkpoints, restores, drives live changes, and removes the readiness signal on unload', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
@@ -505,7 +505,7 @@ describe('SessionProjectionRegistry integration', () => {
     session.append('user/message', userMessage('replayed'), { surfaceOp: 'append' })
 
     const fiber = await ctx.plugin(conversationPlugin)
-    expect(ctx.blueConversationProjection).toEqual({ key: 'blueConversation' })
+    expect(ctx.blueConversationReady).toEqual({ key: 'blueConversation' })
     expect(ctx.sessionProjections.snapshot(session)).toMatchObject({
       asOfSeq: 1,
       values: { blueConversation: { entries: [{ kind: 'user', text: 'replayed' }], streaming: true } },
@@ -531,7 +531,7 @@ describe('SessionProjectionRegistry integration', () => {
 
     off()
     await fiber.dispose()
-    expect(ctx.get('blueConversationProjection')).toBeUndefined()
+    expect(ctx.get('blueConversationReady')).toBeUndefined()
     expect(ctx.sessionProjections.snapshot(session)).toEqual({ asOfSeq: 3, values: {} })
     await ctx.fiber.dispose()
   })

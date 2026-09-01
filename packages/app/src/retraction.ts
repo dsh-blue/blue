@@ -11,7 +11,21 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { BlueRequestController } from './request-lifecycle.ts'
-import type { BlueRetractionService, BlueTurnRetraction } from './types.ts'
+
+/** Identity of one live turn removed from Blue's visible conversation. */
+export interface BlueTurnRetraction {
+  readonly sessionEpoch: number
+  readonly requestEpoch: number
+  readonly turn: number
+}
+
+/** App-owned gate for retracting the currently running human message. */
+export interface BlueRetractionService { tryRetract(messageId: string): boolean }
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { blueRetractions: BlueRetractionService }
+  interface Events { 'blue/turn-retracted'(retraction: BlueTurnRetraction): void }
+}
 
 /** One open turn reconstructed from the append-only boundary log. */
 interface OpenTurn {

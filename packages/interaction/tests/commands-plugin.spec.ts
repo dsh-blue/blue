@@ -5,8 +5,6 @@
  * disposal.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -17,7 +15,6 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import * as commandsPlugin from '../src/commands-plugin.ts'
-import { rewindCandidates } from '../../app/src/rewind.ts'
 import { clearSharedEditor, EditorHostService, setSharedEditor } from '../src/editor-instance.ts'
 import type {} from '@dsh-blue/blue-app'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeScreen } from './fakes.ts'
@@ -25,9 +22,7 @@ import { InteractionStateService } from '../src/runtime-state.ts'
 import { DEFAULT_SETTINGS } from '../src/settings.ts'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { INTERACTION_LOCALE } from '../src/locale.ts'
-import { mkdtempTracked, registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
-import { pluginCommandInternals } from '../src/plugin-command.ts'
-import { bundledPluginCatalog } from '../src/plugin-catalog.ts'
+import { registerTempDirCleanup } from '../../core/tests/temp-dir.ts'
 
 registerTempDirCleanup()
 
@@ -80,44 +75,25 @@ async function mount(options: {
 
 const signal = (): AbortSignal => new AbortController().signal
 
-/** Provide the app-owned seams without mounting any Blue renderer services. */
+/** Provide native command dependencies without mounting Blue display services. */
 function provideAppBoundary(ctx: Context): void {
   const active = (): Agent | null => ctx.get('testSession')?.current ?? null
-  ctx.provide('blueSessionReader', {
-    current: () => {
-      const agent = active()
-      return agent === null ? null : {
-        id: String(agent.id),
-        cwd: agent.session.header.cwd ?? process.cwd(),
-        status: agent.status === 'running' ? 'running' : 'idle',
-        mode: 'normal',
-      }
-    },
-    subscribe: () => ({ disposed: false, dispose() {} }),
-    request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'not used' }),
-  })
-  ctx.provide('blueSessionActions', {
-    commands: () => {
-      const agent = active()
-      return agent === null ? [] : ctx.commands.list(agent)
-    },
-    rewindCandidates: () => {
-      const agent = active()
-      return agent === null ? [] : rewindCandidates(agent.session.events)
+  ctx.provide('blueCurrentAgent', {
+    current: active,
+    revision: () => 0,
+    subscribe: (listener: (agent: Agent | null, revision: number) => void) => {
+      listener(active(), 0)
+      return () => {}
     },
   } as never)
-  ctx.provide('blueSessionProjections', {
-    current: () => undefined,
-    currentMany: () => undefined,
-    subscribe: () => () => {},
-    children: () => [],
-    subscribeChildren: () => () => {},
-  })
   ctx.provide('blueSkillsCatalog', {
     userInvocable: () => [],
     refresh: () => Promise.resolve(),
     setForTest: () => {},
   } as never)
+  ctx.provide('sessionProjections', { snapshot: () => ({ asOfSeq: 0, values: {} }), onChanged: () => () => {} } as never)
+  ctx.provide('sessionController', { selectModel: async () => { throw new Error('no session') } } as never)
+  ctx.provide('tools', { schemas: () => [] } as never)
 }
 
 /** The cwd the picker scopes to: the test runner's own directory. */
@@ -712,8 +688,6 @@ describe('blue-commands plugin', () => {
     expect(rows.join('\n')).toContain('/changelog')
     expect(rows.join('\n')).toContain('/context')
     expect(rows.join('\n')).toContain('/effort (/thinking)')
-    expect(rows.join('\n')).toContain('/plugin')
-    // 45 rows including the marketplace `/plugin` command.
     expect(rows.some(row => row.includes('showing 1-16 of'))).toBe(true)
     // Scrolling down reaches the Keys section with the two-column layout.
     for (let i = 0; i < 21; i += 1) overlay(screen).handleInput(KEY.down)
@@ -735,6 +709,14 @@ describe('blue-commands plugin', () => {
     await fiber.dispose()
   })
 
+  it('/help handles no current Agent', async () => {
+    const { ctx, screen, agent } = await mount()
+    ;(ctx.get('testSession') as { current: Agent | null }).current = null
+    await ctx.commands.execute(agent, '/help', [], signal())
+    expect(screen.overlays[0]?.component.render(80).join('\n')).toContain('Keys')
+    overlay(screen).handleInput(KEY.escape)
+  })
+
   it('/help switches language in place while preserving the open overlay', async () => {
     const { ctx, screen, agent, locale } = await mount({ locale: 'en' })
     await ctx.commands.execute(agent, '/help', [], signal())
@@ -749,14 +731,6 @@ describe('blue-commands plugin', () => {
     expect(localized).toContain('命令')
     expect(localized).toContain('显示第')
     open.handleInput(KEY.escape)
-  })
-
-  it('/help renders an empty description for a fallback command without one', async () => {
-    const { ctx, screen, agent } = await mount()
-    ;(ctx.blueSessionActions as unknown as { commands: () => readonly { name: string }[] }).commands
-      = () => [{ name: 'bare' }]
-    await ctx.commands.execute(agent, '/help', [], signal())
-    expect(screen.overlays[0]?.component.render(80).some(row => row.includes('/bare'))).toBe(true)
   })
 
   it('/help falls back to the action id when a binding has no description', async () => {
@@ -835,47 +809,4 @@ describe('blue-commands plugin', () => {
     expect(ctx.blueInteractionState.aliases.canonicalOf('exit')).toBeUndefined()
   })
 
-  it('/plugin reads only the local profile and is disposable', async () => {
-    const root = mkdtempTracked('blue-commands-plugin-profile-')
-    const profile = join(root, 'profiles', 'blue')
-    mkdirSync(profile, { recursive: true })
-    writeFileSync(join(profile, 'package.json'), JSON.stringify({ private: true, dependencies: { '@dsh-blue/blue': '0.1.1-rc.2' } }))
-    vi.stubEnv('DSH_HOME', root)
-    const fetch = vi.fn()
-    vi.stubGlobal('fetch', fetch)
-    const { ctx, agent, fiber } = await mount({ appExit: () => {} })
-    expect((await ctx.commands.execute(agent, '/plugin list', [], signal()))?.result).toMatchObject({
-      kind: 'success',
-      text: 'no Blue plugins installed',
-    })
-    expect(fetch).not.toHaveBeenCalled()
-    await fiber.dispose()
-    vi.unstubAllGlobals()
-    vi.unstubAllEnvs()
-  })
-
-  it('/plugin opens Installed and the vetted Catalog while the Website Marketplace stays paused', async () => {
-    const root = mkdtempTracked('blue-commands-plugin-panel-')
-    const profile = join(root, 'profiles', 'blue')
-    mkdirSync(profile, { recursive: true })
-    writeFileSync(join(profile, 'package.json'), JSON.stringify({ private: true, dependencies: {} }))
-    vi.stubEnv('DSH_HOME', root)
-    const refresh = vi.spyOn(pluginCommandInternals.effects, 'refreshCatalog').mockResolvedValue(bundledPluginCatalog())
-    const { ctx, screen, agent, fiber } = await mount({ appExit: () => {}, locale: 'zh' })
-    const execution = await ctx.commands.execute(agent, '/plugin', [], signal())
-    expect(execution?.result).toEqual({ kind: 'success' })
-    const panel = screen.overlays.at(-1)?.component as { render(width: number): string[], handleInput(data: string): void }
-    const output = panel.render(100).join('\n')
-    expect(output).toContain('插件')
-    expect(output).toContain('已安装')
-    expect(output).toContain('插件目录')
-    expect(output).toContain('已安装 0 · 已索引 1')
-    panel.handleInput(KEY.right)
-    expect(panel.render(100).join('\n')).toContain('@dsh-blue/blue-doudizhu')
-    expect(panel.render(100).join('\n')).toContain('兼容')
-    expect(panel.render(100).join('\n')).toContain('[安装]')
-    await fiber.dispose()
-    refresh.mockRestore()
-    vi.unstubAllEnvs()
-  })
 })

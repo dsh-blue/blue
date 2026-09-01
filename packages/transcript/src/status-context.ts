@@ -30,7 +30,7 @@ import type { BlueStatusEntry } from './status-model.ts'
 export const name = 'blue-status-context'
 
 /** Services required before the context entry can register. */
-export const inject = ['blueStatusEntries', 'blueSessionFacts']
+export const inject = ['blueStatus', 'blueSessionFacts']
 
 /**
  * The context occupancy of one step: the disjoint input-side token counts.
@@ -114,7 +114,7 @@ export function apply(ctx: Context): void {
   const offFacts = factsService?.subscribe(next => {
     const changed = next.contextTokens !== facts.contextTokens || next.contextWindow !== facts.contextWindow
     facts = next
-    if (changed) ctx.blueStatusEntries.refresh('blue.status.context')
+    if (changed) ctx.blueStatus.refresh('blue.status.context')
   })
   ctx.effect(() => () => offFacts?.())
 
@@ -127,5 +127,5 @@ export function apply(ctx: Context): void {
         : `context: ${String(contextPercent(facts.contextTokens, max))}% (${formatTokens(facts.contextTokens)}/${formatTokens(max)})`
     return { id: 'blue.status.context', priority: 20, band: 'right', row: 2, overflow: 'hide', node: { kind: 'text', content: text }, visible: text !== '' }
   }
-  ctx.effect(() => ctx.blueStatusEntries.register(model))
+  ctx.blueStatus.register(model)
 }

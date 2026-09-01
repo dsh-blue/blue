@@ -7,7 +7,7 @@ const base = process.env.DOCS_BASE ?? '/'
  * 站点版本（ADR D32）：当前预览线，与十一包发布线一致。
  * 升级时只改这一处（首页 hero 文案与 footer 同步引用语义，见各 index.md）。
  */
-const SITE_VERSION = '0.1.1-rc.2'
+const SITE_VERSION = '0.2.0-alpha.1'
 
 /**
  * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。
@@ -150,27 +150,18 @@ const sidebarZh = {
       ],
     },
     {
-      text: '贡献能力',
+      text: '直接服务',
       items: [
-        { text: '命令', link: '/plugins/commands' },
-        { text: '状态栏', link: '/plugins/status' },
+        { text: 'dsh 原生命令', link: '/plugins/commands' },
         { text: 'Pane 与 Overlay', link: '/plugins/dock' },
-        { text: '通知', link: '/plugins/notifications' },
-        { text: '会话只读数据', link: '/plugins/session' },
-      ],
-    },
-    {
-      text: 'Experimental / reference',
-      items: [
+        { text: '状态栏', link: '/plugins/status' },
         { text: '编辑器扩展', link: '/plugins/editor-extensions' },
-        { text: '编辑器 Provider', link: '/plugins/editor-providers' },
       ],
     },
     {
       text: '验证与发布',
       items: [
         { text: '调试与验证', link: '/plugins/testing' },
-        { text: '旧 UI API 迁移', link: '/plugins/ui-migration' },
         { text: '发布插件', link: '/plugins/publishing' },
       ],
     },
@@ -179,7 +170,6 @@ const sidebarZh = {
       items: [
         { text: 'UI 节点参考', link: '/plugins/ui-reference' },
         { text: 'Seam 参考', link: '/plugins/seams' },
-        { text: '插件包规范', link: '/plugins/manifest' },
         { text: '内置插件', link: '/plugins/builtins' },
         { text: '贡献本仓库', link: '/plugins/contributing' },
         { text: '仓库设计文档（GitHub）', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
@@ -255,27 +245,18 @@ const sidebarEn = {
       ],
     },
     {
-      text: 'Contribution capabilities',
+      text: 'Direct services',
       items: [
-        { text: 'Commands', link: '/en/plugins/commands' },
-        { text: 'Status bar', link: '/en/plugins/status' },
+        { text: 'Native dsh commands', link: '/en/plugins/commands' },
         { text: 'Panes and overlays', link: '/en/plugins/dock' },
-        { text: 'Notifications', link: '/en/plugins/notifications' },
-        { text: 'Read-only session data', link: '/en/plugins/session' },
-      ],
-    },
-    {
-      text: 'Experimental / reference',
-      items: [
+        { text: 'Status bar', link: '/en/plugins/status' },
         { text: 'Editor extensions', link: '/en/plugins/editor-extensions' },
-        { text: 'Editor providers', link: '/en/plugins/editor-providers' },
       ],
     },
     {
       text: 'Verify & publish',
       items: [
         { text: 'Debugging & validation', link: '/en/plugins/testing' },
-        { text: 'Legacy UI API migration', link: '/en/plugins/ui-migration' },
         { text: 'Publishing', link: '/en/plugins/publishing' },
       ],
     },
@@ -284,7 +265,6 @@ const sidebarEn = {
       items: [
         { text: 'UI node reference', link: '/en/plugins/ui-reference' },
         { text: 'Seam reference', link: '/en/plugins/seams' },
-        { text: 'Plugin package spec', link: '/en/plugins/manifest' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
         { text: 'Contributing to Blue', link: '/en/plugins/contributing' },
         { text: 'Design docs (GitHub, 中文)', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },

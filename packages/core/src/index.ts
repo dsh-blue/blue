@@ -18,7 +18,7 @@ import { BlueKeymapService } from './keymap.ts'
 import { BlueScreenService } from './screen.ts'
 import { BlueTerminalInfoService } from './terminal-info.ts'
 import { startBlueTerminal } from './terminal.ts'
-import { mountPluginSurfaceBridge } from './plugin-surface-bridge.ts'
+import { mountBlueSurfaceRenderer } from './surface-renderer.ts'
 import { contextHintTranslator, mountContextHintLocale } from './context-hint-locale.ts'
 import { NotificationModelService, ThemeModelService } from '@dsh-blue/blue-frontend'
 
@@ -75,6 +75,11 @@ export {
   validateBlueStatusNode,
   validateBlueUiNode,
 } from './ui-validator.ts'
+export type {
+  BlueEditorShellNode,
+  BlueUiErrorCode,
+  BlueValidationResult,
+} from './ui-contracts.ts'
 export {
   TITLE_MAX_CHARS,
   buildClipboardOsc52,
@@ -162,10 +167,10 @@ export async function apply(ctx: Context): Promise<void> {
     },
   })
   ctx.plugin({
-    name: 'blue-plugin-surface-bridge',
-    inject: ['bluePluginControl', 'blueComponents', 'blueTheme', 'blueKeymap'],
+    name: 'blue-surface-renderer',
+    inject: ['bluePanes', 'blueOverlays', 'blueComponents', 'blueTheme', 'blueKeymap'],
     apply(subCtx: Context) {
-      mountPluginSurfaceBridge(subCtx as Parameters<typeof mountPluginSurfaceBridge>[0], runtime, contextHintTranslator(ctx))
+      mountBlueSurfaceRenderer(subCtx as Parameters<typeof mountBlueSurfaceRenderer>[0], runtime, contextHintTranslator(ctx))
     },
   })
   ctx.effect(() => () => runtime.stop())

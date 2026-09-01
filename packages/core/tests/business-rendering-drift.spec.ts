@@ -33,7 +33,7 @@ const approvedWidthMath = new Set([
   'packages/transcript/src/banner.ts:const logoWidth = Math.max(...LOGO_ART.map(art => art.length))',
   "packages/transcript/src/status-model.ts:const remaining = width - used - (parts.length > 0 ? 2 : 0)",
   "packages/transcript/src/status-model.ts:const renderWidth = result.ok && result.value.node.kind === 'text'",
-  'packages/transcript/src/status-model.ts:used += (parts.length > 1 ? 2 : 0) + partWidth',
+  'packages/transcript/src/status-model.ts:used += (parts.length > 1 ? 2 : 0) + this.components.visibleWidth(part)',
   'packages/transcript/src/thinking.ts:const contentWidth = Math.max(1, width - THINKING_INDENT.length)',
   'packages/transcript/src/thinking.ts:const hintWidth = Math.max(0, width - THINKING_INDENT.length)',
 ])
@@ -42,8 +42,6 @@ const approvedPresentation = new Set([
   "border:packages/interaction/src/session-tree.ts:visit(child, depth + 1, index === shown.length - 1 ? '└─' : '├─')",
   "border:packages/transcript/src/agent-group.ts:const branch = isLast ? '└─' : '├─'",
   "border:packages/transcript/src/agent-group.ts:const prefix = isLast ? '   ' : '│  '",
-  "border:packages/transcript/src/pane-btw.ts:return this.colors.border('│') + ' ' + clipped + ' '.repeat(padding) + ' ' + this.colors.border('│')",
-  "border:packages/transcript/src/pane-todo.ts:this.colors.border('─'.repeat(width)),",
   "border:packages/transcript/src/read-group.ts:const branch = last ? '└─' : '├─'",
   "border:packages/transcript/src/read-group.ts:const continuation = last ? '   ' : '│  '",
   "border:packages/transcript/src/read-group.ts:const windowBranch = windowLast ? '└─' : '├─'",
@@ -65,15 +63,12 @@ const approvedPresentation = new Set([
   "padding:packages/transcript/src/banner.ts:return { text: `${truncated}${' '.repeat(pad)}`, style }",
   "padding:packages/transcript/src/banner.ts:{ text: ' '.repeat(LOGO_TEXT_GAP), style: 'logo' },",
   "padding:packages/transcript/src/components.ts:const indent = ' '.repeat(bulletWidth)",
-  "padding:packages/transcript/src/pane-btw.ts:return this.colors.border('│') + ' ' + clipped + ' '.repeat(padding) + ' ' + this.colors.border('│')",
-  "padding:packages/transcript/src/pane-todo.ts:this.colors.border('─'.repeat(width)),",
   "padding:packages/transcript/src/status-model.ts:: leftText + ' '.repeat(Math.max(0, width - leftWidth - rightWidth)) + rightText",
   "padding:packages/transcript/src/status-model.ts:? ' '.repeat(Math.max(0, width - rightWidth)) + rightText",
   "padding:packages/transcript/src/status-model.ts:? leftText + ' '.repeat(Math.max(0, width - leftWidth))",
   "pointer:packages/interaction/src/update-command.ts:subtitle: [`v${fromVersion} → v${toVersion}`, detail].join(' · ').replace(/ · $/, ''),",
   "pointer:packages/interaction/src/update-command.ts:{ kind: 'divider', label: `v${fromVersion} → v${toVersion}` },",
   'pointer:packages/interaction/src/updater/swap.ts:message: `updated ${input.fromVersion} → ${input.toVersion} · smoke passed · restart dsh to apply — this session keeps running ${input.fromVersion}`,',
-  'pointer:packages/transcript/src/pane-btw.ts:lines.push(this.colors.roleUser(this.components.truncateToWidth(`› ${turn.question}`, width)))',
 ])
 
 interface Audit {

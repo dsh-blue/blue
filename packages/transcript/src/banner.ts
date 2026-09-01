@@ -21,7 +21,7 @@
 
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
   GutterComponent,
   type BlueComponent,
@@ -31,6 +31,8 @@ import {
 // Empty type import carries the `agentDefaultModel` Context merge this
 // plugin's inject resolves.
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type {} from '@deepseek-ai/dsh-api-session-controller/types'
+import type {} from '@deepseek-ai/dsh-session-projection'
 // Empty type import carries the app-owned session reader service.
 import type {} from '@dsh-blue/blue-app'
 import { LOGO_ART, LOGO_GRADIENT, LOGO_ROWS } from './banner-art.ts'
@@ -47,7 +49,7 @@ import {
 export const name = 'blue-banner'
 
 /** Services required before the banner can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'agentDefaultModel']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueCurrentAgent', 'sessionProjections', 'agentDefaultModel']
 
 /** Banner configuration; the display override never changes Blue's release version. */
 export interface Config {
@@ -297,19 +299,28 @@ export function apply(ctx: Context, config: Config = {}): void {
     provider: boot.provider,
     cwd: shortenHome(process.cwd(), homedir()),
   })
-  const rederive = (session: BlueSessionSnapshot | null): void => {
+  const rederive = (agent: Agent | null): void => {
     const fallback = ctx.agentDefaultModel.currentSelection()
-    const selection = session?.model
+    const projected = agent === null
+      ? undefined
+      : ctx.sessionProjections.snapshot(agent.session, ['modelSelection']).values.modelSelection as {
+          readonly next?: { readonly provider: string, readonly model: string } | null
+        } | undefined
+    const selection = projected?.next ?? agent?.session.requestHeader()?.config
     banner.update({
       version: displayVersion,
-      model: selection?.id ?? fallback.model,
+      model: selection?.model ?? fallback.model,
       provider: selection?.provider ?? fallback.provider,
       cwd: shortenHome(process.cwd(), homedir()),
     })
     ctx.blueScreen.requestRender()
   }
-  const registration = ctx.blueSessionReader.subscribe(rederive)
-  ctx.effect(() => () => registration.dispose())
+  const offAgent = ctx.blueCurrentAgent.subscribe(rederive)
+  const offProjection = ctx.sessionProjections.onChanged((session, key) => {
+    if (key === 'modelSelection' && session === ctx.blueCurrentAgent.current()?.session) rederive(ctx.blueCurrentAgent.current())
+  })
+  ctx.effect(() => () => offAgent())
+  ctx.effect(() => () => offProjection())
   // Effect-bound so unloading this fiber unmounts the banner.
   ctx.effect(() => ctx.blueScreen.addChild(new GutterComponent(banner)))
   const offLocale = observeTranscriptLocale(ctx, () => {

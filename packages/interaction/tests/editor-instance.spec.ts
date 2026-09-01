@@ -11,8 +11,6 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import {
   applyReversibleSubmitTransformers,
   clearSharedEditor,
-  clearEditorExtensions,
-  clearEditorProviders,
   EditorHostService,
   ENHANCEMENT_EDITOR_PLUS,
   applySubmitTransformers,
@@ -22,12 +20,8 @@ import {
   mountEditorReplacement,
   registerEditorAutocompleteSource,
   registerSubmitTransformer,
-  setEditorExtensions,
-  setEditorProviders,
   setSharedEditor,
   setEditorSlotSwap,
-  type EditorExtensionBinding,
-  type EditorProviderBinding,
   type SharedEditor,
 } from '../src/editor-instance.ts'
 
@@ -35,25 +29,6 @@ function editorContext(): Context {
   const ctx = new Context()
   new EditorHostService(ctx)
   return ctx
-}
-
-function extensionBinding(revision: number): EditorExtensionBinding {
-  return {
-    revision,
-    entries: [],
-    complete: async () => ({ ok: true, value: [] }),
-    transform: async (_entry, request) => ({ ok: true, value: { text: request.text } }),
-    dispatch: async () => ({ ok: true, value: undefined }),
-  }
-}
-
-function providerBinding(revision: number): EditorProviderBinding {
-  return {
-    revision,
-    desiredId: 'blue.default',
-    entries: [],
-    dispatch: async () => ({ ok: true, value: undefined }),
-  }
 }
 
 function autocompleteProvider(): BlueAutocompleteProvider {
@@ -87,13 +62,11 @@ describe('editor extension host state', () => {
     })
     const unmark = markEditorEnhancement(ctx, 'dispose-me')
     const unregisterTransformer = registerSubmitTransformer(ctx, () => [{ type: 'text', text: 'transformed' }])
-    setEditorExtensions(ctx, extensionBinding(1))
     const unregisterAutocomplete = registerEditorAutocompleteSource(ctx, 'dispose-me', autocompleteProvider())
     const notificationsBeforeDispose = notifications
 
     ctx.blueEditorHost.dispose()
     expect(getSharedEditor(ctx)).toBeUndefined()
-    expect(ctx.blueEditorHost.extensions).toBeUndefined()
     expect(ctx.blueEditorHost.listAutocompleteSources()).toEqual([])
     expect(hasEditorEnhancement(ctx, 'dispose-me')).toBe(false)
     expect(applySubmitTransformers(ctx, 'plain')).toEqual([{ type: 'text', text: 'plain' }])
@@ -105,54 +78,6 @@ describe('editor extension host state', () => {
     unregisterTransformer()
     unregisterAutocomplete()
     unmark()
-  })
-
-  it('notifies only for binding changes and fences stale owner cleanup', () => {
-    const ctx = editorContext()
-    const first = extensionBinding(1)
-    const second = extensionBinding(2)
-    let notifications = 0
-    const unsubscribe = ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
-
-    setEditorExtensions(ctx, first)
-    setEditorExtensions(ctx, first)
-    expect(notifications).toBe(1)
-
-    setEditorExtensions(ctx, second)
-    clearEditorExtensions(ctx, first)
-    expect(ctx.blueEditorHost.extensions).toBe(second)
-    expect(notifications).toBe(2)
-
-    clearEditorExtensions(ctx, second)
-    expect(ctx.blueEditorHost.extensions).toBeUndefined()
-    expect(notifications).toBe(3)
-
-    unsubscribe()
-    setEditorExtensions(ctx, first)
-    expect(notifications).toBe(3)
-  })
-
-  it('notifies only for provider changes and fences stale owner cleanup', () => {
-    const ctx = editorContext()
-    const first = providerBinding(1)
-    const second = providerBinding(2)
-    let notifications = 0
-    const unsubscribe = ctx.blueEditorHost.subscribeEditorState(() => { notifications += 1 })
-
-    setEditorProviders(ctx, first)
-    setEditorProviders(ctx, first)
-    expect(notifications).toBe(1)
-
-    setEditorProviders(ctx, second)
-    clearEditorProviders(ctx, first)
-    expect(ctx.blueEditorHost.providers).toBe(second)
-    expect(notifications).toBe(2)
-
-    clearEditorProviders(ctx, second)
-    expect(ctx.blueEditorHost.providers).toBeUndefined()
-    expect(notifications).toBe(3)
-
-    unsubscribe()
   })
 
   it('keeps autocomplete sources ordered, unique, frozen, and lifecycle-notified', () => {

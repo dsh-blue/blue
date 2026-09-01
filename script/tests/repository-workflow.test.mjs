@@ -58,8 +58,8 @@ describe('change impact planning', () => {
   test('adds width and lifecycle package gates where required', () => {
     const renderer = classifyChanges(['packages/transcript/src/tool-card.ts'])
     assert.ok(renderer.tests.direct.includes('packages/transcript/tests/width-scan.spec.ts'))
-    const lifecycle = classifyChanges(['packages/frontend/src/provider-host.ts'])
-    assert.ok(lifecycle.tests.packageTests.includes('packages/frontend/tests'))
+    const lifecycle = classifyChanges(['packages/interaction/src/editor-extension-runtime.ts'])
+    assert.ok(lifecycle.tests.packageTests.includes('packages/interaction/tests'))
     const userKit = classifyChanges(['examples/blue-user-kit/src/index.ts'])
     assert.ok(userKit.tests.direct.includes('examples/blue-user-kit/tests/width-scan.spec.ts'))
   })
@@ -70,11 +70,11 @@ describe('change impact planning', () => {
   })
 
   test('routes package metadata through build and validation', () => {
-    const plan = classifyChanges(['packages/context/package.json'])
+    const plan = classifyChanges(['packages/conversation/package.json'])
     assert.equal(plan.checks.build, true)
     assert.equal(plan.checks.checkLib, true)
-    assert.deepEqual(plan.validatePackages, ['packages/context'])
-    const plugin = classifyChanges(['examples/header/blue.plugin.json'])
+    assert.deepEqual(plan.validatePackages, ['packages/conversation'])
+    const plugin = classifyChanges(['examples/header/package.json'])
     assert.deepEqual(plugin.validatePackages, ['examples/header'])
   })
 
@@ -141,7 +141,7 @@ describe('agent documentation drift', () => {
 
   test('rejects prerelease literals outside the maintained version set', () => {
     const root = fixture('Use verify:changed verify:full check:agent-docs. Old `0.1.1-rc.9`.\n')
-    const problems = auditAgentDocs(root, { packageDirs: [], checkPreset: false, allowedVersions: ['1.0.0-beta.1'] })
+    const problems = auditAgentDocs(root, { packageDirs: [], checkPreset: false, allowedVersions: ['0.2.0-alpha.1'] })
     assert.ok(problems.some(problem => problem.includes('stale prerelease 0.1.1-rc.9')))
   })
 })

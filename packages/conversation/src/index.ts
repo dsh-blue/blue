@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { conversationFactsProjectionDefinition } from './facts.ts'
 import { conversationProjectionDefinition } from './projection.ts'
-import type { BlueConversationProjectionCapability } from './types.ts'
+import type { BlueConversationReady } from './types.ts'
 
 export * from './types.ts'
 export * from './projection.ts'
@@ -25,6 +25,6 @@ export const inject = ['sessionProjections']
 export function apply(ctx: Context): void {
   ctx.sessionProjections.register(conversationProjectionDefinition)
   ctx.sessionProjections.register(conversationFactsProjectionDefinition)
-  const capability: BlueConversationProjectionCapability = { key: 'blueConversation' }
-  ctx.provide('blueConversationProjection', capability)
+  const ready: BlueConversationReady = { key: 'blueConversation' }
+  ctx.provide('blueConversationReady', ready)
 }

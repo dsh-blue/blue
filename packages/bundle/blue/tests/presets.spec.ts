@@ -86,27 +86,26 @@ describe('Blue preset roster', () => {
     }
   })
 
-  it('ships the machine-driven author skill and its five authority evals', () => {
+  it('ships the direct-service author skill and its five authority evals', () => {
     const skillRoot = new URL('../presets/blue-cordis/skills/blue-plugin-development/', import.meta.url)
     const source = readFileSync(new URL('SKILL.md', skillRoot), 'utf8')
     const evals = JSON.parse(readFileSync(new URL('evals.json', skillRoot), 'utf8')) as AuthorSkillEvals
 
-    for (const command of ['catalog --json', ' create', ' validate', ' conformance']) {
-      expect(source).toContain(command)
+    for (const service of ['commands', 'sessionProjections', 'tools', 'bluePanes', 'blueStatus', 'blueOverlays', 'blueEditorExtensions', 'blueCurrentAgent']) {
+      expect(source).toContain(`${service}`)
     }
-    expect(source).toContain('DSH_BLUE_PLUGIN_NODE')
-    expect(source).toContain('DSH_BLUE_PLUGIN_BIN')
-    expect(source).not.toContain('commands, status, panes, overlays, notifications.publish')
+    expect(source).toContain('ordinary Cordis plugin')
+    expect(source).toContain('npm pack --dry-run')
     expect(evals.skill).toBe('blue-plugin-development')
     expect(evals.preset).toBe('blue-cordis')
     expect(evals.cases?.map(value => value.id)).toEqual([
       'accepted-new-local-plugin',
       'existing-harness-plugin-entry',
-      'missing-capability',
+      'native-service',
+      'unsupported-renderer',
       'accepted-does-not-authorize-publish',
-      'legacy-plugin-migration',
     ])
-    expect(source).toContain('Audit before migrating an existing plugin')
+    expect(source).toContain('Audit an existing package')
   })
 
   it('routes preset skills by task and excludes Blue repository maintenance', () => {
@@ -120,14 +119,19 @@ describe('Blue preset roster', () => {
     expect(editing).toContain('outside every preset author skill')
   })
 
-  it('carries the published author bin in the installable bundle closure', () => {
+  it('carries only runtime composition dependencies', () => {
     const bundle = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
       readonly dependencies?: Readonly<Record<string, string>>
     }
-    const pluginKit = JSON.parse(readFileSync(require.resolve('@dsh-blue/blue-plugin-kit/package.json'), 'utf8')) as {
-      readonly bin?: Readonly<Record<string, string>>
-    }
-    expect(bundle.dependencies?.['@dsh-blue/blue-plugin-kit']).toBe('workspace:*')
-    expect(pluginKit.bin).toEqual({ 'blue-plugin': 'lib/bin.js' })
+    expect(Object.keys(bundle.dependencies ?? {}).filter(name => name.startsWith('@dsh-blue/')).sort()).toEqual([
+      '@dsh-blue/blue-api',
+      '@dsh-blue/blue-app',
+      '@dsh-blue/blue-conversation',
+      '@dsh-blue/blue-core',
+      '@dsh-blue/blue-frontend',
+      '@dsh-blue/blue-interaction',
+      '@dsh-blue/blue-transcript',
+      '@dsh-blue/blue-ui',
+    ])
   })
 })

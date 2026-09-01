@@ -116,6 +116,17 @@ describe('CanonicalSelectController navigation', () => {
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v1' }))
   })
 
+  it('moves the focus background together with the selected marker', () => {
+    const { panel } = mount()
+    const before = panel.render(60)
+    expect(before.find(row => row.includes('Item 0'))).toContain('{')
+
+    panel.handleInput(KEY.down)
+    const after = panel.render(60)
+    expect(after.find(row => row.includes('Item 0'))).not.toContain('{')
+    expect(after.find(row => row.includes('Item 1'))).toContain('{')
+  })
+
   it('seeds the cursor on the initial value and falls back to the head', () => {
     const seeded = mount({ initialValue: 'v1' })
     seeded.panel.handleInput(KEY.enter)

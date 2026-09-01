@@ -76,7 +76,7 @@ const defaultFdProbe: FdProbe = async () => {
 
 let fdProbe: FdProbe = defaultFdProbe
 
-/** Frontend-tree-owned cache for the executable capability probe. */
+/** Frontend-tree-owned cache for the executable availability probe. */
 export interface FdProbeRuntimeState {
   result: Promise<string | null> | undefined
 }

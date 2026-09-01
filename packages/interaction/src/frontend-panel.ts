@@ -412,7 +412,7 @@ export class CanonicalDocumentController implements BlueFocusable {
   private onFocusChange(controlId: string, itemId: string | undefined): void {
     if (controlId !== 'frontend-panel-list' || itemId === undefined || itemId === this.selectedId) return
     this.selectedId = itemId
-    this.adapter.invalidate()
+    this.adapter.focus({ controlId, itemId })
   }
 }
 

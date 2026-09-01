@@ -14,7 +14,6 @@ interface MarketplaceEntry {
   readonly version?: unknown
   readonly title?: { readonly zh?: unknown, readonly en?: unknown }
   readonly tagline?: { readonly zh?: unknown, readonly en?: unknown }
-  readonly capabilities?: readonly unknown[]
   readonly verified?: unknown
   readonly repo?: unknown
 }
@@ -66,7 +65,6 @@ export async function handlePluginCommand(args: readonly string[]): Promise<bool
       version: entry.version,
       title: label(entry),
       tagline: entry.tagline?.en,
-      capabilities: entry.capabilities ?? [],
       verified: entry.verified === true,
       repo: entry.repo,
     }, null, 2) + '\n')

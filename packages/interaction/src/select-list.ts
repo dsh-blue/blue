@@ -7,7 +7,7 @@
  */
 
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
-import type { BlueComponents, BlueFocusable, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
+import type { BlueComponents, BlueFocusable, BlueFocusIdentity, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter, type CanonicalContextHint, type CanonicalNodeSource } from './canonical-panel.ts'
 import { ACTION_CANCEL, ACTION_TOGGLE } from './keys.ts'
@@ -81,7 +81,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
         const row = view[index]!
         this.options.onHighlight?.(row)
         this.options.onCursorChanged?.(this.cursor, view)
-        this.adapter.invalidate()
+        this.adapter.focus(identity)
       },
       onUnhandledEscape: options.onCancel,
       maxLeafRows: MAX_LIST_VISIBLE,
@@ -105,7 +105,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     const view = this.filtered()
     const next = current === undefined ? -1 : view.findIndex(row => row.value === current)
     this.cursor = next >= 0 ? next : Math.min(this.cursor, Math.max(0, view.length - 1))
-    this.adapter.invalidate()
+    this.focusCursor()
   }
 
   handleInput(data: string): void {
@@ -117,7 +117,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       const next = this.filtered()
       const anchored = next.findIndex(candidate => candidate.value === row.value)
       this.cursor = anchored >= 0 ? anchored : 0
-      this.adapter.invalidate()
+      this.focusCursor()
       return
     }
     if (this.options.keymap.matches(data, ACTION_CANCEL)) {
@@ -131,7 +131,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     if (data === '\x7f') {
       this.query = this.query.slice(0, -1)
       this.reseedCursor()
-      this.adapter.invalidate()
+      this.focusCursor()
       return
     }
     if (data.length === 1 && data >= ' ') {
@@ -139,7 +139,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       this.query += data
       this.reseedCursor()
       this.options.onCursorChanged?.(this.cursor, this.filtered())
-      this.adapter.invalidate()
+      this.focusCursor()
       return
     }
     this.adapter.handleInput(data)
@@ -147,6 +147,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
 
   invalidate(): void { this.adapter.invalidate() }
   render(width: number): string[] { return this.adapter.render(width) }
+  currentFocusIdentity(): BlueFocusIdentity | undefined { return this.adapter.currentFocusIdentity() }
 
   currentNode(): BlueUiNode {
     const t = this.options.t ?? ((value: string) => value)
@@ -205,6 +206,12 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     this.cursor = seeded >= 0 ? seeded : 0
   }
 
+  private focusCursor(): void {
+    const selected = this.filtered()[this.cursor]
+    if (selected === undefined) this.adapter.invalidate()
+    else this.adapter.focus({ controlId: 'select-list', itemId: selected.value })
+  }
+
   private onEvent(event: BlueUiEvent): void {
     if (event.kind === 'activate' && event.controlId === 'select-list-clear-filter') {
       this.query = ''
@@ -212,9 +219,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       this.reseedCursor()
       const view = this.filtered()
       this.options.onCursorChanged?.(this.cursor, view)
-      const selected = view[this.cursor]
-      if (selected === undefined) this.adapter.invalidate()
-      else this.adapter.focus({ controlId: 'select-list', itemId: selected.value })
+      this.focusCursor()
       return
     }
     if (event.kind !== 'selection-change' || event.controlId !== 'select-list' || typeof event.value !== 'string') return

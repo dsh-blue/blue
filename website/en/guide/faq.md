@@ -2,7 +2,7 @@
 
 ## Why not a plain `npm install @dsh-blue/blue`?
 
-Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). The current release is `v0.1.2-alpha.1`; ordinary users follow the `alpha` channel, while plugin adapters and CI should pin Blue `0.1.2-alpha.1` and Harness `0.1.2-alpha.2`. Harness RC releases are not supported. The contributor development install lives in the developer manual under [Contributing to Blue](/en/plugins/contributing).
+Blue is a plugin bundle installed into a dsh profile, not a standalone app — a bare install only drops the package into node_modules, with no host and no profile assembly, so there is nothing to run. The supported paths are the `blue` shell or `dsh plugin --profile blue add`; see [Quickstart](/en/guide/). The current release is `v0.2.0-alpha.1`; reproducible environments should pin Blue `0.2.0-alpha.1` and Harness `0.1.2-alpha.3`. The contributor development install lives in [Contributing to Blue](/en/plugins/contributing).
 
 ## `@alpha` does not resolve the newest alpha?
 

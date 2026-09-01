@@ -186,6 +186,8 @@ describe('registerPresetCommands', () => {
     const { ctx, agent } = await mount({ noRoster: true })
     expect(await run(ctx, agent, '/preset'))
       .toEqual({ kind: 'error', text: 'agent presets are unavailable: the host composes no roster' })
+    expect(await run(ctx, agent, '/preset standard'))
+      .toEqual({ kind: 'error', text: 'agent presets are unavailable: the host composes no roster' })
   })
 
   it('refuses while the agent is running', async () => {
@@ -207,10 +209,10 @@ describe('registerPresetCommands', () => {
   it('reports a failing roster read for the bare command, Error and non-Error shapes', async () => {
     const errorCase = await mount({ roster: { listError: new Error('roots unreadable') } })
     expect(await run(errorCase.ctx, errorCase.agent, '/preset'))
-      .toEqual({ kind: 'error', text: 'could not list presets: roots unreadable' })
+      .toEqual({ kind: 'error', text: 'roots unreadable' })
     const bareCase = await mount({ roster: { listError: 'roots missing' } })
     expect(await run(bareCase.ctx, bareCase.agent, '/preset'))
-      .toEqual({ kind: 'error', text: 'could not list presets: roots missing' })
+      .toEqual({ kind: 'error', text: 'roots missing' })
   })
 
   it('shows no picker when the fiber unloads while the listing is in flight', async () => {
@@ -220,6 +222,18 @@ describe('registerPresetCommands', () => {
     resolveList([{ id: 'standard', trust: 'system' }])
     expect(await pending).toEqual({ kind: 'success' })
     expect(screen.overlays).toHaveLength(0)
+  })
+
+  it('mounts without a current badge and ignores selection after the Agent disappears', async () => {
+    const { ctx, screen, agent, resolveList } = await mount({ deferredList: true })
+    const pending = run(ctx, agent, '/preset')
+    ;(ctx.get('testSession') as { current: Agent | null }).current = null
+    resolveList([{ id: 'standard', trust: 'system' }])
+    expect(await pending).toEqual({ kind: 'success' })
+    const picker = top(screen)
+    picker.component.handleInput(KEY.enter)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(screen.overlays.every(overlay => overlay.hidden)).toBe(true)
   })
 
   it('answers a notice for an empty roster', async () => {
@@ -339,6 +353,25 @@ describe('registerPresetCommands', () => {
     expect(await run(bare.ctx, bare.agent, '/preset broken')).toEqual({ kind: 'error', text: 'mount exploded' })
   })
 
+  it('rejects a preset result when the active Agent changes during recomposition', async () => {
+    const mounted = await mount({ roster: { presets: [{ id: 'standard', trust: 'system' }] } })
+    let resolveRecompose: (preset: { id: string }) => void = () => {}
+    ;(mounted.roster as { recompose: unknown }).recompose = () => new Promise(resolve => {
+      resolveRecompose = resolve
+    })
+    const pending = run(mounted.ctx, mounted.agent, '/preset standard')
+    ;(mounted.ctx.get('testSession') as { current: Agent }).current = {
+      ...mounted.agent,
+      id: SessionId('preset-next'),
+    }
+    resolveRecompose({ id: 'standard' })
+    expect(await pending).toEqual({
+      kind: 'error',
+      text: 'the active session changed before the preset switch completed',
+    })
+    expect(mounted.agent.session.events.filter(event => event.type === 'agent-preset/selected')).toEqual([])
+  })
+
   it('paints a failed switch from the picker in error red through the dispatch write path', async () => {
     const { ctx, agent, screen, notices } = await mount({
       roster: { presets: [{ id: 'standard', trust: 'system' }, { id: 'beta', trust: 'system' }] },
@@ -357,13 +390,13 @@ describe('registerPresetCommands', () => {
     for (const failure of [new Error('dispatch exploded'), 'raw dispatch failure']) {
       const mounted = await mount({ roster: { presets: [{ id: 'standard', trust: 'system' }] } })
       const warn = vi.spyOn(mounted.ctx.logger, 'warn').mockImplementation(() => {})
-      ;(mounted.ctx.blueSessionActions as unknown as { executeCommand: () => Promise<never> }).executeCommand
-        = async () => { throw failure }
       await run(mounted.ctx, mounted.agent, '/preset')
+      const execute = vi.spyOn(mounted.ctx.commands, 'execute').mockRejectedValueOnce(failure)
       top(mounted.screen).component.handleInput(KEY.enter)
       await vi.waitFor(() => {
         expect(warn).toHaveBeenCalledWith(expect.stringContaining(failure instanceof Error ? failure.message : failure))
       })
+      execute.mockRestore()
       warn.mockRestore()
     }
   })

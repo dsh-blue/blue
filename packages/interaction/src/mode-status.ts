@@ -1,52 +1,42 @@
-/**
- * `blue-status-mode` plugin: the session-mode footer badge (S24a). Normal
- * renders '' — the entry occupies nothing; plan paints `accent` (a queued
- * entry shows the `…` of the upstream "applies from the next step"
- * wording) and yolo paints `warning`, the cautionary role befitting an
- * auto-approve stance. The badge reads the app-owned renderer-neutral mode
- * snapshot and re-derives through the session reader subscription. Agent,
- * Session, and plan-controller objects never cross into this renderer.
- *
+/** Session-mode status contribution backed by native dsh state.
  * @module @dsh-blue/blue-interaction/mode-status
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-plan-mode'
+import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@dsh-blue/blue-app'
-// Empty import carries the transcript-owned `blueStatusEntries` Context merge.
-import type {} from '@dsh-blue/blue-transcript'
+import type {} from '@dsh-blue/blue-api'
+import { sessionModeSnapshot } from './mode-commands.ts'
 
-/** Stable Cordis plugin name. */
 export const name = 'blue-status-mode'
+export const inject = ['blueStatus', 'blueCurrentAgent', 'sessionProjections']
 
-/** Services required before the mode badge can register. */
-export const inject = ['blueStatusEntries', 'blueSessionReader', 'blueSessionActions']
-
-/**
- * Register the mode badge. Yolo outranks the one transient where both
- * read true (a plan exit queued mid-turn, or the watcher's deferred
- * `/yolo off` not yet flushed): approvals auto-allow now, so the yolo
- * badge is the operative truth and the plan leg converges by the next
- * step boundary.
- * @param ctx - plugin context.
- */
+/** Register the current Agent's plan/yolo badge. */
 export function apply(ctx: Context): void {
-  let text = ''
-
-  const derive = (): void => {
-    const state = ctx.blueSessionActions.modeState()
-    text = state?.mode === 'yolo' ? 'yolo' : state?.mode === 'plan' ? state.pending ? 'plan…' : 'plan' : ''
+  const model = () => {
+    const agent = ctx.blueCurrentAgent.current()
+    const state = agent === null ? undefined : sessionModeSnapshot(ctx, agent)
+    const text = state?.mode === 'yolo'
+      ? 'yolo'
+      : state?.mode === 'plan' ? state.plan?.pending === true ? 'plan...' : 'plan' : ''
+    return {
+      id: 'blue.status.mode',
+      priority: 2,
+      node: { kind: 'text' as const, content: text, tone: text === 'yolo' ? 'warning' as const : 'accent' as const },
+      visible: text !== '',
+    }
   }
-
-  const refresh = (): void => {
-    const before = text
-    derive()
-    if (text !== before) ctx.blueStatusEntries.refresh('blue.status.mode')
-  }
-
-  derive()
-  const registration = ctx.blueSessionReader.subscribe(() => refresh())
-  ctx.effect(() => () => registration.dispose())
-
-  const model = () => ({ id: 'blue.status.mode', priority: 2, node: { kind: 'text' as const, content: text, tone: text === 'yolo' ? 'warning' as const : 'accent' as const }, visible: text !== '' })
-  ctx.effect(() => ctx.blueStatusEntries.register(model))
+  const registration = ctx.blueStatus.register(model)
+  const refresh = (): void => registration.refresh()
+  const offAgent = ctx.blueCurrentAgent.subscribe(refresh)
+  const offSession = ctx.on('session/event', (session) => {
+    if (session === ctx.blueCurrentAgent.current()?.session) refresh()
+  })
+  ctx.effect(() => () => {
+    offAgent()
+    offSession()
+    registration.dispose()
+  })
 }

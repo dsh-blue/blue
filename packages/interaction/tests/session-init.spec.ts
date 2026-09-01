@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { registerInitCommand } from '../src/session-init.ts'
@@ -35,21 +35,10 @@ async function mount(options: {
     status: options.status ?? 'idle',
     followup,
   } as unknown as Agent
-  if (options.attach !== false) ctx.provide('testSession', { current: agent, modelRef: undefined })
-  ctx.provide('blueSessionReader', {
-    current: () => options.attach === false
-      ? null
-      : { id: String(agent.id), cwd: process.cwd(), status: options.status ?? 'idle', mode: 'normal' },
-  } as never)
-  ctx.provide('blueSessionActions', {
-    followup: (blocks: readonly unknown[]) => {
-      if (options.attach === false) {
-        return { ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }
-      }
-      const message = createUserMessage({ content: [...blocks] as never, source: { kind: 'user' } })
-      followup(message)
-      return { ok: true, value: { messageId: String(message.id) } }
-    },
+  ctx.provide('blueCurrentAgent', {
+    current: () => options.attach === false ? null : agent,
+    revision: () => 0,
+    subscribe: () => () => {},
   } as never)
   const dispose = registerInitCommand(ctx)
   return { ctx, agent, followup, dispose }
@@ -94,12 +83,10 @@ describe('/init command', () => {
 
   it('surfaces a rejected structured follow-up action', async () => {
     const { ctx, agent, followup } = await mount()
-    ;(ctx.blueSessionActions as unknown as {
-      followup: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
-    }).followup = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'submission rejected' })
-    const execution = await ctx.commands.execute(agent, '/init', [], new AbortController().signal)
-    expect(execution?.result).toEqual({ kind: 'error', text: 'submission rejected' })
-    expect(followup).not.toHaveBeenCalled()
+    followup.mockImplementationOnce(() => { throw new Error('submission rejected') })
+    await expect(ctx.commands.execute(agent, '/init', [], new AbortController().signal))
+      .rejects.toThrow('submission rejected')
+    expect(followup).toHaveBeenCalledOnce()
   })
 
   it('unregisters with its disposer', async () => {

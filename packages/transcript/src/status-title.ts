@@ -21,7 +21,7 @@ import type { SessionFactsService } from './session-facts.ts'
 export const name = 'blue-status-title'
 
 /** Services required before the title entry can register. */
-export const inject = ['blueStatusEntries', 'blueSessionFacts']
+export const inject = ['blueStatus', 'blueSessionFacts']
 
 /**
  * Register the title entry over the official title projection.
@@ -34,10 +34,10 @@ export function apply(ctx: Context): void {
     const next = title ?? ''
     if (next === text) return
     text = next
-    ctx.blueStatusEntries.refresh('blue.status.title')
+    ctx.blueStatus.refresh('blue.status.title')
   })
   ctx.effect(() => () => offTitle())
 
   const model = (): BlueStatusEntry => ({ id: 'blue.status.title', priority: 30, band: 'right', node: { kind: 'text', content: text, tone: 'muted' }, visible: text !== '' })
-  ctx.effect(() => ctx.blueStatusEntries.register(model))
+  ctx.blueStatus.register(model)
 }

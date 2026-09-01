@@ -74,27 +74,20 @@ function createContext(): Context {
   return ctx
 }
 
-/** Provide the app-owned session reader over the mutable compatibility ref. */
+/** Provide the exact current-Agent service over a mutable test ref. */
 function provideSessionReader(ctx: Context, session: { current: Agent | null }): void {
-  const snapshot = () => session.current === null ? null : {
-    id: String(session.current.id),
-    cwd: process.cwd(),
-    status: 'idle' as const,
-    mode: 'normal' as const,
-  }
-  const listeners = new Set<(snapshot: ReturnType<typeof snapshot>) => void>()
-  ctx.provide('blueSessionReader', {
-    current: snapshot,
+  const listeners = new Set<(agent: Agent | null, revision: number) => void>()
+  ctx.provide('blueCurrentAgent', {
+    current: () => session.current,
+    revision: () => 0,
     subscribe(listener) {
       listeners.add(listener)
-      listener(snapshot())
-      return { disposed: false, dispose: () => { listeners.delete(listener) } }
+      listener(session.current, 0)
+      return () => { listeners.delete(listener) }
     },
-    request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'not used' }),
-  })
+  } as never)
   ctx.on('test/session-changed', () => {
-    const value = snapshot()
-    for (const listener of listeners) listener(value)
+    for (const listener of listeners) listener(session.current, 1)
   })
 }
 
@@ -142,8 +135,6 @@ describe('blue-settings schema and registration', () => {
       updateCheck: true,
       updateChannel: 'alpha',
       theme: 'dark',
-      statusProvider: 'blue.default',
-      editorProvider: 'blue.default',
       collapseThinking: true,
       collapseToolCalls: true,
       windowTurns: 15,
@@ -161,8 +152,7 @@ describe('blue-settings schema and registration', () => {
     const { ctx, settings, ready } = await mount({ blue: {
       updateCheck: false,
       updateChannel: 'beta',
-      statusProvider: 'missing.status',
-      editorProvider: 'missing.editor',
+      editorCommand: 'my-editor --wait',
     } })
     const blue = settings.describe().filter(descriptor => String(descriptor.ns) === 'blue')
     expect(blue).toHaveLength(1)
@@ -173,8 +163,6 @@ describe('blue-settings schema and registration', () => {
       updateCheck: false,
       updateChannel: 'beta',
       theme: 'dark',
-      statusProvider: 'missing.status',
-      editorProvider: 'missing.editor',
       collapseThinking: true,
       collapseToolCalls: true,
       windowTurns: 15,
@@ -182,21 +170,15 @@ describe('blue-settings schema and registration', () => {
       expandTurns: 3,
       userFoldLines: 10,
       userFoldChars: 1000,
-      editorCommand: '',
+      editorCommand: 'my-editor --wait',
       pasteImageBackend: 'auto',
     })
-    expect(ready.at(-1)).toMatchObject({
-      statusProvider: 'missing.status',
-      editorProvider: 'missing.editor',
-    })
+    expect(ready.at(-1)).toMatchObject({ editorCommand: 'my-editor --wait' })
 
-    // Provider availability belongs to the runtime owners, not the settings
-    // schema. Unknown non-empty ids remain intact across ordinary commits so
-    // installing or reloading their provider can satisfy the stored choice.
     const updated: string[] = []
     ctx.on('settings/updated', ns => updated.push(String(ns)))
-    await settings.update('blue', { editorProvider: 'still.missing' })
-    expect(settingsPlugin.currentBlueSettings(ctx).editorProvider).toBe('still.missing')
+    await settings.update('blue', { editorCommand: 'still-editor' })
+    expect(settingsPlugin.currentBlueSettings(ctx).editorCommand).toBe('still-editor')
     expect(updated).toContain('blue')
   })
 })

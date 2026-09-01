@@ -5,14 +5,13 @@
  * close, and the no-session / no-display guards.
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import * as commandsPlugin from '../src/commands-plugin.ts'
 import type { InfoPanel } from '../src/info-panel.ts'
-import type { CanonicalDocumentController } from '../src/frontend-panel.ts'
 import {
   buildCompositionSection,
   buildContextSection,
@@ -25,8 +24,6 @@ import {
 } from '../src/session-commands.ts'
 import { BLUE_VERSION } from '@dsh-blue/blue-transcript/banner-content'
 import { fakeBlueContext, type FakeScreen } from './fakes.ts'
-import { InteractionStateService } from '../src/runtime-state.ts'
-import { DEFAULT_SETTINGS } from '../src/settings.ts'
 
 /** Strip SGR and the fake palette's marker characters so assertions read visible text. */
 function plain(rows: readonly string[]): readonly string[] {
@@ -46,7 +43,7 @@ describe('buildVersionSections', () => {
     expect(sections.map(section => section.heading)).toEqual(['Version'])
     expect(sections[0]!.rows).toEqual([
       { label: 'blue', segments: [{ text: `v${BLUE_VERSION}` }] },
-      { label: 'harness', segments: [{ text: '0.1.2-alpha.2' }] },
+      { label: 'harness', segments: [{ text: '0.1.2-alpha.3' }] },
     ])
   })
 
@@ -56,7 +53,7 @@ describe('buildVersionSections', () => {
       label: 'blue',
       segments: [{ text: `v${displayVersion}` }],
     })
-    expect(BLUE_VERSION).toBe('0.1.2-alpha.1')
+    expect(BLUE_VERSION).toBe('0.2.0-alpha.1')
   })
 })
 
@@ -133,7 +130,7 @@ describe('buildStatusSections', () => {
     ])
     expect(sections[1]!.rows[1]!.segments).toEqual([
       { text: `Blue v${BLUE_VERSION}` },
-      { text: ' · dsh 0.1.2-alpha.2', style: 'muted' },
+      { text: ' · dsh 0.1.2-alpha.3', style: 'muted' },
     ])
   })
 
@@ -293,6 +290,7 @@ interface MountOptions {
   modelRef?: { current: { provider: string, model: string, reasoningEffort?: string } }
   seed?: 'usage' | 'header'
   displayVersion?: string
+  cwd?: string | false
 }
 
 async function mount(options: MountOptions = {}): Promise<{
@@ -301,13 +299,14 @@ async function mount(options: MountOptions = {}): Promise<{
   agent: Agent
   fiber: { dispose(): Promise<void> }
 }> {
-  const base = options.display === false ? { ctx: new Context() } : fakeBlueContext()
+  const base = fakeBlueContext({ display: options.display })
   const { ctx } = base
-  if (options.display === false) new InteractionStateService(ctx, DEFAULT_SETTINGS)
-  const screen = 'screen' in base ? base.screen : undefined
+  const screen = base.screen
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
-  const session = ctx.sessions.create(SessionId('status-spec'), { meta: { cwd: '/tmp/spec' } })
+  const session = ctx.sessions.create(SessionId('status-spec'), {
+    meta: options.cwd === false ? {} : { cwd: options.cwd ?? '/tmp/spec' },
+  })
   if (options.seed === 'usage') {
     session.append('request/context', { provider: 'mock', model: 'mock', contextWindow: 8192 })
     session.append('turn/start', { turn: 0 })
@@ -336,36 +335,23 @@ async function mount(options: MountOptions = {}): Promise<{
   if (options.attach !== false) {
     ctx.provide('testSession', { current: agent, modelRef: options.modelRef })
   }
-  if (options.display === false) {
-    ctx.provide('blueSessionReader', {
-      current: () => options.attach === false
-        ? null
-        : { id: String(agent.id), cwd: '/tmp/spec', status: 'idle', mode: 'normal' },
-    } as never)
-    ctx.provide('blueSessionActions', {
-      sessionDetails: () => options.attach === false
-        ? undefined
-        : {
-            header: session.header,
-            turns: 0,
-            steps: 0,
-            status: 'idle',
-            usage: { buckets: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, context: {} },
-          },
-    } as never)
-    ctx.provide('blueSessionProjections', {
-      current: () => undefined,
-      currentMany: () => undefined,
-      subscribe: () => () => {},
-      children: () => [],
-      subscribeChildren: () => () => {},
-    })
-    ctx.provide('blueSkillsCatalog', {
-      userInvocable: () => [],
-      refresh: () => Promise.resolve(),
-      setForTest: () => {},
-    } as never)
-  }
+  ctx.set('sessionProjections', {
+    snapshot: (_target: unknown, keys?: readonly string[]) => {
+      const values: Record<string, unknown> = {}
+      const selected = options.modelRef?.current ?? session.requestHeader()?.config
+      if (selected !== undefined) values.modelSelection = { lastUsed: selected, next: selected }
+      if (options.seed === 'usage') {
+        values.sessionStats = { turns: 1, steps: 1, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }
+        values.tokenUsage = { uncachedInputTokens: 1536, outputTokens: 9216, cacheReadTokens: 61440, cacheWriteTokens: 0 }
+        values.contextPressure = { projectedTokens: 62976, contextWindow: 8192 }
+      }
+      const selectedValues = keys === undefined
+        ? values
+        : Object.fromEntries(Object.entries(values).filter(([key]) => keys.includes(key)))
+      return { asOfSeq: session.sequence, values: selectedValues }
+    },
+    onChanged: () => () => {},
+  } as never)
   const fiber = await ctx.plugin(commandsPlugin, { displayVersion: options.displayVersion })
   return { ctx, screen: screen as FakeScreen, agent, fiber }
 }
@@ -412,14 +398,14 @@ describe('registerSessionCommands', () => {
     const { ctx, screen, agent } = await mount({ seed: 'usage', modelRef: { current: { provider: 'mock-provider', model: 'mock-model' } } })
     // A projection host whose pressure lacks a window: the composition
     // wiring takes the no-window branch (grid and shares dropped).
-    ctx.provide('sessionProjections', {
+    ctx.set('sessionProjections', {
       snapshot: () => ({
         values: {
           tokenUsage: { uncachedInputTokens: 1536, outputTokens: 9216, cacheReadTokens: 61440, cacheWriteTokens: 7168 },
           contextBreakdown: { systemTokens: 100, toolsTokens: 0, messageTokens: 0 },
         },
       }),
-    })
+    } as never)
     await run(ctx, agent, '/context')
     const rows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
     expect(rows.some(row => row.includes('total'))).toBe(true)
@@ -427,8 +413,11 @@ describe('registerSessionCommands', () => {
     expect(rows.some(row => row.includes('no context window advertised'))).toBe(true)
   })
 
-  it('mounts the /context panel over the folded buckets (no projection seam)', async () => {
-    const { ctx, screen, agent } = await mount({ seed: 'usage' })
+  it('mounts the /context panel over native projection buckets', async () => {
+    const { ctx, screen, agent } = await mount({
+      seed: 'usage',
+      modelRef: { current: { provider: 'mock-provider', model: 'mock-model' } },
+    })
     const result = await run(ctx, agent, '/context')
     expect(result).toEqual({ kind: 'success' })
     const overlay = screen.overlays.at(-1)!
@@ -442,41 +431,9 @@ describe('registerSessionCommands', () => {
     expect(overlay.hidden).toBe(true)
   })
 
-  it('prefers the renderer-neutral context model and falls back when it unloads', async () => {
-    const { ctx, screen, agent } = await mount({ seed: 'usage' })
-    const execute = vi.fn(async () => ({ ok: true }))
-    const unsubscribe = vi.fn()
-    const feature = {
-      model: { state: 'ready', panel: { title: 'Context', node: { kind: 'text', content: 'official context projection' }, refresh: { kind: 'context.refresh', sessionId: 'status-spec' } } },
-      subscribe: (listener: () => void) => { listener(); return unsubscribe },
-      execute,
-    }
-    ;(ctx as unknown as { provide(name: string, value: unknown): void }).provide('blueContextFeature', feature)
-    expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
-    const projected = screen.overlays.at(-1)!.component as CanonicalDocumentController
-    expect(plain(projected.render(80)).some(row => row.includes('official context projection'))).toBe(true)
-    projected.handleInput('\r')
-    await Promise.resolve()
-    expect(execute).toHaveBeenCalledWith({ kind: 'context.refresh', sessionId: 'status-spec' })
-    feature.model = { state: 'loading', panel: { title: 'Context', node: { kind: 'text', content: 'loading projection' } } } as never
-    projected.invalidate()
-    expect(projected.currentNode()).toMatchObject({ child: { children: [{ node: { kind: 'loader', message: 'loading projection' } }] } })
-    feature.model = { state: 'error', panel: { title: 'Context', node: { kind: 'text', content: 'failed projection' } } } as never
-    projected.invalidate()
-    expect(projected.currentNode()).toMatchObject({ child: { children: [{ node: { kind: 'text', content: 'failed projection' } }] } })
-    feature.model = undefined as never
-    projected.invalidate()
-    expect(plain(projected.render(80)).some(row => row.includes('context unavailable'))).toBe(true)
-    projected.handleInput('\x1b')
-    expect(unsubscribe).toHaveBeenCalledOnce()
-    expect(await run(ctx, agent, '/context')).toEqual({ kind: 'success' })
-    expect(screen.overlays.at(-1)!.component).toBeInstanceOf(Object)
-    expect(screen.overlays.at(-1)!.component.constructor.name).toBe('InfoPanel')
-  })
-
   it('reads the projection snapshot when the seam is composed', async () => {
     const { ctx, screen, agent } = await mount()
-    ctx.provide('sessionProjections', {
+    ctx.set('sessionProjections', {
       snapshot: () => ({
         values: {
           tokenUsage: { uncachedInputTokens: 30, outputTokens: 7, cacheReadTokens: 100, cacheWriteTokens: 7 },
@@ -485,7 +442,7 @@ describe('registerSessionCommands', () => {
           sessionStats: { turns: 2, steps: 5, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 },
         },
       }),
-    })
+    } as never)
     await run(ctx, agent, '/context')
     const windowless = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
     // The composition section rides the contextBreakdown projection over
@@ -527,10 +484,14 @@ describe('registerSessionCommands', () => {
   })
 
   it('shows the placeholder model row when neither source answers', async () => {
-    const { ctx, screen, agent } = await mount()
+    const { ctx, screen, agent } = await mount({ cwd: false })
     await run(ctx, agent, '/status')
     const rows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
     expect(rows.some(row => row.includes('not set'))).toBe(true)
+    expect(rows.some(row => row.includes('cwd') && row.includes('unknown'))).toBe(true)
+    await run(ctx, agent, '/context')
+    const contextRows = plain((screen.overlays.at(-1)!.component as InfoPanel).render(80))
+    expect(contextRows.some(row => row.includes('Session usage'))).toBe(true)
   })
 
   it('opens the /version panel over the release lines and closes on Escape', async () => {

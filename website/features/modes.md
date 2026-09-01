@@ -4,7 +4,7 @@ Blue 的交互强度分三档会话模式，编辑器焦点下按 **`Shift+Tab`*
 
 **normal → plan → yolo**
 
-非 normal 时，模式徽标显示在状态栏第一行（`plan` 为 accent 色，有排队消息时带省略号；`yolo` 为 warning 色）。`/yolo [on|off]`（别名 `/yes`）是 yolo 档的命令式开关，效果与循环切换一致。
+非 normal 时，模式徽标显示在状态栏第一行（`plan` 为 accent 色，有排队消息时带省略号；`yolo` 为 warning 色）。这三档不是 Blue 自建状态：plan 来自 dsh 原生 `plan` projection，yolo 是原生 `danger-full-access` + `never` 权限预设的显示标签。
 
 ## normal
 
@@ -23,9 +23,11 @@ plan 模式下 agent 先产出计划再执行。计划定稿时，harness 的 `e
 | `2. Reject` | 拒绝——模型收到"用户选择继续规划"，在同一轮内回应 |
 | `3. Revise <text>` | 内联修改：带上你的意见继续打磨计划 |
 
-## yolo —— 自动放行
+## yolo —— 完全访问
 
-yolo 自动放行工具审批——四选项面板不再弹出，agent 全速执行。**用户提问仍然弹出**：yolo 放行的是工具授权，不替你回答问题。`/yolo`、`/yes` 或再按 `Shift+Tab` 随时切回。
+yolo 直接选择 dsh 的 `danger-full-access` 权限预设：关闭文件沙箱并使用 `never` 审批策略，四选项审批面板不再弹出。**用户提问仍然弹出**，因为权限策略不会替你回答问题。再次按 `Shift+Tab` 会选择 `workspace-write`；命令式写法分别是 `/permission danger-full-access` 与 `/permission workspace-write`。Blue 不注册额外的 `/yolo` 或 `/yes` 命令。
+
+Shift+Tab 只编排原生命令：normal 执行 `/plan`；plan 先执行 `/plan off`，再选择 full-access 权限预设；yolo 选择 workspace-write 权限预设。若 plan 与 yolo 被其它命令同时打开，循环也会先关闭 plan，保持三档互斥。
 
 ::: tip 与 /preset 的关系
 plan 模式的供给来自 harness 的 plan-mode 插件，经 agent 预设组合（`/preset`，见[斜杠命令参考](/reference/commands)）——预设决定一个会话"有哪些能力"，会话模式决定"这次交互问多细"。

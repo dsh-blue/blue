@@ -7,4 +7,4 @@ dsh plugin --profile blue-dev add @dsh-blue-example/bottom-log
 ```
 
 示例没有 timer 或后台 reader；真实插件应在 `render()` 之外更新 domain 状态，
-再调用宿主持有的 refresh handle。
+再调用 pane registration 的 `refresh()`。

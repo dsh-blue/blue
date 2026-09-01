@@ -49,4 +49,5 @@ Permission presets **bundle the sandbox mode and the approval policy into named 
 
 ::: tip Relation to Blue
 Permission presets (`dsh-permission-presets`) **are in the default assembly** (one of dsh-base's 78 rows). Blue currently services the `ask` policy through its approval panel; the preset switcher has shipped — typing a bare `/permission` in the input box (intercepted by the input layer; an argumented line passes through to the host command) opens the preset panel, and the persisted default is maintained through the `/settings` panel's `permission.defaultPreset` row.
+Blue's yolo badge is simply the display name for the current `danger-full-access` preset, not a second permission state; `Shift+Tab` performs the three-state cycle through native `/plan` and `/permission` commands.
 :::

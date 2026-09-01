@@ -20,7 +20,7 @@ import type { TranscriptToolItem } from './types.ts'
 /** The presenter-bearing face of a tool registry the resolvers read (structural, scope-agnostic). */
 export interface ToolPresentationSource {
   /** The presenter-bearing definition the source resolves, or `undefined` when none is visible. */
-  get(name: string): { readonly presentCall?: (args: unknown) => unknown; readonly presentResult?: (args: unknown, result: unknown) => unknown } | undefined
+  get(name: string): { readonly presentCall?: (args: unknown) => unknown; readonly presentResult?: (args: unknown, result: ToolResult) => unknown } | undefined
 }
 
 /** Maximum length of the key argument shown on a card header. */

@@ -1,112 +1,29 @@
 # `@dsh-blue/blue-interaction`
 
-Repo-wide rules live in the root [AGENTS.md](../../AGENTS.md). This package is
-the TUI interaction adapter over app/frontend contracts; it may use core L1
-services but never owns Harness Agent or Session objects.
+Interaction owns the Blue editor, built-in command UX, dialogs, approval and
+question surfaces, interaction state, and editor-extension execution.
 
-## Boundary
+Commands register directly with native `ctx.commands`. Domain reads and
+writes use the exact `blueCurrentAgent.current()` Agent plus native dsh
+services such as `sessionProjections`, `commands`, `tools`, `settings`,
+`skills`, and `sessionController`. Do not introduce an app action/reader
+facade or copy Agent/session state into a second mutable model. Cross-realm
+session state such as plan mode is read from native root projections and
+changed through native commands; a selected Agent's private Cordis realm is
+not a stable discovery path for Blue.
 
-The parent plugin creates one frontend-tree `EditorHostService` and
-`InteractionStateService`, then mounts the built-in command, input, question,
-approval, settings, locale, and optional feature children. Mutable editor,
-draft, alias, selection, onboarding, and notice state belongs to that tree,
-not a module singleton.
+Queue panes register with `bluePanes`; mode status registers with
+`blueStatus`; public editor extensions are consumed from
+`blueEditorExtensions`. Core-owned `blueScreen` overlays remain appropriate
+for internal dialogs that require concrete editor/focus behavior. External
+overlay contributions use `blueOverlays`.
 
-All session reads and writes use `blueSessionReader`,
-`blueSessionProjections`, `blueSessionActions`, `blueRequests`, or
-`blueRetractions`. Panels and public plugin content use canonical
-`BlueUiNode`; only core owns terminal rows, width, focus, and key dispatch.
+Async extension callbacks are bounded, abortable, generation-fenced, and
+validated before applying completion/submit/event output. Unload aborts work
+and disposes all registrations. There is one Blue-owned editor engine; do not
+restore editor providers, status providers, candidate selection, host bridges,
+plugin catalog commands, or plugin author environment wiring.
 
-## Ownership
-
-`EditorHostService` owns the single editor engine and a stable outer delegate.
-Provider candidates contribute inert shells around that engine; they never own
-draft, history, attachments, focus, IME, completion, or submit. Selection is
-explicit settings state, activation is atomic, failures retain the current
-same-tree last-known-good or restore `blue.default`, and unload restores the
-default without rewriting the desired id.
-
-Submit runs behind core's pre-clear barrier. Public transforms execute in
-priority order while the editor and one frozen attachment snapshot remain
-intact; only successful transformation commits the clear and structured app
-request. Transform failure leaves the editor untouched, while a later request
-rejection restores captured text/markers only when it still belongs to that
-request/session/editor generation. Followup, steer, interrupt, retraction,
-session switch, and provider replacement must not let a late completion
-overwrite newer user input.
-
-Completion merges built-in slash, file, skill, and extension sources. Public
-editor extensions are inert host registrations; this owner supplies bounded
-callback context and owns timeout, abort, ordering, stale-result rejection,
-submit transforms, and unload. Extension/provider callbacks cannot obtain raw
-terminal or session authority.
-
-Commands are registered through the Harness command service and operate through
-structured app/frontend actions. Aliases are tree-local and cannot shadow
-reserved or already registered commands. Dialogs use package-private canonical
-controllers plus one compiler adapter; do not restore the removed public panel
-class hierarchy or a second UI vocabulary.
-
-`CanonicalPanelAdapter` leases stable field editors by semantic path/id across
-compiler rebuilds and delegates rows, secret masking, cursor/IME/paste,
-validation, and width containment to core. Focus descends outer tabs -> nested
-tabs -> content groups -> editing: tabs use non-wrapping Left/Right plus Enter,
-Tab/Shift-Tab cycle content groups only, and Escape climbs one layer at a time.
-Documents may opt row variants into bounded inline Left/Right adjustment; the
-model picker uses that mode so provider remains its only tab layer and model
-rows own their reasoning-effort draft.
-Up/Down navigates forms only outside text editing; typing enters editing, and
-Enter or valid Tab confirms while invalid fields remain active. Filter Escape
-ends filtering without clearing the query; clearing is an explicit action. It
-also enables core's focus-derived contextual hint row. Controllers contribute
-only non-inferable operations such as digits, filtering, paging, or question
-switching; generic shortcut footers are forbidden, while business state and
-validation copy remain in panel footers.
-
-The public plugin bridge owns active command dispatch,
-`notifications.publish`, and editor-extension binding. The separate
-editor-provider owner controls Experimental provider candidates. Both consume
-composition-private `bluePluginControl`; ordinary plugins receive only the
-guarded host. Definition buffers replay after an owner gap, but notifications,
-gestures, actions, and old callbacks do not.
-
-Optional subpath plugins own editor enhancements, attachments/image paste,
-queue/status rows, command-model UI, public bridge, and provider ownership.
-`blue-plugin-author-environment` contributes only the installed Node and
-plugin-kit executable paths to Harness `shellEnv`, with Fiber-owned cleanup;
-the preset author skill must not guess PATH/profile roots.
-
-## Change Rules
-
-- All key handling registers through `blueKeymap`. Modal panels get explicit
-  priority/owner scope and must release focus and listeners on close/unload.
-- Every async command, completion, provider, question, approval, update, fetch,
-  and external-editor operation captures abort plus the relevant tree/session
-  generation. Closing or unloading makes later settlements inert.
-- Locale changes reproject labels/help/completions/panels in place while
-  preserving controller, editor, cursor, draft, and active-operation identity.
-  User/domain content and upstream errors are not translated as UI labels.
-- Renderer rows use `blueComponents` width helpers and canonical compiler
-  output. Queue and editor furniture participate in the owning width scan.
-- Plugin installation/update is profile-owned and restart-based. Validate local
-  packages through the published plugin kit, normalize them to `file:`
-  snapshots, and never hot-replace the active Cordis tree.
-- Runtime entries come from package exports. A subpath lifecycle or inject
-  change must update its manifest/files, bundle row, direct tests, and this
-  ownership description when the boundary changes.
-
-## Verification
-
-Use `pnpm run verify:changed` for focused edits. Editor lifecycle, app-action
-boundaries, public bridge, provider owner, subpaths, command registry, locale,
-or composition changes require `pnpm run verify:full` and bundle e2e.
-
-Keep tests for submit restoration/fencing, draft/history isolation, completion
-ordering/abort, owner gap/replay, provider fallback/breaker/unload, command and
-alias conflicts, modal cleanup, locale reprojection, and late settlements.
-Canonical panel changes also prove navigation versus editing, semantic focus
-restoration, hint derivation/degradation, and real provider-wizard field
-confirmation. Content or furniture changes update `tests/width-scan.spec.ts`;
-author environment/authoring workflow changes run
-`pnpm run check:plugin-authoring-docs` and
-`pnpm run fixture:plugin-tutorial`.
+Command, editor, dialog, callback, lifecycle, or width changes require the
+owning suites and width scan, bundle e2e, `pnpm run verify:full`, and
+dedicated-profile acceptance.

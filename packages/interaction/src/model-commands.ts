@@ -16,13 +16,13 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import type { ModelSelection as BlueSessionModelSelection } from '@deepseek-ai/dsh-api-session-controller'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { BlueSessionReader } from '@dsh-blue/blue-api'
 // Empty type imports carry the `llm` and `agentDefaultModel` Context merges
 // plus the app-owned session-action merge this module reads.
 import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import type { BlueSessionActions, BlueSessionModelSelection } from '@dsh-blue/blue-app'
+import type {} from '@dsh-blue/blue-app'
 import type { Action } from '@dsh-blue/blue-frontend'
 import { displayServices } from './display-services.ts'
 import { getSharedEditor, mountEditorReplacement } from './editor-instance.ts'
@@ -50,17 +50,18 @@ const ADD_PROVIDER = '__add__'
  * @returns the selection, or the guard's error text.
  */
 function readSelection(
-  reader: BlueSessionReader,
-  actions: BlueSessionActions,
+  ctx: Context,
 ): { read: BlueSessionModelSelection } | { error: string } {
-  if (reader.current() === null) {
-    return { error: 'no session is live yet' }
-  }
-  const selection = actions.modelSelection()
-  if (selection === undefined) {
-    return { error: 'model selection is unavailable for this session' }
-  }
-  return { read: selection }
+  const selection = currentModelSelection(ctx)
+  return selection === undefined ? { error: 'no session is live yet' } : { read: selection }
+}
+
+/** Read the official next model selection for Blue's current Agent. */
+export function currentModelSelection(ctx: Context): BlueSessionModelSelection | undefined {
+  const agent = ctx.blueCurrentAgent.current()
+  if (agent === null) return undefined
+  const projected = ctx.sessionProjections.snapshot(agent.session, ['modelSelection']).values.modelSelection
+  return projected?.next ?? projected?.lastUsed ?? ctx.get('agentDefaultModel')?.currentSelection()
 }
 
 /**
@@ -127,30 +128,32 @@ export function modelSwitchNotice(
  */
 async function commitModelSelection(
   ctx: Context,
-  actions: BlueSessionActions,
   next: BlueSessionModelSelection,
   persist: boolean,
 ): Promise<string> {
-  const selected = actions.selectModel(next)
-  if (!selected.ok) return selected.message
-  const previous = selected.value
-  if (!persist) return modelSwitchNotice(previous, next, 'session-only')
+  const agent = ctx.blueCurrentAgent.current()
+  if (agent === null) return 'no session is live yet'
+  const previous = readSelection(ctx)
+  if ('error' in previous) return previous.error
+  const selected = await ctx.sessionController.selectModel({ sessionId: agent.id, ...next })
+  if (!persist) return modelSwitchNotice(previous.read, selected.selected, 'session-only')
   const defaults = ctx.get('agentDefaultModel')
-  if (defaults === undefined) return modelSwitchNotice(previous, next, 'unavailable')
-  if (sameSelection(next, defaults.currentSelection())) {
-    return modelSwitchNotice(previous, next, 'skipped')
+  if (defaults === undefined) return modelSwitchNotice(previous.read, selected.selected, 'unavailable')
+  const persisted = {
+    provider: selected.selected.provider,
+    model: selected.selected.model,
+    ...(selected.selected.reasoningEffort === undefined
+      ? {}
+      : { reasoningEffort: ReasoningEffortId(selected.selected.reasoningEffort) }),
+  }
+  if (sameSelection(defaults.currentSelection(), persisted)) {
+    return modelSwitchNotice(previous.read, selected.selected, 'skipped')
   }
   try {
-    await defaults.saveSelection({
-      provider: next.provider,
-      model: next.model,
-      ...(next.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: ReasoningEffortId(next.reasoningEffort) }),
-    })
-    return modelSwitchNotice(previous, next, 'saved')
+    await defaults.saveSelection(persisted)
+    return modelSwitchNotice(previous.read, selected.selected, 'saved')
   } catch (error) {
-    return modelSwitchNotice(previous, next, 'failed', describe(error))
+    return modelSwitchNotice(previous.read, selected.selected, 'failed', describe(error))
   }
 }
 
@@ -221,9 +224,7 @@ async function providerModelIds(
  * @param ctx - plugin context.
  */
 export async function cycleSessionModel(ctx: Context, cache: ModelListCache): Promise<void> {
-  const reader = ctx.blueSessionReader
-  const actions = ctx.blueSessionActions
-  const selection = readSelection(reader, actions)
+  const selection = readSelection(ctx)
   if ('error' in selection) {
     getSharedEditor(ctx)?.notice?.(selection.error)
     return
@@ -245,7 +246,6 @@ export async function cycleSessionModel(ctx: Context, cache: ModelListCache): Pr
   try {
     const text = await commitModelSelection(
       ctx,
-      actions,
       { provider: currentSelection.provider, model: next },
       false,
     )
@@ -340,8 +340,6 @@ async function catalogRows(
  * @returns the disposer removing both registrations and the alias relation.
  */
 export function registerModelCommands(ctx: Context): () => void {
-  const reader = ctx.blueSessionReader
-  const actions = ctx.blueSessionActions
   /**
    * Set when this fiber unloads: the catalog awaits can still be in flight
    * (a tree unload lands between `listModels` and the panel mount), and the
@@ -361,7 +359,7 @@ export function registerModelCommands(ctx: Context): () => void {
    */
   async function openModelPicker(signal: AbortSignal, filterProvider?: string): Promise<CommandResult> {
     const llm = ctx.get('llm')
-    const selection = readSelection(reader, actions)
+    const selection = readSelection(ctx)
     if ('error' in selection) return { kind: 'error', text: selection.error }
     const current = selection.read
     // A freshly added route registers asynchronously on the real host —
@@ -396,10 +394,10 @@ export function registerModelCommands(ctx: Context): () => void {
       return { kind: 'error', text: 'model picker is unavailable: the Blue screen is not mounted' }
     }
     const applySwitch = (provider: string, model: string, effort: string | undefined, persist: boolean): void => {
+      if (unloaded) return
       void (async () => {
         const text = await commitModelSelection(
           ctx,
-          actions,
           {
             provider,
             model,
@@ -417,7 +415,7 @@ export function registerModelCommands(ctx: Context): () => void {
       ...(current.reasoningEffort !== undefined
         ? { currentEffort: String(current.reasoningEffort) }
         : {}),
-      ...(actions.hasRequestHeader()
+      ...(ctx.blueCurrentAgent.current()?.session.requestHeader() !== undefined
         ? { warning: 'switching models starts a fresh prompt cache' }
         : {}),
       ...(filterProvider !== undefined
@@ -460,7 +458,7 @@ export function registerModelCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function switchModel(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
-    const selection = readSelection(reader, actions)
+    const selection = readSelection(ctx)
     if ('error' in selection) return { kind: 'error', text: selection.error }
     const current = selection.read
     const catalog = await catalogRows(ctx, signal)
@@ -483,7 +481,6 @@ export function registerModelCommands(ctx: Context): () => void {
       }
       const text = await commitModelSelection(
         ctx,
-        actions,
         { provider: chosen.provider, model: chosen.id },
         true,
       )
@@ -502,7 +499,7 @@ export function registerModelCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function switchEffort(rawInput: string, signal: AbortSignal): Promise<CommandResult> {
-    const selection = readSelection(reader, actions)
+    const selection = readSelection(ctx)
     if ('error' in selection) return { kind: 'error', text: selection.error }
     const current = selection.read
     const llm = ctx.get('llm')
@@ -531,10 +528,10 @@ export function registerModelCommands(ctx: Context): () => void {
       const currentId = current.reasoningEffort === undefined ? undefined : String(current.reasoningEffort)
       const activeId = segments.some(segment => segment.id === currentId) ? currentId : 'default'
       const applyEffort = (id: string, persist: boolean): void => {
+        if (unloaded) return
         void (async () => {
           const text = await commitModelSelection(
             ctx,
-            actions,
             {
               provider: current.provider,
               model: current.model,
@@ -565,7 +562,6 @@ export function registerModelCommands(ctx: Context): () => void {
     if (argument === 'default') {
       const text = await commitModelSelection(
         ctx,
-        actions,
         { provider: current.provider, model: current.model },
         true,
       )
@@ -583,7 +579,6 @@ export function registerModelCommands(ctx: Context): () => void {
     }
     const text = await commitModelSelection(
       ctx,
-      actions,
       {
         provider: current.provider,
         model: current.model,
@@ -659,7 +654,7 @@ export function registerModelCommands(ctx: Context): () => void {
     // live behind the Add wizard's known-provider branch. The trailing CTA
     // row routes to the wizard (the shared list panel's uniform row shape,
     // S24b: the CTA windows and wraps like any other row).
-    const selection = readSelection(reader, actions)
+    const selection = readSelection(ctx)
     const currentProvider = 'error' in selection ? '' : selection.read.provider
     const rows: SelectRow[] = llm.listProviders().map(provider => ({
       value: provider.id,

@@ -1,6 +1,6 @@
 /**
- * App-owned compatibility bridge for the harness session-title all-prompts
- * cadence. Raw Session and SessionEvent values remain inside blue-app.
+ * App-owned session-title all-prompts cadence. Raw Session and SessionEvent
+ * values remain inside blue-app.
  *
  * @module @dsh-blue/blue-app/title-cadence
  */

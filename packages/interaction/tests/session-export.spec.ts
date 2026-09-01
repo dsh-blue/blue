@@ -322,6 +322,34 @@ describe('buildExportMarkdown', () => {
     expect(markdown).toContain('"reason": "initial"')
   })
 
+  it('formats sub-1024 usage without optional cache buckets', () => {
+    const events = [{
+      type: 'assistant/message',
+      seq: 1,
+      time: 1,
+      data: {
+        turn: 0,
+        step: 0,
+        message: {
+          id: 'small-usage',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+        usage: { inputTokens: 3, outputTokens: 4 },
+      },
+    }] as unknown as SessionEvent[]
+    const markdown = buildFullExportMarkdown({
+      sessionId: 'small-usage',
+      workDir: undefined,
+      events,
+      exportedAt: new Date('2026-08-21T00:00:00.000Z'),
+    })
+    expect(markdown).toContain('usage: input 3, output 4')
+    expect(markdown).not.toContain('cache-read')
+    expect(markdown).not.toContain('cache-write')
+  })
+
   it('renders the remaining per-turn variants: second user, empty user text, named images, pluralization arms, codeless errors, over-long hints', () => {
     const items: TranscriptItem[] = [
       // Empty user text skips the body but still opens the section.
@@ -408,7 +436,7 @@ describe('registerExportCommands', () => {
   })
 
   interface MountOptions {
-    /** `false` leaves `blueSession` unprovided; `'null'` provides `current: null`. */
+    /** `false` leaves the current-Agent slot empty; `'null'` publishes it explicitly. */
     attach?: boolean | 'null'
     persistence?: FakePersistence | undefined
     cwd?: string
@@ -482,7 +510,7 @@ describe('registerExportCommands', () => {
           ),
         } }),
       }
-      ctx.provide('sessionProjections', projection)
+      ctx.set('sessionProjections', projection as never)
     }
     const fiber = await ctx.plugin(commandsPlugin)
     return { ctx, agent, fiber }
@@ -606,9 +634,6 @@ describe('registerExportCommands', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(root)
     try {
       const { ctx, agent, fiber } = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
-      const snapshot = ctx.blueSessionReader.current()
-      ;(ctx.blueSessionReader as unknown as { current: () => unknown }).current = () =>
-        snapshot === null ? null : { ...snapshot, cwd: undefined }
       const result = await run(ctx, agent, '/export')
       expect(result).toEqual({ kind: 'success' })
       const matches = readdirSync(root).filter(name => name.startsWith('blue-export-') && name.endsWith('.md'))
@@ -670,9 +695,7 @@ describe('registerExportCommands', () => {
       .toEqual({ kind: 'error', text: 'this session persistence backend does not expose raw artifacts' })
     await noRaw.fiber.dispose()
     const flushFailure = await mount({ persistence: { content: singleTurnLog('hi', 'hello') } })
-    ;(flushFailure.ctx.blueSessionActions as unknown as {
-      flush: () => Promise<{ ok: false, code: 'BLUE_ACTION_REJECTED', message: string }>
-    }).flush = async () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'flush failed' })
+    vi.spyOn(flushFailure.ctx.sessions, 'flush').mockRejectedValueOnce(new Error('flush failed'))
     expect(await run(flushFailure.ctx, flushFailure.agent, '/export'))
       .toEqual({ kind: 'error', text: 'flush failed' })
     await flushFailure.fiber.dispose()

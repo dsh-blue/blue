@@ -307,7 +307,7 @@ async function runUpdateCommand(ctx: Context, requested: string): Promise<Comman
  * @returns the command outcome.
  */
 async function runUpdateFlow(ctx: Context, requested: string): Promise<CommandResult> {
-  const current = ctx.get('blueSessionReader')?.current() ?? null
+  const current = ctx.get('blueCurrentAgent')?.current() ?? null
   if (current !== null && current.status !== 'idle') {
     return { kind: 'error', text: 'the agent is running — wait for the current turn to finish before updating' }
   }
@@ -333,7 +333,7 @@ async function runUpdateFlow(ctx: Context, requested: string): Promise<CommandRe
   let target: string
   if (requested !== '') {
     if (!isVersion(requested)) {
-      return { kind: 'error', text: `"${requested}" is not a version (try /update 0.1.2-alpha.1)` }
+      return { kind: 'error', text: `"${requested}" is not a version (try /update 0.2.0-alpha.1)` }
     }
     target = requested
   } else {

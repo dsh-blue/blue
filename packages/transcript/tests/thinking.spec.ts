@@ -213,7 +213,7 @@ describe('ThinkingComponent', () => {
 
     setThinkingTimers(undefined)
     const renders: number[] = []
-    new ThinkingComponent(
+    const live = new ThinkingComponent(
       thinkingItem({ text: 'live', streaming: true }),
       COLORS,
       fakeBlueComponents(),
@@ -221,6 +221,7 @@ describe('ThinkingComponent', () => {
     )
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(renders.length).toBeGreaterThan(0)
+    live.dispose()
   })
 })
 

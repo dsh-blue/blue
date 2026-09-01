@@ -8,14 +8,15 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type {
-  BlueSessionCompositionFacts,
-  BlueSessionContextFacts,
-  BlueSessionTokenBuckets,
-} from '@dsh-blue/blue-app'
-
+import type {} from '@deepseek-ai/dsh-session-stats'
+import type {} from '@deepseek-ai/dsh-token-meter'
 /** The four disjoint provider-usage buckets both panels list. */
-export type TokenBuckets = BlueSessionTokenBuckets
+export interface TokenBuckets {
+  readonly input: number
+  readonly cacheRead: number
+  readonly cacheWrite: number
+  readonly output: number
+}
 
 /**
  * The context-occupancy pair the panels render: the numerator is the
@@ -23,7 +24,10 @@ export type TokenBuckets = BlueSessionTokenBuckets
  * (`projectedTokens`, else `pressureTokens`), the denominator the newest
  * advertised window. Both absent until a request reports or advertises.
  */
-export type ContextFacts = BlueSessionContextFacts
+export interface ContextFacts {
+  readonly used?: number
+  readonly window?: number
+}
 
 /** Everything the `/usage` panel paints. */
 export interface UsageFacts {
@@ -34,7 +38,11 @@ export interface UsageFacts {
 }
 
 /** The heuristic composition of the next request (the CC `/context` rows). */
-export type CompositionFacts = BlueSessionCompositionFacts
+export interface CompositionFacts {
+  readonly system: number
+  readonly tools: number
+  readonly messages: number
+}
 
 /**
  * One decimal, trailing `.0` trimmed: 1 → `1`, 1.5 → `1.5`.
@@ -130,8 +138,27 @@ export function totalTokens(buckets: TokenBuckets): number {
  * @returns usage facts, or zero/unknown facts with no active session.
  */
 export function readUsageFacts(ctx: Context, _legacyOwner?: unknown): UsageFacts {
-  return ctx.blueSessionActions.sessionDetails()?.usage
-    ?? { buckets: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, context: {} }
+  const agent = ctx.blueCurrentAgent.current()
+  if (agent === null) return { buckets: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, context: {} }
+  const values = ctx.sessionProjections.snapshot(agent.session, ['tokenUsage', 'contextPressure']).values
+  const usage = values.tokenUsage
+  const pressure = values.contextPressure
+  return {
+    buckets: usage === undefined
+      ? { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }
+      : {
+          input: usage.uncachedInputTokens,
+          cacheRead: usage.cacheReadTokens,
+          cacheWrite: usage.cacheWriteTokens,
+          output: usage.outputTokens,
+        },
+    context: {
+      ...(pressure?.projectedTokens === undefined && pressure?.pressureTokens === undefined
+        ? {}
+        : { used: pressure.projectedTokens ?? pressure.pressureTokens }),
+      ...(pressure?.contextWindow === undefined ? {} : { window: pressure.contextWindow }),
+    },
+  }
 }
 
 /**
@@ -140,8 +167,10 @@ export function readUsageFacts(ctx: Context, _legacyOwner?: unknown): UsageFacts
  * @returns turns and steps, or zeros with no active session.
  */
 export function readTurnCounts(ctx: Context, _legacyOwner?: unknown): { turns: number, steps: number } {
-  const details = ctx.blueSessionActions.sessionDetails()
-  return details === undefined ? { turns: 0, steps: 0 } : { turns: details.turns, steps: details.steps }
+  const agent = ctx.blueCurrentAgent.current()
+  if (agent === null) return { turns: 0, steps: 0 }
+  const stats = ctx.sessionProjections.snapshot(agent.session, ['sessionStats']).values.sessionStats
+  return stats === undefined ? { turns: 0, steps: 0 } : { turns: stats.turns, steps: stats.steps }
 }
 
 /**
@@ -150,5 +179,12 @@ export function readTurnCounts(ctx: Context, _legacyOwner?: unknown): { turns: n
  * @returns the composition, or `undefined` when the projection answers none.
  */
 export function readCompositionFacts(ctx: Context, _legacyOwner?: unknown): CompositionFacts | undefined {
-  return ctx.blueSessionActions.sessionDetails()?.composition
+  const agent = ctx.blueCurrentAgent.current()
+  if (agent === null) return undefined
+  const breakdown = ctx.sessionProjections.snapshot(agent.session, ['contextBreakdown']).values.contextBreakdown
+  return breakdown === undefined ? undefined : {
+    system: breakdown.systemTokens,
+    tools: breakdown.toolsTokens,
+    messages: breakdown.messageTokens,
+  }
 }

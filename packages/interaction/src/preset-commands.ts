@@ -19,7 +19,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { BlueSessionPreset } from '@dsh-blue/blue-app'
+import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 // Empty type imports carry the commands registration and the app-owned
 // renderer-neutral session services.
 import type {} from '@deepseek-ai/dsh-commands'
@@ -30,7 +30,7 @@ import { CanonicalSelectController, oneLine, type SelectRow } from './select-lis
 import { CURRENT_MARK } from './symbols.ts'
 
 /** One renderer-neutral preset row exposed by the app boundary. */
-export type PresetRow = BlueSessionPreset
+export type PresetRow = AgentPreset
 
 /** Render one failure reason for an error result. */
 function describe(error: unknown): string {
@@ -67,8 +67,6 @@ export function buildPresetRows(presets: readonly PresetRow[], current: string |
  * @returns the disposer removing the registration.
  */
 export function registerPresetCommands(ctx: Context): () => void {
-  const reader = ctx.blueSessionReader
-  const actions = ctx.blueSessionActions
   // The fiber-unload flag: an await spanning a tree unload must never touch
   // the dead context's services or screen.
   let unloaded = false
@@ -83,9 +81,16 @@ export function registerPresetCommands(ctx: Context): () => void {
    * @returns the command outcome.
    */
   async function openPresetPicker(): Promise<CommandResult> {
-    const listed = await actions.presets()
-    if (!listed.ok) return { kind: 'error', text: listed.message }
-    const presets = listed.value
+    const roster = ctx.get('agentPresets')
+    if (roster === undefined) {
+      return { kind: 'error', text: 'agent presets are unavailable: the host composes no roster' }
+    }
+    let presets: readonly AgentPreset[]
+    try {
+      presets = await roster.list()
+    } catch (error) {
+      return { kind: 'error', text: describe(error) }
+    }
     if (unloaded) return { kind: 'success' }
     if (presets.length === 0) {
       return { kind: 'success', text: 'no presets composed' }
@@ -94,10 +99,13 @@ export function registerPresetCommands(ctx: Context): () => void {
     if (display === undefined) {
       return { kind: 'error', text: 'preset picker is unavailable: the Blue screen is not mounted' }
     }
-    const current = actions.currentPreset()
+    const agent = ctx.blueCurrentAgent.current()
+    const current = agent === null ? undefined : roster.composedPreset(agent.ctx)
 
     const dispatch = (id: string): void => {
-      void actions.executeCommand(`/preset ${id}`, new AbortController().signal).then(
+      const agent = ctx.blueCurrentAgent.current()
+      if (agent === null) return
+      void ctx.commands.execute(agent, `/preset ${id}`, [], new AbortController().signal).then(
         execution => {
           /* v8 ignore next -- undefined answers only against an unknown
              command and the unloaded clause only past a mid-execute fiber
@@ -151,14 +159,23 @@ export function registerPresetCommands(ctx: Context): () => void {
     description: 'List agent presets or switch (blank sessions only)',
     input: { hint: '[name]' },
     handler: invocation => {
-      if (reader.current() === null) {
+      const agent = ctx.blueCurrentAgent.current()
+      if (agent === null) {
         return { kind: 'error', text: 'no session is live yet' }
       }
       const id = invocation.rawInput.trim()
       if (id.length === 0) return openPresetPicker()
-      return actions.selectPreset(id).then(result => result.ok
-        ? { kind: 'success', text: result.value }
-        : { kind: 'error', text: result.message })
+      const roster = ctx.get('agentPresets')
+      if (roster === undefined) return { kind: 'error', text: 'agent presets are unavailable: the host composes no roster' }
+      if (agent.status !== 'idle') return { kind: 'error', text: 'cannot switch presets while the agent is running' }
+      if (agent.session.events.some(event => event.type === 'turn/start')) {
+        return { kind: 'error', text: 'cannot switch presets: this session has already started (blank sessions only)' }
+      }
+      return roster.recompose(agent.ctx, id).then(preset => {
+        if (ctx.blueCurrentAgent.current() !== agent) return { kind: 'error' as const, text: 'the active session changed before the preset switch completed' }
+        agent.session.append('agent-preset/selected', { agentPreset: preset.id })
+        return { kind: 'success' as const, text: `preset ${preset.id}` }
+      }, error => ({ kind: 'error' as const, text: describe(error) }))
     },
   })
   return () => {

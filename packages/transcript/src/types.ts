@@ -4,17 +4,8 @@
  * @module @dsh-blue/blue-transcript/types
  */
 
-// Pulls in Cordis `Context` for the model-service declaration merges below.
-import type {} from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    blueStatusEntries: import('./status-model.ts').BlueStatusEntryService
-    blueBottomPanes: import('./dock-model.ts').BlueBottomPaneService
-  }
-}
 
 /** A user prompt rendered in the transcript. */
 export interface TranscriptUserItem {

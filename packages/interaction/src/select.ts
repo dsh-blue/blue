@@ -44,7 +44,7 @@ export class CanonicalMultiSelectController implements BlueFocusable {
         /* v8 ignore next -- core reports a changed, enabled item identity. */
         if (index < 0 || index === this.cursor) return
         this.cursor = index
-        this.adapter.invalidate()
+        this.adapter.focus(identity)
       },
       onUnhandledEscape: options.onCancel,
       maxLeafRows: MAX_LIST_VISIBLE,

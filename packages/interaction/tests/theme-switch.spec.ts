@@ -47,24 +47,17 @@ async function mount(): Promise<{
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('theme-spec'))
   const agent = { id: session.id, session } as unknown as Agent
-  ctx.provide('blueSessionReader', {
-    current: () => ({ id: String(agent.id), cwd: process.cwd(), status: 'idle', mode: 'normal' }),
-    subscribe: () => ({ disposed: false, dispose() {} }),
-    request: async () => ({ ok: true, value: undefined }),
-  })
-  ctx.provide('blueSessionActions', {
-    commands: () => [],
-    rewindCandidates: () => [],
-    skillSnapshot: async () => ({ ok: false, code: 'BLUE_CAPABILITY_ABSENT', absent: { capability: 'skills', reason: 'not composed' } }),
-    subscribeSkillChanges: () => ({ disposed: false, dispose() {} }),
+  ctx.provide('blueCurrentAgent', {
+    current: () => agent,
+    revision: () => 0,
+    subscribe: (listener: (current: Agent, revision: number) => void) => {
+      listener(agent, 0)
+      return () => {}
+    },
   } as never)
-  ctx.provide('blueSessionProjections', {
-    current: () => undefined,
-    currentMany: () => undefined,
-    subscribe: () => () => {},
-    children: () => [],
-    subscribeChildren: () => () => {},
-  })
+  ctx.provide('sessionProjections', { snapshot: () => ({ asOfSeq: 0, values: {} }), onChanged: () => () => {} } as never)
+  ctx.provide('sessionController', { selectModel: async () => { throw new Error('not used') } } as never)
+  ctx.provide('tools', { schemas: () => [] } as never)
   new SkillsCatalogService(ctx)
   const fiber = await ctx.plugin(commandsPlugin)
   return { ctx, agent, fiber }

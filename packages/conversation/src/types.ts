@@ -9,8 +9,8 @@ import type {} from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-session-projection/types'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 
-/** Readiness capability published only after `blueConversation` is registered. */
-export interface BlueConversationProjectionCapability {
+/** Load-order signal published only after `blueConversation` is registered. */
+export interface BlueConversationReady {
   readonly key: 'blueConversation'
 }
 
@@ -189,6 +189,6 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    blueConversationProjection: BlueConversationProjectionCapability
+    blueConversationReady: BlueConversationReady
   }
 }

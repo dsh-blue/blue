@@ -6,6 +6,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { BluePaneService } from '@dsh-blue/blue-api'
 import type {
   BlueComponent,
   BlueKeyAction,
@@ -16,9 +17,11 @@ import type {
 import type { CommandDefinition, CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { fakeBlueComponents } from './helpers.ts'
 import { asAgent, COLORS, FakeFactsService, type FakeAgent } from './status-fakes.ts'
+import { compileBlueUiNode } from '../../core/src/ui-compiler.ts'
 import { conversationProjectionDefinition, foldConversationProjection, initialConversationState, type ConversationProjectionState } from '../../conversation/src/projection.ts'
 import type { ConversationProjection } from '../../conversation/src/types.ts'
-import { BlueBottomPaneService } from '../src/dock-model.ts'
+
+const ANSI_OR_OSC = /\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|.)/gu
 
 /** Records bottom mounts and render requests; the other mounts throw. */
 export class PaneFakeScreen implements BlueScreen {
@@ -27,6 +30,10 @@ export class PaneFakeScreen implements BlueScreen {
   readonly renderRequests: (boolean | undefined)[] = []
   readonly columns = 80
   rows = 24
+  private readonly paneComponents = new Map<string, BlueComponent>()
+  private panes?: BluePaneService
+  private components?: ReturnType<typeof fakeBlueComponents>
+  private colors: typeof COLORS = COLORS
 
   addChild(component: BlueComponent): () => void {
     this.children.push(component)
@@ -73,9 +80,45 @@ export class PaneFakeScreen implements BlueScreen {
    * and the bundle e2e; these specs assert the pane's own surface.
    */
   paneLines(width = 80): string[] {
-    return this.bottomChildren
-      .flatMap(component => component.render(width))
-      .map(line => line === ' ' ? '' : line.slice(1))
+    return this.bottomChildren.flatMap(component => component.render(width))
+      .map(line => line.replace(ANSI_OR_OSC, ''))
+  }
+
+  bindPanes(panes: BluePaneService, components: ReturnType<typeof fakeBlueComponents>, colors: typeof COLORS): void {
+    this.panes = panes
+    this.components = components
+    this.colors = colors
+    panes.subscribe(entries => {
+      const live = new Set(entries.filter(entry => !entry.hidden).map(entry => entry.id))
+      for (const [id, component] of this.paneComponents) {
+        if (live.has(id)) continue
+        this.paneComponents.delete(id)
+        const index = this.bottomChildren.indexOf(component)
+        if (index !== -1) this.bottomChildren.splice(index, 1)
+      }
+      for (const entry of entries) {
+        if (entry.hidden || this.paneComponents.has(entry.id)) continue
+        const component: BlueComponent = {
+          render: width => {
+            const current = this.panes?.list().find(candidate => candidate.id === entry.id)
+            const node = current?.contribution.render()
+            if (node === null || node === undefined || this.components === undefined) return []
+            const compiled = compileBlueUiNode(node, {
+              components: this.components,
+              colors: this.colors,
+              getViewport: () => ({ columns: width, rows: this.rows }),
+              screenMode: 'main',
+            })
+            const rows = compiled.ok ? compiled.value.component.render(width) : compiled.errorComponent.render(width)
+            return rows.map(line => line.replace(ANSI_OR_OSC, ''))
+          },
+          invalidate: () => {},
+        }
+        this.paneComponents.set(entry.id, component)
+        this.bottomChildren.push(component)
+      }
+      this.requestRender()
+    })
   }
 }
 
@@ -214,11 +257,7 @@ export async function bootPanePlugin(
   const commands = new PaneFakeCommands()
   const facts = new FakeFactsService(ctx, current)
   const components = fakeBlueComponents()
-  const bottomPanes = new BlueBottomPaneService(ctx, {
-    components,
-    colors: COLORS,
-    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
-  }, screen)
+  const panes = new BluePaneService(ctx)
   const projections = new FakeProjectionService()
   ctx.on('session/event', (session, event) => projections.emit(session, event))
   const serviceNames: Record<string, unknown> = {
@@ -226,24 +265,33 @@ export async function bootPanePlugin(
     blueTheme: { colors: COLORS },
     blueComponents: components,
     blueKeymap: keymap,
-    blueSession: { current: current === null ? null : asAgent(current) },
+    blueCurrentAgent: {
+      current: () => current === null ? null : asAgent(current),
+      revision: () => 0,
+      subscribe(listener: (agent: unknown, revision: number) => void) {
+        listener(current === null ? null : asAgent(current), 0)
+        return () => {}
+      },
+    },
     blueSessionFacts: facts,
     sessionProjections: projections,
     commands,
+    agents: { create: async () => { throw new Error('fake agents.create is not configured') } },
+    agentDefaultModel: { currentSelection: () => ({ provider: 'mock', model: 'mock' }) },
+    agentPresets: { mount: async () => {} },
     ...extras,
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {
     ctx.reflect.provide(serviceName, value)
   }
+  const theme = serviceNames.blueTheme as { readonly colors: typeof COLORS }
+  screen.bindPanes(panes, components, theme.colors)
   const fiber = await ctx.plugin(plugin)
   return {
     ctx,
     screen,
     keymap,
     commands,
-    dispose: async () => {
-      await fiber.dispose()
-      bottomPanes.dispose()
-    },
+    dispose: () => fiber.dispose(),
   }
 }

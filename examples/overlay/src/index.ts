@@ -4,12 +4,12 @@
  * @module @dsh-blue-example/overlay
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueOverlayRequest, BlueResult } from '@dsh-blue/blue-api'
-import type {} from '@dsh-blue/blue-api'
+import type { BlueOverlayRequest } from '@dsh-blue/blue-api'
+import type {} from '@deepseek-ai/dsh-commands'
 import { ui } from '@dsh-blue/blue-ui'
 
 export const name = '@dsh-blue-example/overlay'
-export const inject = ['bluePluginHost']
+export const inject = ['commands', 'blueOverlays']
 
 /** Static request reused by the command and packed fixture. */
 export const overlayRequest: BlueOverlayRequest = {
@@ -26,20 +26,15 @@ export const overlayRequest: BlueOverlayRequest = {
   ], { gap: 1 }),
 }
 
-/** Register a command whose owner-minted gesture authorizes the modal. */
+/** Register a regular dsh command that opens the direct Blue overlay. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.1', capabilities: ['commands', 'overlays'] })
-  if (!opened.ok) return
-  const api = opened.value
-  api.commands!.register({
-    id: 'example-overlay',
-    label: 'Open the example overlay',
-    execute: async (_args, options): Promise<BlueResult> => {
-      if (options?.userGesture === undefined) {
-        return { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'the overlay requires an active user gesture' }
-      }
-      const result = api.overlays!.open(overlayRequest, { userGesture: options.userGesture })
-      return result.ok ? { ok: true, value: undefined } : result
+  ctx.commands.register({
+    name: 'example-overlay',
+    description: 'Open the example overlay',
+    handler: () => {
+      ctx.blueOverlays.close(overlayRequest.id)
+      ctx.blueOverlays.open(overlayRequest)
+      return { kind: 'success', text: 'opened the example overlay' }
     },
   })
 }

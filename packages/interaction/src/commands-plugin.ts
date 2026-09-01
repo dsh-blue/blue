@@ -11,8 +11,8 @@
  * layer to perform the switch (`/clear` is `/new`'s alias — the kimi
  * naming, one command wearing both names); `/help` lists
  * the registered commands and key bindings in an overlay; `/theme` swaps
- * the live theme provider (see `./theme-switch.ts`); `/yolo` and the
- * plan/yolo exclusivity wiring live in `./mode-commands.ts`; the
+ * the live theme provider (see `./theme-switch.ts`); the Shift+Tab native
+ * plan/permission cycle lives in `./mode-commands.ts`; the
  * session-info family (`/status` `/usage` `/version`) lives in
  * `./session-commands.ts`; `/init` (the canned AGENTS.md prompt) lives in
  * `./session-init.ts`; the config family (`/tools` over the live tool
@@ -52,7 +52,6 @@ import type { HelpSection } from './help.ts'
 import { HelpOverlay } from './help.ts'
 import { registerMcpCommands } from './mcp-commands.ts'
 import { registerModelCommands } from './model-commands.ts'
-import { registerModeCommands } from './mode-commands.ts'
 import { registerPresetCommands } from './preset-commands.ts'
 import { registerSessionCommands } from './session-commands.ts'
 import { registerExportCommands } from './session-export.ts'
@@ -66,13 +65,22 @@ import { registerThemeCommand } from './theme-switch.ts'
 import { registerToolsCommands } from './tools-commands.ts'
 import { registerUpdateCommand } from './update-command.ts'
 import { registerTraceCommand } from './trace-command.ts'
-import { registerPluginCommand } from './plugin-command.ts'
 import { interactionTranslator, observeInteractionLocale } from './locale.ts'
+import { rewindCandidates } from './rewind.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-commands'
 /** Services required before the commands can register. */
-export const inject = ['commands', 'blueSessionReader', 'blueSessionActions', 'blueSessionProjections', 'blueSkillsCatalog', 'blueInteractionState']
+export const inject = [
+  'commands',
+  'blueCurrentAgent',
+  'blueSkillsCatalog',
+  'blueInteractionState',
+  'sessionController',
+  'sessionProjections',
+  'sessions',
+  'tools',
+]
 
 /** Built-in command configuration forwarded by the interaction root. */
 export interface Config {
@@ -184,7 +192,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       clearLoadingNotice()
       return { kind: 'error', text: 'session picker is unavailable: the Blue screen is not mounted' }
     }
-    const currentId = ctx.blueSessionReader.current()?.id
+    const currentId = ctx.blueCurrentAgent.current()?.id
     const titleById = new Map<string, string>()
     const tree = createSessionTree(sorted, titleById, currentId === undefined ? undefined : String(currentId), formatDate)
     const loadingPages = new Set<number>()
@@ -266,10 +274,10 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   /** Open a picker of safe branch points from the live session. */
   function rewindSession(): CommandResult {
-    const active = ctx.blueSessionReader.current()
+    const active = ctx.blueCurrentAgent.current()
     if (active === null) return { kind: 'error', text: 'no active session' }
     if (active.status !== 'idle') return { kind: 'error', text: 'cannot rewind while the agent is running' }
-    const candidates = ctx.blueSessionActions.rewindCandidates()
+    const candidates = rewindCandidates(active.session.events)
     if (candidates.length === 0) return { kind: 'success', text: 'no user turns to rewind' }
     const display = displayServices(ctx)
     if (display === undefined) return { kind: 'error', text: 'rewind is unavailable: the Blue screen is not mounted' }
@@ -290,7 +298,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       filter: true,
       onSelect: row => {
         restore()
-        ctx.emit('blue/request-rewind', active.id, Number(row.value))
+        ctx.emit('blue/request-rewind', String(active.id), Number(row.value))
         getSharedEditor(ctx)?.notice?.('creating rewind branch...')
       },
       onCancel: () => restore(),
@@ -317,7 +325,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         rows: (() => {
           const models = ctx.get('blueCommandModels')?.list()
           if (models !== undefined) return models.map(model => ({ label: model.label, description: model.description ?? '' }))
-          return ctx.blueSessionActions.commands().map(command => ({ name: command.name, description: t(command.description ?? '') }))
+          const agent = ctx.blueCurrentAgent.current()
+          return agent === null ? [] : ctx.commands.list(agent).map(command => ({ name: command.name, description: t(command.description) }))
         })().map(command => {
           // The kimi help-panel label: aliases join the canonical label in
           // slashed parentheses (`/quit (/q, /exit)`), visible on every
@@ -403,7 +412,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       handler: () => {
         // The command target is the UI's current session, not necessarily
         // the dispatching agent; the app layer operates on the same value.
-        const current = ctx.blueSessionReader.current()
+        const current = ctx.blueCurrentAgent.current()
         if (current !== null && current.status !== 'idle') {
           return { kind: 'error' as const, text: 'cannot fork while the agent is running' }
         }
@@ -443,9 +452,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     // The model-family commands (`/model`, `/effort`, later `/provider`)
     // live in their own module with the same lazy-service discipline.
     const models = registerModelCommands(ctx)
-    // The mode-family command (`/yolo`) plus the session-switch restore and
-    // the plan/yolo exclusivity watcher.
-    const modes = registerModeCommands(ctx)
     // The session-info family (`/status` `/usage` `/version`).
     const sessionInfo = registerSessionCommands(ctx, config.displayVersion)
     // The session-export family (`/export` `/copy`).
@@ -464,7 +470,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     const trace = registerTraceCommand(ctx)
     // `/update` is the crash-safe, preflighted profile swap.
     const update = registerUpdateCommand(ctx)
-    const plugin = registerPluginCommand(ctx)
     const settings = registerSettingsCommand(ctx)
     return () => {
       quit()
@@ -478,7 +483,6 @@ export function apply(ctx: Context, config: Config = {}): void {
       help()
       theme()
       models()
-      modes()
       sessionInfo()
       sessionExport()
       init()
@@ -488,7 +492,6 @@ export function apply(ctx: Context, config: Config = {}): void {
       mcpBrowser()
       trace()
       update()
-      plugin()
       settings()
     }
   })

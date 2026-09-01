@@ -9,8 +9,8 @@ import type { Context } from '@deepseek-ai/cordis'
 /** Stable Cordis plugin name. */
 export const name = 'blue-api-invariant'
 
-/** Register API package invariants when the host exposes an invariants service. */
+/** Inert companion entry for the API package's lifecycle-only invariants. */
 export function apply(_ctx: Context): void {
-  // The API package has no runtime state; host-level invariant registration is
-  // intentionally deferred until the plugin host exists.
+  // The direct registries are covered by lifecycle tests and own no data
+  // relation requiring a runtime invariant.
 }
