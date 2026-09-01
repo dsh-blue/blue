@@ -3,8 +3,10 @@
  * empty render, spawn-call collection into the pinned card, the settled
  * group clearing at the next turn start while a live-running group
  * persists, the resume snapshot rebuilding the settled card, the live
- * child-session overlay end-to-end, fork prompt correlation, and
- * session-change rebinding.
+ * child-session overlay end-to-end, fork prompt correlation, the waiting
+ * hysteresis (held under one second it presents as running, promoted at
+ * the threshold by the card tick, invisible when it leaves inside the
+ * window), and session-change rebinding.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -24,6 +26,7 @@ import { bootPanePlugin, type PanePluginHarness } from './pane-fakes.ts'
 
 afterEach(() => {
   setAgentGroupTimers(undefined)
+  paneAgents.setPaneAgentsClock(undefined)
 })
 
 /** The frozen wall clock the injected timers report. */
@@ -47,9 +50,14 @@ interface Rig extends PanePluginHarness {
 /** Captured tick so a spec can fire the card's 1 Hz redraw path. */
 let fireTick: (() => void) | undefined
 
+/** The mutable wall clock the pane's waiting hold runs against. */
+let paneTime = T0 + 10_000
+
 async function boot(events: SessionEvent[] = []): Promise<Rig> {
   resetSeq()
   fireTick = undefined
+  paneTime = T0 + 10_000
+  paneAgents.setPaneAgentsClock(() => paneTime)
   setAgentGroupTimers({
     setInterval: cb => {
       fireTick = cb
@@ -296,5 +304,114 @@ describe('blue-pane-agents plugin', () => {
     expect(rig.screen.paneLines(140)[1]).toContain('1 agents finished')
     await rig.dispose()
     expect(rig.screen.bottomChildren).toHaveLength(0)
+  })
+
+  describe('waiting hysteresis', () => {
+    /** Boot with one acked spawn and return its admitted child session. */
+    async function bootWithChild(): Promise<{ rig: Rig, child: Session }> {
+      const rig = await boot([
+        turnStart(1),
+        stepStart(1, 1),
+        subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey', { time: T0 }),
+        toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+      ])
+      const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
+      return { rig, child }
+    }
+
+    /** A child `tool/call` moving the projection out of `waiting`. */
+    function childToolCall(seq: number): SessionEvent<'tool/call'> {
+      return {
+        type: 'tool/call', seq, time: T0 + 2_000,
+        data: { turn: 1, step: 1, callId: 't1', name: 'read', arguments: '{}' },
+      }
+    }
+
+    it('presents a fresh child waiting as running inside the hold window', async () => {
+      const { rig, child } = await bootWithChild()
+      // A lone turn/start leaves the child projection active in `waiting`.
+      rig.ctx.emit('session/event', child, childTurnStart())
+      const rows = rig.screen.paneLines(140)
+      expect(rows[1]).toContain('Running 1 agents (1 running)')
+      expect(rows[1]).not.toContain('waiting')
+      expect(rows[2]).toContain('· Running')
+      // The held member renders the running activity second line.
+      expect(rows[3]).toContain('Starting…')
+      // One millisecond below the threshold the hold still hides it.
+      paneTime += 999
+      const later = rig.screen.paneLines(140)
+      expect(later[1]).toContain('Running 1 agents (1 running)')
+      expect(later[2]).toContain('· Running')
+    })
+
+    it('promotes a held waiting at the threshold, repainted by the tick', async () => {
+      const { rig, child } = await bootWithChild()
+      rig.ctx.emit('session/event', child, childTurnStart())
+      expect(rig.screen.paneLines(140)[1]).toContain('(1 running)')
+      paneTime += 1_000
+      // The card's 1 Hz tick stays up for the held member and owns the
+      // promotion repaint (no child event lands at the boundary).
+      const before = rig.screen.renderRequests.length
+      fireTick?.()
+      expect(rig.screen.renderRequests.length).toBeGreaterThan(before)
+      const rows = rig.screen.paneLines(140)
+      expect(rows[1]).toContain('Running 1 agents (1 waiting)')
+      expect(rows[2]).toContain('· Waiting')
+    })
+
+    it('never shows a waiting that leaves inside the hold window', async () => {
+      const { rig, child } = await bootWithChild()
+      rig.ctx.emit('session/event', child, childTurnStart())
+      // The first model response arrives 800ms into the hold.
+      paneTime += 800
+      rig.ctx.emit('session/event', child, childToolCall(2))
+      // Past where the hold would have expired had the waiting stayed.
+      paneTime += 500
+      fireTick?.()
+      const rows = rig.screen.paneLines(140)
+      expect(rows[1]).toContain('Running 1 agents (1 running)')
+      expect(rows.join('\n')).not.toContain('Waiting')
+      expect(rows.join('\n')).not.toContain('waiting')
+    })
+
+    it('settles a short waiting straight to finished without showing it', async () => {
+      const { rig, child } = await bootWithChild()
+      rig.ctx.emit('session/event', child, childTurnStart())
+      paneTime += 400
+      rig.ctx.emit('session/event', child, {
+        type: 'turn/end', seq: 2, time: T0 + 30_000, data: { turn: 1, reason: { kind: 'completed' } },
+      })
+      const rows = rig.screen.paneLines(140)
+      expect(rows[1]).toContain('1 agents finished')
+      expect(rows[2]).toContain('· ✓ Completed')
+      expect(rows.join('\n')).not.toContain('Waiting')
+    })
+
+    it('counts a promoted waiting separately from running in the header', async () => {
+      const rig = await boot([
+        turnStart(1),
+        stepStart(1, 1),
+        subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey', { time: T0 }),
+        subagentCallEvent(1, 1, 'a2', 'subagent', 'Map docs', 'map', { time: T0 }),
+        toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+        toolResultEvent(1, 1, 'a2', 'started subagent bd317666afec47f4777c7ca701c1779e', { time: T0 + 5_000 }),
+      ])
+      const waitingChild = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
+      const runningChild = childSession('bd317666afec47f4777c7ca701c1779e')
+      rig.ctx.emit('session/event', waitingChild, childTurnStart())
+      rig.ctx.emit('session/event', runningChild, childTurnStart())
+      rig.ctx.emit('session/event', runningChild, childToolCall(2))
+      // Both children fresh: the held waiting counts as running.
+      expect(rig.screen.paneLines(140)[1]).toContain('Running 2 agents (2 running)')
+      paneTime += 1_000
+      fireTick?.()
+      const rows = rig.screen.paneLines(140)
+      expect(rows[1]).toContain('Running 2 agents (1 running, 1 waiting)')
+      // a1's activity second line sits between the two body rows.
+      expect(rows[2]).toContain('Survey')
+      expect(rows[2]).toContain('· Waiting')
+      expect(rows[4]).toContain('Map docs')
+      expect(rows[4]).toContain('· Running')
+    })
   })
 })

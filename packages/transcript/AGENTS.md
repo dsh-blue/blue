@@ -57,7 +57,11 @@ scarce-row allocation and proximity to the editor. Public panes/overlays do not
 enter it; core's public surface bridge owns them. Activity, todo, agents, BTW,
 and interaction's queue retain narrow renderer adapters only for behavior not
 yet expressible by canonical nodes; each adapter keeps a documented deletion
-condition in source and is clamped through core width truth. Activity's passive
+condition in source and is clamped through core width truth. The agents pane
+presents a child's live `waiting` phase only after a one-second hold
+(`WAITING_HOLD_MS`, aligned with the group card's 1 Hz tick), so the
+spawn-time projection transient never flickers the group header; the pane's
+settle/cross-turn logic reads the raw tracker phases. Activity's passive
 rotation teaches only stable commands/features; focus- or state-sensitive key
 guidance belongs to the active interaction surface. Todo's Ctrl-T hint remains
 pane-local because it describes that pane's hidden content.
