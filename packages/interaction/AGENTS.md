@@ -69,8 +69,10 @@ queue/status rows, command-model UI, the `/jobs` background-job panel,
 public bridge, and provider ownership. `jobs.ts` reads the app-owned
 `blueJobs` facade only: output reads are user-triggered (Enter) because each
 job has one consuming model-facing cursor, the live-job detail carries the
-cursor warning, and the panel ticks durations at 1s only while open with
-live jobs.
+cursor warning, and a settled empty read states the consumed-or-empty
+ambiguity (stream kinds keep no replayable copy once the agent's
+`job_output` collected them) instead of claiming the job produced nothing.
+The panel ticks durations at 1s only while open with live jobs.
 `blue-plugin-author-environment` contributes only the installed Node and
 plugin-kit executable paths to Harness `shellEnv`, with Fiber-owned cleanup;
 the preset author skill must not guess PATH/profile roots.

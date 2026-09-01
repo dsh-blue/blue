@@ -960,7 +960,7 @@ describe('blue whole-tree e2e', () => {
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).toContain('⏵ 1 jobs')
     })
-    tree.jobs.start('构建 website')
+    tree.jobs.start('构建 website', { output: 'build done\n' })
     await vi.waitFor(async () => {
       expect(stripSgr(await fullFrame(tree.terminal))).toContain('⏵ 2 jobs')
     })
@@ -1007,6 +1007,44 @@ describe('blue whole-tree e2e', () => {
       const frame = stripCwdName(stripSgr(await fullFrame(tree.terminal)))
       expect(frame.includes('⏵')).toBe(false)
     })
+    // The agent's completion collection consumes the shared stream cursor
+    // before the user opens the panel (the real dsh-jobs-local semantics the
+    // fake now mirrors): Enter then finds nothing, and the detail says the
+    // output may already be consumed instead of claiming none existed.
+    expect(tree.jobs.read('bash-2')).toMatchObject({ text: 'build done\n' })
+    await expect(executeCommand(tree, await currentAgent(tree), '/jobs')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      // bash-2 settled after bash-1, so it is the selected first row.
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('✓ bash-2')
+    })
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('no new output')
+      expect(frame).toContain('consumed')
+      expect(frame.includes('(no output)')).toBe(false)
+    })
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal)).includes('no new output')).toBe(false)
+    })
+    // A settled stream job no reader has consumed yet still serves its full
+    // output to the first reader — here the user — without the live warning.
+    tree.jobs.start('tail log', { output: 'fresh output\n' })
+    tree.jobs.settle('bash-3', 'completed')
+    await expect(executeCommand(tree, await currentAgent(tree), '/jobs')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('✓ bash-3')
+    })
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('fresh output')
+      expect(frame.includes('output cursor')).toBe(false)
+    })
+    tree.terminal.sendInput('\x1b')
+    tree.terminal.sendInput('\x1b')
   })
 
   it('echoes a failed shell command with red stderr and the exit-code row', async () => {

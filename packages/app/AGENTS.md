@@ -24,7 +24,7 @@ Inbox mutations publish a coalesced `'blue/queue-changed'` notification instead 
 
 ## Background jobs
 
-`src/jobs.ts` provides `blueJobs`: the app-owned background-jobs facade over the optional host `ctx.jobs` registry through the harness-adapter `JobsBridge`. The app supplies the fenced caller (the private active Agent), re-lists at the session commit point, and keeps the last good snapshot across a transient registry failure. Hosts without the service publish `available: false`. Output reads consume the job's single model-facing cursor — a terminal read also marks the job reported, suppressing the model-facing completion notice — so `readJobOutput` fires only on an explicit user request from the `/jobs` panel and is never polled.
+`src/jobs.ts` provides `blueJobs`: the app-owned background-jobs facade over the optional host `ctx.jobs` registry through the harness-adapter `JobsBridge`. The app supplies the fenced caller (the private active Agent), re-lists at the session commit point, and keeps the last good snapshot across a transient registry failure. Hosts without the service publish `available: false`. Output reads consume the job's single model-facing cursor — a terminal read also marks the job reported, suppressing the model-facing completion notice — so `readJobOutput` fires only on an explicit user request from the `/jobs` panel and is never polled. For stream kinds (bash, subagent) a settled read still returns only the unconsumed delta; the registry keeps no replayable copy, so teeing at settle was rejected (it would steal the agent's `job_output` collection) and the panel states the consumed-or-empty ambiguity instead.
 
 ## Side-session actions
 

@@ -207,6 +207,8 @@ const zh: Readonly<Record<string, string>> = {
   '{label} cannot be empty': '{label}不能为空',
   'cancel': '取消',
   '(no output)': '（无输出）',
+  '(no new output yet)': '（还没有新输出）',
+  '(no new output — already consumed by the agent or an earlier read, or the job produced none)': '（没有新输出——可能已被模型或此前的查看消费，也可能任务本就没有输出）',
   '… output truncated': '… 输出已截断',
   'exit code {code}': '退出码 {code}',
   'no matching files under the session cwd': '会话工作目录下没有匹配文件',

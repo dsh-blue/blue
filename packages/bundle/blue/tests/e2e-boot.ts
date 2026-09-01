@@ -174,9 +174,16 @@ export async function resetBlueModuleState(): Promise<void> {
 
 /** One booted Blue tree plus its observations. */
 /**
- * The e2e host `jobs` stand-in: an unowned final-output registry honoring the
- * dsh-jobs semantics Blue consumes — owner-granular change notification, one
- * consuming cursor for live reads, terminal reads marking the job reported.
+ * The e2e host `jobs` stand-in: an unowned registry honoring the
+ * dsh-jobs/dsh-jobs-local semantics Blue consumes — owner-granular change
+ * notification, terminal reads marking the job reported, and the two output
+ * contracts. Stream kinds (`stream: true`, the real bash/subagent producers)
+ * have ONE consuming cursor shared by every reader, so even a terminal read
+ * returns only the delta no earlier read consumed; final-output kinds return
+ * the stored output idempotently once settled. The first version modeled
+ * final-output semantics for a bash-kind job, which kept the e2e green while
+ * real settled bash jobs read empty once the agent's `job_output` collection
+ * had consumed the cursor.
  */
 export class FakeJobRegistry {
   private seq = 0
@@ -189,12 +196,13 @@ export class FakeJobRegistry {
     startedAt: number
     finishedAt?: number
     reported: boolean
+    stream: boolean
     output: string
   }>()
   private readonly listeners = new Set<(owner: undefined) => void>()
   private changed(): void { for (const listener of this.listeners) listener(undefined) }
   private snapshot(record: FakeJobRegistry['records'] extends Map<string, infer R> ? R : never) {
-    const { output: _output, ...rest } = record
+    const { output: _output, stream: _stream, ...rest } = record
     return { ...rest }
   }
   list(): readonly unknown[] { return [...this.records.values()].map(record => this.snapshot(record)) }
@@ -206,14 +214,16 @@ export class FakeJobRegistry {
   read(id: string): { text: string, snapshot: unknown } {
     const record = this.records.get(id)
     if (record === undefined) throw new Error(`unknown job ${id}`)
-    if (record.status === 'running' || record.status === 'stopping') {
-      // Live reads consume the single output cursor.
+    const terminal = record.status !== 'running' && record.status !== 'stopping'
+    if (terminal) record.reported = true
+    if (record.stream) {
+      // One consuming cursor shared by every reader, live or settled.
       const text = record.output
       record.output = ''
       return { text, snapshot: this.snapshot(record) }
     }
-    record.reported = true
-    return { text: record.output, snapshot: this.snapshot(record) }
+    // Final-output job: empty while live, the stored output once settled.
+    return { text: terminal ? record.output : '', snapshot: this.snapshot(record) }
   }
   kill(id: string): 'requested' | 'already-finished' {
     const record = this.records.get(id)
@@ -229,7 +239,7 @@ export class FakeJobRegistry {
     return () => this.listeners.delete(listener)
   }
   /** Test helper: register a running unowned job and return its id. */
-  start(label: string, options: { output?: string, startedAt?: number } = {}): string {
+  start(label: string, options: { output?: string, startedAt?: number, stream?: boolean } = {}): string {
     this.seq += 1
     const id = `bash-${String(this.seq)}`
     this.records.set(id, {
@@ -239,6 +249,7 @@ export class FakeJobRegistry {
       status: 'running',
       startedAt: options.startedAt ?? Date.now(),
       reported: false,
+      stream: options.stream ?? true,
       output: options.output ?? '',
     })
     this.changed()
@@ -1149,7 +1160,7 @@ export const apply = (ctx) => {
   )
   ctx.llm.registerAdapter(['mock'], adapter)
   // The host-plane jobs registry dsh-base ships; the thin e2e substitutes an
-  // unowned final-output stand-in every Blue row reads through blueJobs.
+  // unowned stand-in every Blue row reads through blueJobs.
   const jobs = new FakeJobRegistry()
   ctx.provide('jobs', jobs as never)
 

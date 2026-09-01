@@ -110,9 +110,16 @@ describe('jobs panel models', () => {
         { title: 'label bash-1 · running', body: { kind: 'code', code: 'chunk' } },
       ],
     })
+    // A live job with an empty read has simply produced nothing new.
+    const liveEmpty = jobOutputPanelModel(job('bash-1', 'running'), '', t)
+    expect(liveEmpty.view).toMatchObject({
+      sections: [{}, { body: { code: '(no new output yet)' } }],
+    })
+    // A settled job with an empty read: the single stream cursor may already
+    // be consumed by the agent's job_output — say so instead of '(no output)'.
     const settled = jobOutputPanelModel(job('bash-2', 'failed', { detail: 'exit code: 3', finishedAt: 2_000 }), '', t)
     expect(settled.view).toMatchObject({
-      sections: [{ title: 'label bash-2 · failed · exit code: 3', body: { code: '(no output)' } }],
+      sections: [{ title: 'label bash-2 · failed · exit code: 3', body: { code: '(no new output — already consumed by the agent or an earlier read, or the job produced none)' } }],
     })
     const long = Array.from({ length: 130 }, (_, index) => `row ${index}`).join('\n')
     const truncated = jobOutputPanelModel(job('bash-3', 'completed', { finishedAt: 2_000 }), long, t)

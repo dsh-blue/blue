@@ -11,7 +11,11 @@
  * Enter, and the detail view of a live job carries the cursor warning. A
  * terminal read also marks the job reported, which suppresses the
  * model-facing completion notice — accepted by design for a deliberate user
- * read.
+ * read. For stream kinds (bash, subagent) even a terminal read returns only
+ * the delta no earlier reader consumed, and the registry keeps no replayable
+ * copy: once the agent's `job_output` collected a finished job, Enter finds
+ * nothing. The settled empty state says exactly that instead of claiming the
+ * job produced no output.
  *
  * @module @dsh-blue/blue-interaction/jobs
  */
@@ -118,8 +122,16 @@ export function jobsPanelModel(snapshot: BlueJobsSnapshot, now: number, t: BlueT
  */
 export function jobOutputPanelModel(job: BlueJob, output: string, t: BlueTranslate): FrontendPanelDocument {
   const tail = tailJobOutput(output)
+  // An empty read means different things by lifecycle: a live job simply has
+  // produced nothing new, while a settled stream job's output may already be
+  // consumed by the agent's job_output or an earlier view — the registry
+  // keeps no replayable copy, so the panel cannot tell the two apart and
+  // says so instead of claiming the job produced no output.
+  const empty = isLiveJob(job)
+    ? t('(no new output yet)')
+    : t('(no new output — already consumed by the agent or an earlier read, or the job produced none)')
   const code = tail.text === ''
-    ? t('(no output)')
+    ? empty
     : tail.truncated ? `${t('… output truncated')}\n${tail.text}` : tail.text
   return {
     mode: 'info',
