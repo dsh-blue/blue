@@ -66,7 +66,7 @@ Provider names, methods, and inputs must come from the current list result. The 
 
 In a Blue session the host service store also carries the capability-scoped `bluePluginHost`. Declare it as an injection and use that public facade for Blue contributions; do not probe or use raw renderer, theme, transcript, status, bottom-pane, tool, editor, command, session, loader, or shared HMR owner services from dynamic code. Never fall back to an owner registry when a public capability is absent: owner services are deliberately isolated from the creative realm, and a profile that exposes one is misconfigured rather than granting a compatibility route. The inspect catalog is an incomplete view of general host services, but Blue's owner boundary is explicit: absence of `bluePluginHost` means this runtime does not support a Blue UI prototype.
 
-The current executable Blue contract is Beta `1.0.0-beta.1`. Dynamic code must
+The current executable Blue contract is Beta `1.0.0-beta.2`. Dynamic code must
 not request the removed generic `session.act`, observe global notifications, or
 probe `bluePluginControl`/raw session, projection, and action services. Use
 `session.read` only for its readonly snapshot, and use the documented domain
@@ -83,7 +83,7 @@ return {
   apply(ctx) {
     const opened = ctx.bluePluginHost.open(ctx, {
       id: 'com.example.my-probe',
-      api: '^1.0.0-beta.1',
+      api: '^1.0.0-beta.2',
       capabilities: ['panes', 'notifications.publish'],
     })
     if (!opened.ok) throw new Error(opened.code + ': ' + opened.message)

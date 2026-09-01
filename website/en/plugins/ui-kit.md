@@ -30,7 +30,8 @@ directly; use `ui.child()` only for child layout metadata such as `grow`,
 `basis`, `minSize`, or `when`.
 
 Builders cover content leaves (text, rich text, fields, code, diff, sections),
-stack/surface/scroll, tabs/list/form/actions, and
+Markdown/Mermaid documents, structured charts, stack/surface/scroll,
+tabs/list/form/actions, and
 loader/empty/progress/spacer/divider. Nodes express semantics, never ANSI,
 terminal columns, focus handles, or renderer key bindings.
 For every builder's fields, defaults, constraints, event payloads, and surface
@@ -49,7 +50,7 @@ export const summaryMetric = defineBlueComponent<{
   detail: string
 }>({
   id: '@acme/summary-metric',
-  api: '^1.0.0-beta.1',
+  api: '^1.0.0-beta.2',
   render: props => ui.surface({
     chrome: 'lane',
     child: ui.stack.row([

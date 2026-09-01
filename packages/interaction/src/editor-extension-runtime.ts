@@ -13,6 +13,7 @@ import type {
   BlueEditorCompletionItem,
   BlueEditorCompletionRequestV2,
   BlueEditorExtensionContribution,
+  BlueEditorExtensionNode,
   BlueEditorExtensionSnapshot,
   BlueEditorProvider,
   BlueEditorShellNode,
@@ -231,7 +232,7 @@ function eventResult(result: unknown): BlueResult {
   }
 }
 
-function isPassive(node: BlueUiNode): boolean {
+function isPassive(node: BlueUiNode): node is BlueEditorExtensionNode {
   switch (node.kind) {
     case 'text':
     case 'rich-text':
@@ -534,10 +535,10 @@ export class EditorExtensionRuntime implements BlueFocusable {
     children.push({ node: base })
     if (binding !== undefined) {
       for (const [entryIndex, entry] of binding.entries.entries()) {
-        const rows: BlueUiNode[] = []
+        const rows: Array<Extract<BlueEditorShellNode, { readonly kind: 'text' | 'actions' }>> = []
         if (typeof entry.hint === 'string') {
           const admitted = validateBlueUiNode({ kind: 'text', content: entry.hint, tone: 'muted' })
-          if (admitted.ok) rows.push(admitted.value)
+          if (admitted.ok) rows.push(admitted.value as Extract<BlueEditorShellNode, { readonly kind: 'text' }>)
           else this.options.notice(admitted.message.slice(0, MAX_NOTICE_TEXT))
         }
         if (Array.isArray(entry.diagnostics)) for (const diagnostic of entry.diagnostics) {
@@ -550,7 +551,7 @@ export class EditorExtensionRuntime implements BlueFocusable {
             if (!admitted.ok) throw new Error(admitted.message)
             candidate = admitted.value
           } catch (error) { this.options.notice(boundedMessage(error, 'editor extension diagnostic was rejected')) }
-          if (candidate !== undefined) rows.push(candidate)
+          if (candidate !== undefined) rows.push(candidate as Extract<BlueEditorShellNode, { readonly kind: 'text' }>)
         }
         if (Array.isArray(entry.actions) && entry.actions.length > 0) {
           const admitted = validateBlueUiNode({ kind: 'actions', id: `extension-actions-${String(entryIndex)}`, items: entry.actions })

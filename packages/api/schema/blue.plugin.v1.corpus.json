@@ -1,5 +1,5 @@
 {
-  "protocol": "1.0.0-beta.1",
+  "protocol": "1.0.0-beta.2",
   "cases": [
     {
       "id": "minimal-root-entry",

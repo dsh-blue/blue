@@ -4,7 +4,7 @@ Blue's current seams are explicit Cordis services, projection/action boundaries,
 
 ## Third-party Beta entry
 
-External plugins request capabilities from the current `1.0.0-beta.1` host through `ctx.bluePluginHost.open(ctx, manifest)`:
+External plugins request capabilities from the current `1.0.0-beta.2` host through `ctx.bluePluginHost.open(ctx, manifest)`:
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|

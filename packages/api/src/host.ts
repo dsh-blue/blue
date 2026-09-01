@@ -1344,7 +1344,7 @@ function grantFor(grants: readonly BlueCapabilityGrant[], name: V1Capability): B
 function openCanonical(state: HostState, consumer: Consumer, manifest: BluePluginManifestV1): BlueResult<BluePluginOpen> {
   if (state.consumerIds.has(manifest.id)) return failure('BLUE_DUPLICATE_ID', `plugin identity "${manifest.id}" is already open`)
   const admission = negotiateBlueCapabilities(manifest, {
-    apiVersion: '1.0.0-beta.1',
+    apiVersion: '1.0.0-beta.2',
     // `supported` describes the definitions installed by this composition;
     // `ownerReady` is the live renderer/app Fiber. Keeping them separate lets
     // a canonical consumer open during a legitimate owner gap and receive an
@@ -1732,7 +1732,7 @@ export function createBluePluginControl(host: BluePluginHostService): BluePlugin
 
 /** Cordis service implementing the Beta Blue plugin host. */
 export class BluePluginHostService extends Service implements BluePluginHost {
-  readonly version = '1.0.0-beta.1'
+  readonly version = '1.0.0-beta.2'
   constructor(ctx: Context, options: BluePluginHostOptions = {}) {
     super(ctx, 'bluePluginHost')
     const revision = { value: 0 }

@@ -59,6 +59,20 @@ describe('validateBlueUiNode', () => {
       ui.progress({ label: 'progress', value: 15, max: 10 }),
       ui.spacer({ size: 2 }),
       ui.divider({ label: 'divider' }),
+      ui.document({ format: 'markdown', source: '# Document' }),
+      ui.document({ format: 'mermaid', source: 'graph LR; A --> B' }),
+      ui.chart({ chart: 'line', title: 'Latency', xLabel: 'minute', yLabel: 'ms', height: 8, series: [
+        { id: 'api', label: 'API', tone: 'accent', points: [{ x: 0, y: 4 }, { x: 1, y: null }] },
+      ] }),
+      ui.chart({ chart: 'bar', layout: 'stacked', categories: ['Mon', 'Tue'], yLabel: 'jobs', height: 6, series: [
+        { id: 'ok', tone: 'success', values: [4, 5] },
+        { id: 'failed', tone: 'danger', values: [1, null] },
+      ] }),
+      ui.chart({ chart: 'sparkline', values: [1, null, 3], label: 'Load', tone: 'warning' }),
+      ui.chart({ chart: 'heatmap', title: 'CI', columns: ['Linux', 'macOS'], rows: ['Node 22'], values: [['pass', 'fail']], levels: [
+        { value: 'pass', label: 'Passed', tone: 'success' },
+        { value: 'fail', label: 'Failed', tone: 'danger' },
+      ] }),
     ], { gap: 1, align: 'center' })
     const handwritten = { ...all, ignored: 'metadata' }
     const result = accepted(handwritten) as typeof all & { ignored?: string }
@@ -72,6 +86,55 @@ describe('validateBlueUiNode', () => {
     expect(Object.isFrozen(result.children)).toBe(true)
     expect((result.children[9]!.node as { items: readonly { detailSpans?: readonly { text: string }[] }[] }).items[0]!.detailSpans).toEqual([{ text: 'current', tone: 'accent', emphasis: 'strong' }])
     expect(Object.isFrozen((result.children[9]!.node as { items: readonly { detailSpans?: readonly unknown[] }[] }).items[0]!.detailSpans)).toBe(true)
+  })
+
+  it.each([
+    [{ kind: 'document', format: 'html', source: 'x' }, 'format'],
+    [{ kind: 'chart', chart: 'line', series: [{ id: 'a', points: [{ x: 0, y: Number.NaN }] }] }, 'finite number'],
+    [{ kind: 'chart', chart: 'line', height: 21, series: [] }, 'height'],
+    [{ kind: 'chart', chart: 'line', series: [{ id: 'a', points: [] }, { id: 'a', points: [] }] }, 'duplicate ids'],
+    [{ kind: 'chart', chart: 'line', series: Array.from({ length: 21 }, (_, index) => ({ id: `s${String(index)}`, points: [] })) }, 'series exceeds 20'],
+    [{ kind: 'chart', chart: 'bar', categories: ['A'], series: [{ id: 'a', values: [] }] }, 'match categories'],
+    [{ kind: 'chart', chart: 'bar', categories: [], series: Array.from({ length: 21 }, (_, index) => ({ id: `s${String(index)}`, values: [] })) }, 'series exceeds 20'],
+    [{ kind: 'chart', chart: 'bar', layout: 'normalized', categories: ['A'], series: [{ id: 'a', values: [-1] }] }, 'non-negative'],
+    [{ kind: 'chart', chart: 'bar', layout: 'normalized', categories: ['A'], series: [{ id: 'a', values: [0] }] }, 'positive'],
+    [{ kind: 'chart', chart: 'heatmap', columns: ['A'], rows: ['R'], values: [[1, 2]], levels: [{ value: 1, label: 'one' }] }, 'dimensions'],
+    [{ kind: 'chart', chart: 'heatmap', columns: ['A'], rows: ['R'], values: [[2]], levels: [{ value: 1, label: 'one' }] }, 'without a level'],
+    [{ kind: 'chart', chart: 'heatmap', columns: [], rows: [], values: [], levels: [{ value: null, label: 'bad' }] }, 'string or finite number'],
+    [{ kind: 'chart', chart: 'heatmap', columns: [], rows: [], values: [], levels: [{ value: Number.NaN, label: 'bad' }] }, 'string or finite number'],
+    [{ kind: 'chart', chart: 'heatmap', columns: [], rows: [], values: [], levels: [{ value: 1, label: 'one' }, { value: 1, label: 'again' }] }, 'duplicate values'],
+  ])('rejects malformed document/chart input %j', (value, message) => {
+    expect(validateBlueUiNode(value)).toMatchObject({ ok: false, message: expect.stringContaining(message) })
+  })
+
+  it('enforces aggregate chart cells and admits null normalized/heatmap cells', () => {
+    expect(validateBlueUiNode({
+      kind: 'chart',
+      chart: 'line',
+      series: Array.from({ length: 21 }, (_, series) => ({
+        id: `s${String(series)}`,
+        points: Array.from({ length: 200 }, (_, x) => ({ x, y: x })),
+      })),
+    })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED', message: expect.stringContaining('4000 cells') })
+
+    expect(validateBlueUiNode({
+      kind: 'chart', chart: 'bar', layout: 'normalized', categories: ['A'],
+      series: [{ id: 'missing', values: [null] }, { id: 'present', values: [1] }],
+    })).toMatchObject({ ok: true })
+    expect(validateBlueUiNode({
+      kind: 'chart', chart: 'bar', categories: ['A'], series: [{ id: 'default-layout', values: [1] }],
+    })).toMatchObject({ ok: true })
+    expect(validateBlueUiNode({
+      kind: 'chart', chart: 'heatmap', columns: ['A'], rows: ['R'], values: [[null]], levels: [],
+    })).toMatchObject({ ok: true })
+  })
+
+  it('keeps document and chart out of narrowed status and editor trees', () => {
+    expect(validateBlueStatusNode(ui.document({ format: 'markdown', source: 'x' }))).toMatchObject({ ok: false })
+    expect(validateBlueEditorShellNode({ kind: 'stack', direction: 'column', children: [
+      { node: ui.document({ format: 'markdown', source: 'x' }) },
+      { node: { kind: 'editor-control' } },
+    ] })).toMatchObject({ ok: false })
   })
 
   it('admits ordinary records and dense arrays from another VM realm', () => {

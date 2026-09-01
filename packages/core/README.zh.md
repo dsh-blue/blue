@@ -16,6 +16,12 @@ Blue 终端 UI 核心：整棵树中唯一 import `@earendil-works/pi-tui` 的�
 
   `BlueEditor.setSubmitBarrier(callback)` 会在原生 editor 清除 buffer、paste table、undo 状态与 history cursor 之前暂停提交。每个冻结的 attempt 都带展开后的文本、abort signal、单调 revision 以及幂等 `commit`/`cancel`；buffer mutation、新 attempt 或 barrier 换装会中止旧 attempt。`submit()` 让程序化提交经过同一屏障。
 
+Markdown adapter 会识别闭合的 `mermaid` fence，并把终端布局交给
+`beautiful-mermaid`；非法、含宽字符、超配额或超宽的图保留源码 fence。
+Canonical `chart` 节点把 line/point/bar/sparkline/heatmap 几何交给
+`simple-ascii-chart`，再映射 semantic tone，并用 core 的 visible-width 真值检查
+每一行。
+
 `BlueEditor.refreshAutocomplete()` 会重新查询当前补全 provider，但不改变 editor identity 或 buffer state，因此已打开的 slash 下拉框可原地刷新本地化描述。
 
 ## 共享 chrome 辅助层

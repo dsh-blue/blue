@@ -66,6 +66,11 @@ and result nodes. The semantic renderer owns card status/header/chrome and
 bounded expansion; it does not reintroduce the removed frontend View adapter,
 intent registry, or renderer callback in shared models.
 
+Assistant bodies use core's held rich Markdown component. Closed Mermaid
+fences render in the conversation stream; incomplete or rejected diagrams
+remain source. Transcript does not parse Mermaid or own a second diagram
+cache.
+
 ## Change Rules
 
 - Every row fits `render(width)` and uses `blueComponents` width/compiler

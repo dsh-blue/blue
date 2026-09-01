@@ -84,10 +84,77 @@ export interface BlueProgressNode { readonly kind: 'progress', readonly label?: 
 export interface BlueSpacerNode { readonly kind: 'spacer', readonly size?: 1 | 2 }
 export interface BlueDividerNode { readonly kind: 'divider', readonly label?: string }
 
+/** Renderer-neutral rich document rendered by the active terminal adapter. */
+export interface BlueDocumentNode {
+  readonly kind: 'document'
+  readonly format: 'markdown' | 'mermaid'
+  readonly source: string
+}
+
+/** One numeric coordinate in a line or point chart. */
+export interface BlueChartPoint { readonly x: number, readonly y: number | null }
+/** One numeric series in a line or point chart. */
+export interface BlueChartSeries {
+  readonly id: string
+  readonly label?: string
+  readonly tone?: BlueTone
+  readonly points: readonly BlueChartPoint[]
+}
+/** One category-aligned series in a bar chart. */
+export interface BlueBarChartSeries {
+  readonly id: string
+  readonly label?: string
+  readonly tone?: BlueTone
+  readonly values: readonly (number | null)[]
+}
+/** One exact value-to-presentation mapping in a categorical heatmap. */
+export interface BlueChartLevel {
+  readonly value: number | string
+  readonly label: string
+  readonly tone?: BlueTone
+}
+export interface BlueLineChartNode {
+  readonly kind: 'chart'
+  readonly chart: 'line' | 'point'
+  readonly series: readonly BlueChartSeries[]
+  readonly title?: string
+  readonly xLabel?: string
+  readonly yLabel?: string
+  readonly height?: number
+}
+export interface BlueBarChartNode {
+  readonly kind: 'chart'
+  readonly chart: 'bar'
+  readonly layout?: 'grouped' | 'stacked' | 'normalized'
+  readonly categories: readonly string[]
+  readonly series: readonly BlueBarChartSeries[]
+  readonly title?: string
+  readonly yLabel?: string
+  readonly height?: number
+}
+export interface BlueSparklineChartNode {
+  readonly kind: 'chart'
+  readonly chart: 'sparkline'
+  readonly values: readonly (number | null)[]
+  readonly label?: string
+  readonly tone?: BlueTone
+}
+export interface BlueHeatmapChartNode {
+  readonly kind: 'chart'
+  readonly chart: 'heatmap'
+  readonly columns: readonly string[]
+  readonly rows: readonly string[]
+  readonly values: readonly (readonly (number | string | null)[])[]
+  readonly levels: readonly BlueChartLevel[]
+  readonly title?: string
+}
+export type BlueChartNode = BlueLineChartNode | BlueBarChartNode | BlueSparklineChartNode | BlueHeatmapChartNode
+
 export type BlueUiNode =
   | BlueView | BlueRichTextNode | BlueStackNode | BlueSurfaceNode | BlueScrollNode
   | BlueTabsNode | BlueListNode | BlueFormNode | BlueActionsNode | BlueLoaderNode
   | BlueEmptyNode | BlueProgressNode | BlueSpacerNode | BlueDividerNode
+  | BlueDocumentNode | BlueChartNode
 
 export type BlueUiEvent =
   | { readonly kind: 'activate', readonly controlId: string }
@@ -177,7 +244,7 @@ export interface BlueEditorSnapshot { readonly mode: 'normal' | 'plan' | 'yolo',
 
 /** Host-owned engine slot; absent from BlueUiNode and ordinary pane trees. */
 export interface BlueEditorControlNode { readonly kind: 'editor-control' }
-type BlueEditorShellLeaf = Exclude<BlueUiNode, BlueStackNode | BlueSurfaceNode>
+type BlueEditorShellLeaf = Exclude<BlueUiNode, BlueStackNode | BlueSurfaceNode | BlueDocumentNode | BlueChartNode>
 export type BlueEditorShellNode = BlueEditorShellLeaf | BlueEditorControlNode | BlueEditorStackNode | BlueEditorSurfaceNode
 export interface BlueEditorChild extends Omit<BlueUiChild, 'node'> { readonly node: BlueEditorShellNode }
 export interface BlueEditorStackNode extends Omit<BlueStackNode, 'children'> { readonly children: readonly BlueEditorChild[] }

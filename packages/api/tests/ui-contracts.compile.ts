@@ -52,6 +52,8 @@ export function visitNode(node: BlueUiNode): string {
     case 'progress': return String(node.value)
     case 'spacer': return String(node.size ?? 1)
     case 'divider': return node.label ?? ''
+    case 'document': return node.source
+    case 'chart': return node.chart
     default: return assertNever(node)
   }
 }
@@ -61,6 +63,12 @@ export const semanticList: BlueUiNode = {
     id: 'model', label: 'Model', detail: 'plain fallback',
     detailSpans: [{ text: '[High]', tone: 'accent', emphasis: 'strong' }],
   }],
+}
+
+export const richDocument: BlueUiNode = { kind: 'document', format: 'mermaid', source: 'graph TD\nA --> B' }
+export const chart: BlueUiNode = {
+  kind: 'chart', chart: 'bar', layout: 'stacked', categories: ['Mon'],
+  series: [{ id: 'jobs', label: 'Jobs', tone: 'accent', values: [4] }],
 }
 
 export function visitEvent(event: BlueUiEvent): string {
@@ -236,6 +244,10 @@ export const invalidEditorExtensionLoader: BlueEditorExtensionNode = { kind: 'lo
 export const invalidEditorExtensionEmpty: BlueEditorExtensionNode = { kind: 'empty', title: 'bad' }
 // @ts-expect-error editor-control is reserved for the provider shell
 export const invalidEditorExtensionControl: BlueEditorExtensionNode = { kind: 'editor-control' }
+// @ts-expect-error rich documents stay out of editor extensions
+export const invalidEditorExtensionDocument: BlueEditorExtensionNode = { kind: 'document', format: 'markdown', source: 'bad' }
+// @ts-expect-error charts stay out of editor extensions
+export const invalidEditorExtensionChart: BlueEditorExtensionNode = { kind: 'chart', chart: 'sparkline', values: [1] }
 export const invalidNestedEditorExtension: BlueEditorExtensionNode = {
   kind: 'stack', direction: 'column', children: [
     // @ts-expect-error interactive nodes remain excluded recursively

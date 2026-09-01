@@ -50,7 +50,7 @@ const provider: BlueEditorProvider = {
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'acme.focused-editor',
-    api: '^1.0.0-beta.1',
+    api: '^1.0.0-beta.2',
     capabilities: ['editor.provider'],
   })
   if (!opened.ok || opened.value.editorProviders === undefined) return

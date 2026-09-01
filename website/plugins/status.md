@@ -62,7 +62,7 @@ export function apply(ctx: Context): void {
 ```ts
 const opened = ctx.bluePluginHost.open(ctx, {
   id: 'my-plugin.compact-status',
-  api: '^1.0.0-beta.1',
+  api: '^1.0.0-beta.2',
   capabilities: ['status.provider'],
 })
 if (!opened.ok) return

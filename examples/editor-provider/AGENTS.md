@@ -6,9 +6,9 @@ settings. Its synchronous shell tree contains exactly one unconditional
 `editor-control`; Blue retains draft, history, attachments, focus, IME, and
 submit ownership.
 
-`editor.provider` is an Experimental/reference facet in API
-`^1.0.0-beta.1`. This example validates the retained runtime and does not
-advertise a Stable v1 provider capability.
+`editor.provider` is an Experimental/reference Beta API facet. This example
+validates the retained runtime and does not advertise a Stable v1 provider
+capability.
 
 Registration is host-scoped and durable across frontend-owner boot gaps: this
 sibling row may apply before `blue-editor-provider-owner`, whose initial

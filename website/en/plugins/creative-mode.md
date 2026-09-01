@@ -55,7 +55,7 @@ blue-feature/
 
 The entry exports fixed `name`, `inject`, and `apply(ctx)` values, parses the
 canonical package-root manifest, and passes it to
-`ctx.bluePluginHost.open(ctx, manifest)`. The current `1.0.0-beta.1` protocol
+`ctx.bluePluginHost.open(ctx, manifest)`. The current `1.0.0-beta.2` protocol
 opens `commands`, `status`, `panes`, `overlays`, `notifications.publish`, and
 read-only `session.read` plus `session.projections.read`; the read capabilities
 declare exact field/key resources. Generic `session.act` is gone. `open()`

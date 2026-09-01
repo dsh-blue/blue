@@ -14,6 +14,10 @@ Blue 的 projection-backed transcript 以及 canonical status、tool、bottom-pa
 
 Blue 自有 banner、activity、长消息展开、图片、中断与展开键位 chrome 跟随当前英文或简体中文 locale。语言 revision 会原地失效 renderer cache 并重投影 keymap 文案；conversation 与 tool payload 保持原文。
 
+Assistant Markdown 统一通过 core 的富文档 adapter 流式渲染。闭合的 `mermaid`
+fence 会立即原位显示并在后续 token 到达时复用缓存；未闭合 fence 保持代码。
+非法、超配额、超宽、含 CJK 或 emoji 的图保留原始源码 fence。
+
 ## Status 与 Bottom Pane
 
 主插件拥有五个 renderer bridge：

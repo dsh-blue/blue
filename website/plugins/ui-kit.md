@@ -28,7 +28,8 @@ Builder 的结果与手写 `BlueUiNode` 完全同形，并会递归克隆、深�
 layout metadata 才需要 `ui.child()`。
 
 可用构造器包括内容 leaf（text、rich-text、fields、code、diff、sections）、
-stack/surface/scroll、tabs/list/form/actions，以及 loader/empty/progress/spacer/divider。
+Markdown/Mermaid document、结构化 chart、stack/surface/scroll、
+tabs/list/form/actions，以及 loader/empty/progress/spacer/divider。
 节点只表达语义，不表达 ANSI、终端列数、focus handle 或 renderer key binding。
 每个构造器的字段、默认值、约束、事件 payload 与 surface 兼容性见
 [UI 节点参考](/plugins/ui-reference)。
@@ -46,7 +47,7 @@ export const summaryMetric = defineBlueComponent<{
   detail: string
 }>({
   id: '@acme/summary-metric',
-  api: '^1.0.0-beta.1',
+  api: '^1.0.0-beta.2',
   render: props => ui.surface({
     chrome: 'lane',
     child: ui.stack.row([

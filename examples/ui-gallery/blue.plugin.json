@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "@dsh-blue-example/ui-gallery",
   "entry": "./lib/index.js",
-  "api": "^1.0.0-beta.1",
+  "api": "^1.0.0-beta.2",
   "capabilities": ["panes"],
   "node": "^22.19.0 || >=24.0.0"
 }

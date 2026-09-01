@@ -246,6 +246,80 @@ ui.sections([
 ])
 ```
 
+### `document`
+
+```ts
+ui.document({
+  format: 'markdown' | 'mermaid',
+  source: string,
+})
+```
+
+Markdown 复用 Blue 的 pi-tui adapter，支持表格与代码 fence。Mermaid 通过
+`beautiful-mermaid` 渲染为终端 Unicode；assistant 消息中的闭合 `mermaid`
+fence 也走同一路径。解析失败、不支持或超宽的图、源码/输出超过配额，以及 label
+含 CJK、emoji 或其他全宽字符时，会保留原始 Mermaid code fence。图本身绝不
+wrap 或 truncate。
+
+```ts
+ui.document({
+  format: 'mermaid',
+  source: 'flowchart TD\n  Request --> Validate\n  Validate --> Result',
+})
+```
+
+`document` 可用于普通 pane 与 capturing overlay，不能用于 status、notification、
+editor shell 或 `sections.body`。
+
+### `chart`
+
+`chart` 携带数据而不是 renderer options。Blue 通过 `simple-ascii-chart` 适配，
+把 semantic tone 映射到当前 theme；图无法容纳时降级为有界文本摘要。
+
+```ts
+ui.chart({
+  chart: 'line' | 'point',
+  title?: string,
+  xLabel?: string,
+  yLabel?: string,
+  height?: number, // 4..20
+  series: [{
+    id: string,
+    label?: string,
+    tone?: BlueTone,
+    points: [{ x: number, y: number | null }],
+  }],
+})
+
+ui.chart({
+  chart: 'bar',
+  layout?: 'grouped' | 'stacked' | 'normalized',
+  title?: string,
+  yLabel?: string,
+  height?: number, // 4..20
+  categories: readonly string[],
+  series: [{ id: string, label?: string, tone?: BlueTone, values: readonly (number | null)[] }],
+})
+
+ui.chart({ chart: 'sparkline', values: [2, 4, null, 7], label: 'Load', tone: 'warning' })
+
+ui.chart({
+  chart: 'heatmap',
+  columns: ['Linux', 'macOS'],
+  rows: ['Node 22'],
+  values: [['pass', 'fail']],
+  levels: [
+    { value: 'pass', label: 'Passed', tone: 'success' },
+    { value: 'fail', label: 'Failed', tone: 'danger' },
+  ],
+})
+```
+
+数值必须 finite，`null` 表示缺失数据。series id 与 heatmap level value 必须唯一；
+bar values 数量匹配 category，heatmap 矩阵维度匹配 row/column label。每个 chart
+最多 20 个 series，单棵树最多 4,000 个 chart cell。使用 `document` 或 `chart`
+的插件必须要求 API `^1.0.0-beta.2`。
+
 ## 布局节点
 
 ### `child`

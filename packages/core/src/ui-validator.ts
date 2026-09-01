@@ -8,6 +8,10 @@
 
 import type {
   BlueActionItem,
+  BlueBarChartSeries,
+  BlueChartLevel,
+  BlueChartPoint,
+  BlueChartSeries,
   BlueEditorChild,
   BlueEditorShellNode,
   BlueField,
@@ -54,6 +58,7 @@ interface ValidationState {
   text: number
   scrollDepth: number
   editorControls: number
+  chartCells: number
   readonly controlIds: Set<string>
 }
 
@@ -133,6 +138,15 @@ function finiteInteger(value: unknown, path: string, minimum = 0): number {
     invalid(`${path} must be a finite integer within the safe range and >= ${String(minimum)}`)
   }
   return value
+}
+
+function finiteNumber(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) invalid(`${path} must be a finite number`)
+  return value
+}
+
+function nullableNumber(value: unknown, path: string): number | null {
+  return value === null ? null : finiteNumber(value, path)
 }
 
 function identifier(value: unknown, path: string, state: ValidationState, reserve = false): string {
@@ -241,7 +255,7 @@ function uniqueIds(items: readonly { readonly id: string }[], path: string): voi
 }
 
 function viewportCondition(value: unknown, path: string): BlueViewportCondition {
-  return enter(value, path, { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, controlIds: new Set() }, object => {
+  return enter(value, path, { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, chartCells: 0, controlIds: new Set() }, object => {
     const result: { minWidth?: number, maxWidth?: number, minHeight?: number, maxHeight?: number } = {}
     for (const key of ['minWidth', 'maxWidth', 'minHeight', 'maxHeight'] as const) {
       const item = own(object, key, path)
@@ -251,6 +265,73 @@ function viewportCondition(value: unknown, path: string): BlueViewportCondition 
     if (result.minHeight !== undefined && result.maxHeight !== undefined && result.minHeight > result.maxHeight) invalid(`${path} height range is inverted`)
     return result
   })
+}
+
+const CHART_TONES = ['default', 'muted', 'accent', 'success', 'warning', 'danger'] as const
+
+function chartTone(object: Record<string, unknown>, path: string): BlueInlineSpan['tone'] | undefined {
+  const value = own(object, 'tone', path)
+  return value === undefined ? undefined : enumeration(value, CHART_TONES, `${path}.tone`)
+}
+
+function addChartCells(state: ValidationState, count: number): void {
+  state.chartCells += count
+  if (state.chartCells > 4_000) limit('Blue chart data exceeds 4000 cells')
+}
+
+function chartPoint(value: unknown, path: string, state: ValidationState): BlueChartPoint {
+  return enter(value, path, state, object => ({
+    x: finiteNumber(required(object, 'x', path), `${path}.x`),
+    y: nullableNumber(required(object, 'y', path), `${path}.y`),
+  }))
+}
+
+function chartSeries(value: unknown, path: string, state: ValidationState): BlueChartSeries {
+  return enter(value, path, state, object => {
+    const points = collection(required(object, 'points', path), `${path}.points`)
+      .map((item, index) => chartPoint(item, `${path}.points[${String(index)}]`, state))
+    addChartCells(state, points.length)
+    return {
+      id: identifier(required(object, 'id', path), `${path}.id`, state),
+      ...optional(optionalText(object, 'label', path, state), 'label'),
+      ...optional(chartTone(object, path), 'tone'),
+      points,
+    }
+  })
+}
+
+function barSeries(value: unknown, path: string, state: ValidationState): BlueBarChartSeries {
+  return enter(value, path, state, object => {
+    const values = collection(required(object, 'values', path), `${path}.values`)
+      .map((item, index) => nullableNumber(item, `${path}.values[${String(index)}]`))
+    addChartCells(state, values.length)
+    return {
+      id: identifier(required(object, 'id', path), `${path}.id`, state),
+      ...optional(optionalText(object, 'label', path, state), 'label'),
+      ...optional(chartTone(object, path), 'tone'),
+      values,
+    }
+  })
+}
+
+function chartLevel(value: unknown, path: string, state: ValidationState): BlueChartLevel {
+  return enter(value, path, state, object => {
+    const raw = required(object, 'value', path)
+    if (typeof raw !== 'string' && (typeof raw !== 'number' || !Number.isFinite(raw))) invalid(`${path}.value must be a string or finite number`)
+    return {
+      value: typeof raw === 'string' ? text(raw, `${path}.value`, state) : raw,
+      label: text(required(object, 'label', path), `${path}.label`, state),
+      ...optional(chartTone(object, path), 'tone'),
+    }
+  })
+}
+
+function chartHeight(object: Record<string, unknown>, path: string): number | undefined {
+  const value = own(object, 'height', path)
+  if (value === undefined) return undefined
+  const height = finiteInteger(value, `${path}.height`, 4)
+  if (height > 20) invalid(`${path}.height must be <= 20`)
+  return height
 }
 
 function uiChild<Node>(value: unknown, path: string, state: ValidationState, depth: number, parseNode: (value: unknown, path: string, state: ValidationState, depth: number) => Node): Omit<BlueUiChild, 'node'> & { readonly node: Node } {
@@ -337,6 +418,7 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
       return { kind }
     }
     if (mode === 'status' && !['text', 'rich-text', 'fields', 'progress', 'stack'].includes(kind)) invalid(`status node kind "${kind}" is interactive or unsupported`)
+    if (mode === 'editor' && (kind === 'document' || kind === 'chart')) invalid(`editor node kind "${kind}" is unsupported`)
     if (viewOnly && !['text', 'fields', 'code', 'diff', 'sections'].includes(kind)) invalid(`${path} must be a BlueView`)
     switch (kind) {
       case 'text': {
@@ -472,6 +554,81 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
         return { kind, ...optional(sizeValue === undefined ? undefined : enumeration(sizeValue, [1, 2] as const, `${path}.size`), 'size') }
       }
       case 'divider': return { kind, ...optional(optionalText(object, 'label', path, state), 'label') }
+      case 'document': return {
+        kind,
+        format: enumeration(required(object, 'format', path), ['markdown', 'mermaid'], `${path}.format`),
+        source: text(required(object, 'source', path), `${path}.source`, state),
+      }
+      case 'chart': {
+        const chart = enumeration(required(object, 'chart', path), ['line', 'point', 'bar', 'sparkline', 'heatmap'], `${path}.chart`)
+        if (chart === 'line' || chart === 'point') {
+          const series = collection(required(object, 'series', path), `${path}.series`)
+            .map((item, index) => chartSeries(item, `${path}.series[${String(index)}]`, state))
+          if (series.length > 20) limit(`${path}.series exceeds 20 entries`)
+          uniqueIds(series, `${path}.series`)
+          return {
+            kind, chart, series,
+            ...optional(optionalText(object, 'title', path, state), 'title'),
+            ...optional(optionalText(object, 'xLabel', path, state), 'xLabel'),
+            ...optional(optionalText(object, 'yLabel', path, state), 'yLabel'),
+            ...optional(chartHeight(object, path), 'height'),
+          }
+        }
+        if (chart === 'bar') {
+          const layoutValue = own(object, 'layout', path)
+          const categories = collection(required(object, 'categories', path), `${path}.categories`)
+            .map((item, index) => text(item, `${path}.categories[${String(index)}]`, state))
+          const series = collection(required(object, 'series', path), `${path}.series`)
+            .map((item, index) => barSeries(item, `${path}.series[${String(index)}]`, state))
+          if (series.length > 20) limit(`${path}.series exceeds 20 entries`)
+          uniqueIds(series, `${path}.series`)
+          if (series.some(item => item.values.length !== categories.length)) invalid(`${path}.series values must match categories`)
+          const layout = layoutValue === undefined ? undefined : enumeration(layoutValue, ['grouped', 'stacked', 'normalized'], `${path}.layout`)
+          if (layout === 'normalized') {
+            if (series.some(item => item.values.some(value => value !== null && value < 0))) invalid(`${path}.series normalized values must be non-negative`)
+            for (let index = 0; index < categories.length; index += 1) {
+              if (series.reduce((sum, item) => sum + (item.values[index] ?? 0), 0) <= 0) invalid(`${path}.series normalized category totals must be positive`)
+            }
+          }
+          return {
+            kind, chart,
+            ...optional(layout, 'layout'),
+            categories, series,
+            ...optional(optionalText(object, 'title', path, state), 'title'),
+            ...optional(optionalText(object, 'yLabel', path, state), 'yLabel'),
+            ...optional(chartHeight(object, path), 'height'),
+          }
+        }
+        if (chart === 'sparkline') {
+          const values = collection(required(object, 'values', path), `${path}.values`)
+            .map((item, index) => nullableNumber(item, `${path}.values[${String(index)}]`))
+          addChartCells(state, values.length)
+          return {
+            kind, chart, values,
+            ...optional(optionalText(object, 'label', path, state), 'label'),
+            ...optional(chartTone(object, path), 'tone'),
+          }
+        }
+        const columns = collection(required(object, 'columns', path), `${path}.columns`)
+          .map((item, index) => text(item, `${path}.columns[${String(index)}]`, state))
+        const rows = collection(required(object, 'rows', path), `${path}.rows`)
+          .map((item, index) => text(item, `${path}.rows[${String(index)}]`, state))
+        const values = collection(required(object, 'values', path), `${path}.values`).map((row, rowIndex) =>
+          collection(row, `${path}.values[${String(rowIndex)}]`).map((item, columnIndex) => {
+            if (item === null) return null
+            if (typeof item === 'number') return finiteNumber(item, `${path}.values[${String(rowIndex)}][${String(columnIndex)}]`)
+            return text(item, `${path}.values[${String(rowIndex)}][${String(columnIndex)}]`, state)
+          }))
+        addChartCells(state, values.reduce((sum, row) => sum + row.length, 0))
+        if (values.length !== rows.length || values.some(row => row.length !== columns.length)) invalid(`${path}.values dimensions must match rows and columns`)
+        const levels = collection(required(object, 'levels', path), `${path}.levels`)
+          .map((item, index) => chartLevel(item, `${path}.levels[${String(index)}]`, state))
+        const levelKeys = levels.map(level => `${typeof level.value}:${String(level.value)}`)
+        if (new Set(levelKeys).size !== levelKeys.length) invalid(`${path}.levels contains duplicate values`)
+        const known = new Set(levelKeys)
+        if (values.some(row => row.some(value => value !== null && !known.has(`${typeof value}:${String(value)}`)))) invalid(`${path}.values contains a value without a level`)
+        return { kind, chart, columns, rows, values, levels, ...optional(optionalText(object, 'title', path, state), 'title') }
+      }
       default: invalid(`unknown Blue UI kind "${kind}"`)
     }
   })
@@ -512,7 +669,7 @@ function assertEditorControlVisible(node: BlueEditorShellNode, path = '$'): void
 }
 
 function validate<Value>(value: unknown, mode: ValidationMode): BlueResult<Value> {
-  const state: ValidationState = { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, controlIds: new Set() }
+  const state: ValidationState = { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, chartCells: 0, controlIds: new Set() }
   try {
     const result = mode === 'ui'
       ? node(value, '$', state, 0, 'ui')

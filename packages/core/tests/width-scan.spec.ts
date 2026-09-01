@@ -9,9 +9,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SelectItem, SelectListTheme } from '@earendil-works/pi-tui'
 import { clampRowsToWidth, framePanel } from '../src/chrome.ts'
+import { renderChartRows } from '../src/chart-renderer.ts'
 import { GutterComponent } from '../src/gutter.ts'
+import { renderMermaidRows } from '../src/rich-document.ts'
 import { compileBlueEditorShellNode, compileBlueStatusNode } from '../src/ui-compiler.ts'
-import type { BlueEditor } from '../src/types.ts'
+import type { BlueComponents, BlueEditor, BlueSemanticColors } from '../src/types.ts'
 import { WrappingSelectList } from '../src/wrapping-select-list.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from './width-scan.ts'
@@ -145,6 +147,27 @@ describe('core width-scan', () => {
         const rendered = result.value.component.renderChecked(width, { dryRun: true })
         expect(rendered.runtimeFailure).toBeUndefined()
         expectLinesFit(`editor-shell/${name}`, rendered.rows, width)
+      }
+    })
+
+    it(`rich document and chart adapters survive ${name}`, () => {
+      const chartComponents = { visibleWidth, wrapText: wrapTextWithAnsi, truncateToWidth } as BlueComponents
+      const chart = {
+        kind: 'chart' as const,
+        chart: 'bar' as const,
+        layout: 'stacked' as const,
+        categories: ['first', text],
+        series: [
+          { id: 'ok', label: text, tone: 'success' as const, values: [2, 4] },
+          { id: 'failed', label: 'failed', tone: 'danger' as const, values: [1, 3] },
+        ],
+      }
+      const mermaid = `graph LR\n  A[${text}] --> B[done]`
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`Chart/${name}`, renderChartRows(chart, width, chartComponents, statusColors as BlueSemanticColors), width)
+        const diagram = renderMermaidRows(mermaid, width)
+        const documentRows = diagram ?? wrapTextWithAnsi(mermaid, Math.max(1, width))
+        expectLinesFit(`Mermaid/${name}`, documentRows, width)
       }
     })
   }

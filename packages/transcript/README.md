@@ -14,6 +14,11 @@ The active runtime does not fold Harness session events and contains no legacy t
 
 Blue-owned banner, activity, long-message expansion, image, interruption, and expansion-key chrome follows the active English or Simplified Chinese locale. Locale revisions invalidate renderer caches and keymap presentation in place; conversation and tool payloads remain verbatim.
 
+Assistant Markdown is streamed through core's rich document adapter. A closed
+`mermaid` fence renders in place immediately and remains cached while later
+tokens arrive; an incomplete fence remains code. Invalid, over-budget,
+over-wide, CJK, or emoji diagrams retain their original source fence.
+
 ## Status And Bottom Panes
 
 The main plugin owns five renderer bridges:

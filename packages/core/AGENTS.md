@@ -23,6 +23,12 @@ The main services are:
 
 No other package may receive a pi-tui object through these services.
 
+Core also owns the only rich-content adapters: `beautiful-mermaid` augments
+streamed pi-tui Markdown and explicit Mermaid documents, while
+`simple-ascii-chart` renders canonical chart nodes. Both are synchronous,
+width-contained adapters with source/text fallbacks; their option types must
+not cross the core boundary.
+
 ## Ownership
 
 `src/terminal.ts` owns raw-mode setup/restoration, alternate screen, bracketed

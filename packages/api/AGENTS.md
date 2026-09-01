@@ -73,6 +73,11 @@ duplicate another list in consumers.
   `./protocol/v1` plus `./capabilities/v1` own canonical generated types,
   validation, schema, catalog, and product/protocol mapping.
 
+Protocol `1.0.0-beta.2` adds ordinary-surface `document` and `chart` nodes.
+They remain outside `BlueView`, `BlueStatusNode`, notifications, section
+bodies, editor extensions, and editor shells. Their data schema is Blue-owned;
+renderer-library options never enter the public contract.
+
 The JSON schema is the shape source. Run the generator rather than hand-editing
 generated TypeScript or Website schema copies. Runtime entries are derived
 from concrete package exports by `script/package-contract.mjs`; JSON

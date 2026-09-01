@@ -61,7 +61,7 @@ build tool is acceptable as long as `exports` points to the emitted
   "schemaVersion": 1,
   "id": "@acme/blue-workspace-header",
   "entry": ".",
-  "api": "^1.0.0-beta.1",
+  "api": "^1.0.0-beta.2",
   "compatibility": {
     "blue": ">=0.1.2-alpha.1 <0.1.2",
     "harness": "0.1.2-alpha.2",

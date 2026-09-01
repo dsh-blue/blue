@@ -64,7 +64,7 @@ These nine rows plus assembly form the minimum usable UI. The locale runtime/set
 
 | Plugin | Description |
 |---|---|
-| `blue-api-host` | `1.0.0-beta.1` manifest validation and scoped Beta/Experimental facets; management control remains private |
+| `blue-api-host` | `1.0.0-beta.2` manifest validation and scoped Beta/Experimental facets; management control remains private |
 | `blue-locale` | frontend-tree locale runtime bound to official `locale.preference` and system-language fallback |
 | `blue-core` | only pi-tui/raw-terminal adapter; screen, keymap, components, and terminal facts |
 | `blue-theme-dark` | default dark theme provider |

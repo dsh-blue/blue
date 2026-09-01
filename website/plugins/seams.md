@@ -4,7 +4,7 @@ Blue 的当前架构用显式 Cordis service、projection/action、renderer-neut
 
 ## 第三方 Beta 入口
 
-外部插件通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请当前 `1.0.0-beta.1` 能力：
+外部插件通过 `ctx.bluePluginHost.open(ctx, manifest)` 申请当前 `1.0.0-beta.2` 能力：
 
 | Capability | Contribution | Blue consumer |
 |---|---|---|

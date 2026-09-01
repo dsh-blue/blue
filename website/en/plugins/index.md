@@ -10,7 +10,7 @@ A minimal new plugin starts with a canonical `blue.plugin.json`:
   "schemaVersion": 1,
   "id": "my-plugin-clock",
   "entry": ".",
-  "api": "^1.0.0-beta.1",
+  "api": "^1.0.0-beta.2",
   "compatibility": {
     "blue": ">=0.1.2-alpha.1 <0.1.2",
     "harness": "0.1.2-alpha.2",
@@ -26,7 +26,7 @@ A minimal new plugin starts with a canonical `blue.plugin.json`:
 The entry passes this validated manifest to `open()`, then registers through the granted `status` facade. To run a complete package end to end from scratch, see the [quickstart](/en/plugins/quickstart).
 
 ::: warning Preview-stage caveat
-The executable protocol is `1.0.0-beta.1`, not Stable v1. `0.1.2-alpha.1` delivers P1–P5 and moves the host contract to the sole supported Harness `0.1.2-alpha.2` line: the machine contract, catalog/Host negotiation, five UI capabilities, two read-only session capabilities, and the no-checkout author commands, creative-mode skill, and tutorial fixture. It does not promote capabilities to Stable, reopen the marketplace, or authorize GitHub/npm publication automatically.
+The executable protocol is `1.0.0-beta.2`, not Stable v1. It adds renderer-neutral Markdown/Mermaid documents and structured terminal charts while retaining the P1–P5 machine contract, capability negotiation, lifecycle fences, and author tooling. It does not promote capabilities to Stable, reopen the marketplace, or authorize GitHub/npm publication automatically.
 :::
 
 ## The `0.1.2-alpha.1` alpha boundary

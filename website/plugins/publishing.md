@@ -12,7 +12,7 @@ Blue 插件是带 `blue.plugin.json` 的普通 npm 包。Blue 官方包由 CI �
 
 - `exports` 指向构建产物，`files` 白名单覆盖所有导出目标（validate 脚本的 `package` 组会查）；
 - `@dsh-blue/blue-api@0.1.2-alpha.1`（用到 builder 时再加 `@dsh-blue/blue-ui@0.1.2-alpha.1`）在 `dependencies`，`@deepseek-ai/cordis` 在 `peerDependencies`——后者由宿主 dsh 提供，打进 `dependencies` 会出现第二份服务实例；
-- canonical manifest 的 `api` 对准 `^1.0.0-beta.1`，`compatibility.blue` / `harness` 对准已用 packed fixture 证明的产品线。这是预览兼容声明，不是对未来 Stable `1.x` 的承诺。
+- canonical manifest 的 `api` 对准 `^1.0.0-beta.2`，`compatibility.blue` / `harness` 对准已用 packed fixture 证明的产品线。这是预览兼容声明，不是对未来 Stable `1.x` 的承诺。
 
 ## 用户安装路径
 
@@ -35,7 +35,7 @@ package spec 使用上面的 `blue plugin add`；两条路径都由 profile owne
 ## 版本策略建议
 
 - **跟随 Blue 的预览节奏**：Blue 处于 rc 线时，插件也用 `@rc` dist-tag 发布，与宿主同步升级；
-- **Beta 范围不预支 Stable 兼容性**：当前 manifest 使用 `^1.0.0-beta.1` 以匹配这条 Beta host；不要据此宣称兼容所有未来 Stable `1.x`。每条新 Harness/Blue/API 线都用 [fixture 的 `--harness-line`](/plugins/testing#fixture：打包安装契约) 重新验证后再更新兼容声明；
+- **Beta 范围不预支 Stable 兼容性**：当前 manifest 使用 `^1.0.0-beta.2` 以匹配这条 Beta host；不要据此宣称兼容所有未来 Stable `1.x`。每条新 Harness/Blue/API 线都用 [fixture 的 `--harness-line`](/plugins/testing#fixture：打包安装契约) 重新验证后再更新兼容声明；
 - **能力变更即 minor**：往 manifest 加 capability 是会改变 `open()` 结果的兼容面变化，按 semver minor 处理并在 changelog 里写明要求的最低 Blue 版本。
 
 ## 插件市场

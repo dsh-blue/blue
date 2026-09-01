@@ -6,8 +6,8 @@ Cordis entry, manifest, capability, host state, timer, subscription, or
 renderer dependency. Callers own all input data and receive deeply frozen
 wire nodes.
 
-The component metadata targets the executable Blue API `^1.0.0-beta.1`; the
-kit is Beta ecosystem evidence rather than a Stable v1 artifact.
+The component metadata retains its compatible executable Blue API Beta range;
+the kit is Beta ecosystem evidence rather than a Stable v1 artifact.
 
 The header and right-inspector examples must continue to consume this package
 through its published root export. Keep it outside Blue's release set and

@@ -26,7 +26,7 @@ Use the complete copyable manifest in the [quickstart](/en/plugins/quickstart), 
 | `schemaVersion` | currently exactly `1` |
 | `id` | must equal `package.json.name` |
 | `entry` | a public package `exports` subpath such as `.` or `./blue`, never a `lib/` file path |
-| `api` | Host API semver range; currently `^1.0.0-beta.1` |
+| `api` | Host API semver range; currently `^1.0.0-beta.2` |
 | `compatibility` | required `blue`, `harness`, and `node` semver ranges |
 | `capabilities` | discriminated requests split into `required` and `optional`, each with a version and applicable exact resources |
 

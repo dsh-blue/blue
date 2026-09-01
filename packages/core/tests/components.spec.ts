@@ -870,6 +870,39 @@ describe('createMarkdown', () => {
     stop()
   })
 
+  it('renders closed Mermaid fences and keeps streaming or unsafe fences as source', () => {
+    const { tui, stop } = bootTui()
+    const markdown = createService(tui).createMarkdown({ text: 'before\n```mermaid\ngraph LR; A --> B' })
+    const streaming = markdown.render(80).join('\n')
+    expect(streaming).toContain('graph LR')
+
+    markdown.setText('before\n```mermaid\ngraph LR; A --> B\n```\nafter')
+    const rendered = markdown.render(80)
+    expect(rendered.join('\n')).toContain('before')
+    expect(rendered.join('\n')).toContain('after')
+    expect(rendered.join('\n')).not.toContain('graph LR')
+    expect(rendered.some(line => line.includes('┌') || line.includes('┏'))).toBe(true)
+    expect(markdown.render(80)).toBe(rendered)
+    expect(markdown.render(30).every(line => piVisibleWidth(line) <= 30)).toBe(true)
+
+    markdown.setText('```mermaid\ngraph LR\n  A[中文] --> B\n```')
+    expect(markdown.render(80).join('\n')).toContain('中文')
+    markdown.setText('```mermaid\nnot a diagram\n```')
+    expect(markdown.render(80).join('\n')).toContain('not a diagram')
+
+    const padded = createService(tui).createMarkdown({
+      text: '```mermaid\ngraph LR; A --> B\n```',
+      paddingX: 1,
+      paddingY: 1,
+    })
+    const paddedRows = padded.render(40)
+    expect(paddedRows[0]).toBe('')
+    expect(paddedRows.at(-1)).toBe('')
+    expect(paddedRows.slice(1, -1).every(line => line.startsWith(' '))).toBe(true)
+    expect(padded.render(Number.NaN).every(line => piVisibleWidth(line) <= 1)).toBe(true)
+    stop()
+  })
+
   it('re-paints the width-capped horizontal rule to the full render width', () => {
     const { tui, stop } = bootTui()
     const components = createService(tui)

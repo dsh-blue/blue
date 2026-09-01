@@ -26,7 +26,7 @@ discovery 只读取 `package.json.blue.manifest` 指针：
 | `schemaVersion` | 当前固定为 `1` |
 | `id` | 必须等于 `package.json.name` |
 | `entry` | 包公开 `exports` subpath，例如 `.` 或 `./blue`；不是 `lib/` 文件路径 |
-| `api` | Host API semver 范围；当前使用 `^1.0.0-beta.1` |
+| `api` | Host API semver 范围；当前使用 `^1.0.0-beta.2` |
 | `compatibility` | 必填的 `blue`、`harness`、`node` semver 范围 |
 | `capabilities` | `required` 和 `optional` 两组判别式 capability request，含 version 与适用的 exact resources |
 

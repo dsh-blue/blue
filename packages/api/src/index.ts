@@ -39,7 +39,7 @@ export {
 export type * from './contracts.ts'
 
 /** Blue's public API Beta version. */
-export const BLUE_API_VERSION = '1.0.0-beta.1'
+export const BLUE_API_VERSION = '1.0.0-beta.2'
 
 /** Blue's release version, kept here as the public version owner. */
 export const BLUE_VERSION = '0.1.2-alpha.1'

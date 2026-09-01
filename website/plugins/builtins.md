@@ -64,7 +64,7 @@ flowchart TB
 
 | 插件 | 说明 |
 |---|---|
-| `blue-api-host` | `1.0.0-beta.1` manifest 校验与 Beta/Experimental facet 的 scoped registries；management control 保持私有 |
+| `blue-api-host` | `1.0.0-beta.2` manifest 校验与 Beta/Experimental facet 的 scoped registries；management control 保持私有 |
 | `blue-locale` | frontend-tree locale runtime；绑定官方 `locale.preference` 并跟随系统语言 |
 | `blue-core` | 唯一 pi-tui/raw-terminal adapter，提供 screen/keymap/components/terminal facts |
 | `blue-theme-dark` | 默认 dark theme provider |

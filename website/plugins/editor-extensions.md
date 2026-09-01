@@ -19,7 +19,7 @@ export const inject = ['bluePluginHost']
 export function apply(ctx: Context): void {
   const opened = ctx.bluePluginHost.open(ctx, {
     id: 'acme.editor-helper',
-    api: '^1.0.0-beta.1',
+    api: '^1.0.0-beta.2',
     capabilities: ['editor.extensions'],
   })
   if (!opened.ok || opened.value.editorExtensions === undefined) return

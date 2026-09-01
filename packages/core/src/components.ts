@@ -33,6 +33,7 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui'
 import { highlightCodeLines } from './highlight.ts'
+import { renderMermaidRows, splitRichDocument } from './rich-document.ts'
 import {
   highlightLeadingSlashToken,
   injectGhostHint,
@@ -551,6 +552,10 @@ class EditorAdapter implements BlueEditor {
 
 /** Delegate exposing a pi-tui `Markdown` through the Blue contract. */
 class MarkdownAdapter implements BlueMarkdown {
+  private readonly markdown: Markdown
+  private text: string
+  private cache: { readonly key: string, readonly rows: string[] } | undefined
+
   /**
    * @param markdown - the wrapped pi-tui Markdown.
    * @param hr - the exact horizontal-rule paint the wrapped markdown's
@@ -558,16 +563,48 @@ class MarkdownAdapter implements BlueMarkdown {
    *   lets the adapter re-paint pi-tui's width-capped rule.
    */
   constructor(
-    private readonly markdown: Markdown,
+    text: string,
+    private readonly paddingX: number,
+    private readonly paddingY: number,
+    private readonly theme: MarkdownTheme,
     private readonly hr: (text: string) => string,
-  ) {}
+  ) {
+    this.text = text
+    this.markdown = new Markdown(text, paddingX, paddingY, theme)
+  }
 
   setText(text: string): void {
+    this.text = text
+    this.cache = undefined
     this.markdown.setText(text)
   }
 
   render(width: number): string[] {
-    const lines = this.markdown.render(width)
+    const segments = splitRichDocument(this.text)
+    if (!segments.some(segment => segment.kind === 'mermaid')) return this.expandRules(this.markdown.render(width), width)
+    const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
+    const padX = Math.min(Math.max(0, Math.floor(this.paddingX)), Math.max(0, Math.floor((safeWidth - 1) / 2)))
+    const padY = Math.max(0, Math.floor(this.paddingY))
+    const contentWidth = Math.max(1, safeWidth - padX * 2)
+    const key = `${String(safeWidth)}:${this.text}`
+    if (this.cache?.key === key) return this.cache.rows
+    const body = segments.flatMap(segment => {
+      if (segment.kind === 'mermaid') {
+        const diagram = renderMermaidRows(segment.source, contentWidth)
+        if (diagram !== undefined) return diagram
+        return this.expandRules(new Markdown(segment.fallback, 0, 0, this.theme).render(contentWidth), contentWidth)
+      }
+      /* v8 ignore next -- splitRichDocument omits zero-length Markdown segments. */
+      if (segment.source.length === 0) return []
+      return this.expandRules(new Markdown(segment.source, 0, 0, this.theme).render(contentWidth), contentWidth)
+    })
+    const horizontal = padX === 0 ? body : body.map(line => `${' '.repeat(padX)}${line}`)
+    const result = [...Array.from({ length: padY }, () => ''), ...horizontal, ...Array.from({ length: padY }, () => '')]
+    this.cache = { key, rows: result }
+    return result
+  }
+
+  private expandRules(lines: string[], width: number): string[] {
     // pi-tui caps horizontal rules at 80 columns regardless of the render
     // width (`'─'.repeat(Math.min(width, 80))` in markdown.js); the user's
     // S17 dogfood ruling wants the rule as wide as the body text it
@@ -582,6 +619,7 @@ class MarkdownAdapter implements BlueMarkdown {
   }
 
   invalidate(): void {
+    this.cache = undefined
     this.markdown.invalidate()
   }
 }
@@ -710,7 +748,10 @@ export class BlueComponentsService extends Service implements BlueComponents {
    */
   createMarkdown(options?: BlueMarkdownOptions): BlueMarkdown {
     return new MarkdownAdapter(
-      new Markdown(options?.text ?? '', options?.paddingX ?? 0, options?.paddingY ?? 0, markdownTheme(this.theme.colors)),
+      options?.text ?? '',
+      options?.paddingX ?? 0,
+      options?.paddingY ?? 0,
+      markdownTheme(this.theme.colors),
       this.theme.colors.mdHr,
     )
   }

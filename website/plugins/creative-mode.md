@@ -49,7 +49,7 @@ blue-feature/
 ```
 
 入口必须导出固定的 `name`、`inject` 和 `apply(ctx)`，解析 package root 的 canonical
-manifest，再把它传给 `ctx.bluePluginHost.open(ctx, manifest)`。当前 `1.0.0-beta.1`
+manifest，再把它传给 `ctx.bluePluginHost.open(ctx, manifest)`。当前 `1.0.0-beta.2`
 开放 `commands`、`status`、`panes`、`overlays`、`notifications.publish`，以及只读
 `session.read` 与 `session.projections.read`；后两项必须声明 exact field/key resource。
 Generic `session.act` 已移除。`open()` 返回 `api`、exact `grants` 和

@@ -6,13 +6,13 @@ Beta, renderer-independent public contracts for Blue Cordis plugins. The package
 
 ## Manifest and capabilities
 
-A plugin declares `{ id, api, capabilities }`, which `validateBlueManifest` checks without executing plugin code. The current executable contract is `1.0.0-beta.1`, so manifests use `^1.0.0-beta.1`; it does not track the `0.1.x` product release and does not claim protocol v1 Stable.
+A plugin declares `{ id, api, capabilities }`, which `validateBlueManifest` checks without executing plugin code. The current executable contract is `1.0.0-beta.2`, so manifests using rich document or chart nodes use `^1.0.0-beta.2`; it does not track the `0.1.x` product release and does not claim protocol v1 Stable.
 
 The versioned distribution candidate is published separately from
 `@dsh-blue/blue-api/protocol/v1`. It exports the generated seven-name target
 catalog, readonly manifest types, the deeply frozen Draft 2020-12 schema,
 `validateBluePluginManifestV1`, and the Blue product/protocol mapping for
-`1.0.0-beta.1`. Packages discover it only through
+`1.0.0-beta.2`. Packages discover it only through
 `package.json.blue.manifest = "./blue.plugin.json"`; the manifest uses a public
 package export subpath, required/optional capability groups, exact resources,
 and full Blue/Harness/Node compatibility ranges. The same schema and corpus are
@@ -56,7 +56,7 @@ Owner attachment, aggregate observation, notification observation, gesture minti
 
 ## UI contract
 
-`BlueUiNode` retains `BlueView` as the sanitized text/fields/code/diff/sections leaf and adds rich text, stack, surface, scroll, tabs, list, form, actions, loader, empty, progress, spacer, and divider nodes. Responsive visibility exists only on `BlueUiChild.when` and is relative to the allocated surface viewport.
+`BlueUiNode` retains `BlueView` as the sanitized text/fields/code/diff/sections leaf and adds rich text, document, chart, stack, surface, scroll, tabs, list, form, actions, loader, empty, progress, spacer, and divider nodes. `document` selects Markdown or Mermaid source. `chart` covers line, point, grouped/stacked/normalized bar, sparkline, and heatmap data without exposing renderer options. These rich nodes are ordinary pane/overlay content, not status, notification, section-body, or editor-shell content. Responsive visibility exists only on `BlueUiChild.when` and is relative to the allocated surface viewport.
 
 Nodes, event payloads, and snapshots are readonly JSON-shaped data. `render`, `onEvent`, `AbortSignal`, and registration handles are process-local execution boundaries. Plugins receive semantic events, never raw keys. Value, selection, and tab changes are latest-wins per control; activate, submit, and dismiss are FIFO per surface. Blue owns revision checks, abort, timeout, and coalesced refresh.
 

@@ -30,6 +30,7 @@ and admitted paths with no partial registration on rejection. The overlay
 case additionally retains an owner-minted gesture across missing-capability
 rejection and spends it successfully through a later admitted probe.
 
-Every source request and packaged manifest targets `^1.0.0-beta.1`.
+Every source request and packaged manifest retains the compatible Beta range
+declared by its fixture.
 Status/editor provider rows remain Experimental/reference fixtures and do not
 expand the Stable v1 capability catalog.

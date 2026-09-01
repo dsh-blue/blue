@@ -6,11 +6,11 @@ Blue Cordis 插件的 Beta、renderer-independent 公共契约。本包不含 re
 
 ## Manifest 与 capability
 
-插件声明 `{ id, api, capabilities }`，由 `validateBlueManifest` 在不执行插件代码的情况下校验。当前可执行契约是 `1.0.0-beta.1`，manifest 应写 `^1.0.0-beta.1`；它不跟随产品的 `0.1.x` 版本，也不表示 protocol v1 已 Stable。
+插件声明 `{ id, api, capabilities }`，由 `validateBlueManifest` 在不执行插件代码的情况下校验。当前可执行契约是 `1.0.0-beta.2`，使用富文档或图表节点的 manifest 应写 `^1.0.0-beta.2`；它不跟随产品的 `0.1.x` 版本，也不表示 protocol v1 已 Stable。
 
 版本化分发候选通过 `@dsh-blue/blue-api/protocol/v1` 独立发布。该子路径导出
 生成的七项 v1 目标名称、readonly manifest 类型、深冻结的 Draft 2020-12 schema、
-`validateBluePluginManifestV1`，以及 `1.0.0-beta.1` 对应的 Blue
+`validateBluePluginManifestV1`，以及 `1.0.0-beta.2` 对应的 Blue
 产品/协议映射。包只能用 `package.json.blue.manifest =
 "./blue.plugin.json"` 发现该入口；manifest 使用公开 package export subpath、
 required/optional capability 分组、精确 resource 和完整 Blue/Harness/Node
@@ -51,7 +51,7 @@ owner attach、aggregate observe、notification observe、gesture mint、semanti
 
 ## UI 契约
 
-`BlueUiNode` 保留 `BlueView` 作为经过清洗的 text/fields/code/diff/sections 内容叶，并增加 rich text、stack、surface、scroll、tabs、list、form、actions、loader、empty、progress、spacer 和 divider。响应式显示只存在于 `BlueUiChild.when`，并相对于获配的 surface viewport 计算。
+`BlueUiNode` 保留 `BlueView` 作为经过清洗的 text/fields/code/diff/sections 内容叶，并增加 rich text、document、chart、stack、surface、scroll、tabs、list、form、actions、loader、empty、progress、spacer 和 divider。`document` 选择 Markdown 或 Mermaid 源码；`chart` 支持 line、point、grouped/stacked/normalized bar、sparkline 与 heatmap，且不暴露 renderer options。这两类富内容只能进入普通 pane/overlay，不能进入 status、notification、section body 或 editor shell。响应式显示只存在于 `BlueUiChild.when`，并相对于获配的 surface viewport 计算。
 
 node、event payload 和 snapshot 是 readonly、JSON-shaped 数据；`render`、`onEvent`、`AbortSignal` 和 registration handle 是进程内执行边界。插件只收到语义事件，不接触 raw key。value/selection/tab change 按 control latest-wins；activate/submit/dismiss 按 surface FIFO。revision、abort、timeout 和合并 refresh 由 Blue 托管。
 
