@@ -84,7 +84,7 @@ interface Harness {
   readonly service: BlueChildAttachService
   readonly fiber: { readonly dispose: () => Promise<void> }
   /** The stand-in editor holding the dock slot before an attach opens. */
-  readonly editor: { focused: boolean, render: () => string[], invalidate: () => void }
+  readonly editor: { focused: boolean, render: () => string[], invalidate: () => void, handleInput: ReturnType<typeof vi.fn> }
   readonly cuts: { readonly id: string, readonly keys: readonly string[] }[]
   readonly followups: { readonly id: string, readonly blocks: unknown }[]
   readonly interrupts: string[]
@@ -121,8 +121,9 @@ async function mount(options: {
   }
   new EditorHostService(ctx)
   setEditorSlotSwap(ctx, { mount: component => screen.mountDialogPanel(component) })
-  // The pre-attach editor holding the dock slot and focus.
-  const editor = { focused: false, render: () => ['>'], invalidate: () => {} }
+  // The pre-attach editor holding the dock slot and focus; the handleInput
+  // spy proves no key reaches it while a replacement panel holds focus.
+  const editor = { focused: false, render: () => ['>'], invalidate: () => {}, handleInput: vi.fn() }
   screen.addBottomChild(editor)
   screen.setFocus(editor)
 
@@ -645,11 +646,15 @@ describe('ChildAttachView scrolling', () => {
 
   it('scrolls the transcript window by line and page, clamped at both bounds', async () => {
     const { harness, panel } = await openLong()
+    // The editor left the dock slot when the panel mounted: it is unfocused
+    // and no scroll key can reach its history while the panel is attached.
+    expect(harness.editor.focused).toBe(false)
     // The wheel arrives as these same arrow sequences through core's dock
     // route, so keyboard and wheel share this path.
     const following = plain(panel.component.render(40))
     panel.component.handleInput(KEY.up)
     expect(plain(panel.component.render(40))).not.toEqual(following)
+    expect(harness.editor.handleInput).not.toHaveBeenCalled()
 
     // A page up drops the tail row; repeated pages reach the top and clamp.
     panel.component.handleInput(pageUp)

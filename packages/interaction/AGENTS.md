@@ -59,8 +59,11 @@ a follow-up input crossing `childFollowup`, and Ctrl+C interrupts through
 normalized to arrows by core's dock route) and PageUp/PageDown scroll the
 child transcript window — tail-following at the bottom, holding its rows
 stable under live pushes when scrolled up — while the input row keeps text,
-cursor, and submit keys. A main-session switch, session unload, or fiber
-unload force-closes the view and restores the pre-attach editor.
+cursor, and submit keys. The swapped-out editor is unmounted and unfocused
+for the attach's lifetime, so its history recall never sees these keys;
+closing the view restores the editor and its routing. A main-session switch,
+session unload, or fiber unload force-closes the view and restores the
+pre-attach editor.
 
 `CanonicalPanelAdapter` leases stable field editors by semantic path/id across
 compiler rebuilds and delegates rows, secret masking, cursor/IME/paste,

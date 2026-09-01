@@ -2811,6 +2811,111 @@ describe('blue whole-tree e2e', () => {
     })
   })
 
+  it('attach view scrolls the child transcript with arrows, pages, and wheel — the editor history stays out of it', async () => {
+    const tree = await bootBlue(['main task'], {
+      script: [textResponse('main answer'), textResponse('probe answer')],
+    })
+    const agent = await currentAgent(tree)
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(1) })
+    await agent.whenIdle()
+    // A prompt typed through the editor, so its history has an entry the
+    // end-of-test recall check can observe.
+    typeLine(tree.terminal, 'history probe')
+    await vi.waitFor(() => { expect(tree.adapter.requests).toHaveLength(2) })
+    await agent.whenIdle()
+
+    // A resident child with twelve exchanges: the transcript overflows the
+    // attach body budget, so every scroll key has somewhere to go.
+    const child = tree.ctx.sessions.create('agents-e2e-scroll-child' as never, {
+      meta: { origin: 'subagent', parentSession: agent.id, cwd: '/tmp' },
+    })
+    for (let index = 0; index < 12; index += 1) {
+      child.append('turn/start', { turn: index + 1 })
+      child.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `line ${index}` }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      child.append('step/start', { turn: index + 1, step: 0 })
+      child.append('assistant/message', {
+        turn: index + 1,
+        step: 0,
+        message: {
+          id: MessageId(`agents-e2e-scroll-a-${index}`),
+          role: 'assistant',
+          content: [{ type: 'text', text: `reply ${index}` }],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+      }, { surfaceOp: 'append' })
+      child.append('turn/end', { turn: index + 1, reason: { kind: 'completed' } })
+    }
+    tree.ctx.provide('subagents', {
+      listDescendants: async () => [
+        { kind: 'child', id: child.id, parentId: agent.id, depth: 1, activity: 'inactive', hasChildren: false, mode: 'continuable', label: 'explore' },
+      ],
+      followup: async () => { throw new Error('not exercised') },
+      interrupt: () => { throw new Error('not exercised') },
+    })
+
+    await expect(executeCommand(tree, agent, '/agents')).resolves.toEqual({ kind: 'success' })
+    await vi.waitFor(() => { expect(tree.terminal.output).toContain('Subagents') })
+    tree.terminal.sendInput('\r')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('Subagent · explore')
+      // Tail-follow on open: the newest exchange shows, the oldest does not.
+      expect(frame).toContain('reply 11')
+      expect(frame).not.toContain('line 0')
+    })
+
+    // Up scrolls the attach viewport line by line; the editor is unmounted
+    // while a replacement panel holds the dock slot, so its history cannot
+    // fire here — the frame proves the transcript moved instead.
+    tree.terminal.sendInput('\x1b[A')
+    tree.terminal.sendInput('\x1b[A')
+    tree.terminal.sendInput('\x1b[A')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).toContain('reply 10')
+      expect(frame).not.toContain('reply 11')
+    })
+
+    // PageUp pages to the oldest rows (clamped at the top bound).
+    for (let count = 0; count < 10; count += 1) tree.terminal.sendInput('\x1b[5~')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('line 0')
+    })
+
+    // The wheel arrives as SGR reports; core's dock route normalizes them to
+    // the same arrow sequences the keyboard path consumes.
+    tree.terminal.sendInput('\x1b[<65;10;4M')
+    tree.terminal.sendInput('\x1b[<65;10;4M')
+    await vi.waitFor(async () => {
+      const frame = stripSgr(await fullFrame(tree.terminal))
+      expect(frame).not.toContain('line 0')
+      expect(frame).toContain('line 1')
+    })
+
+    // PageDown back to the tail restores follow-the-bottom.
+    for (let count = 0; count < 10; count += 1) tree.terminal.sendInput('\x1b[6~')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('reply 11')
+    })
+
+    // Back out to the editor: no history recall happened while attached —
+    // the draft row is empty — and with the view closed Up recalls the
+    // typed prompt again, proving the routing restore.
+    tree.terminal.sendInput('q')
+    tree.terminal.sendInput('\x1b')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('Subagents')
+    })
+    expect(stripSgr(await fullFrame(tree.terminal))).not.toContain('> history probe')
+    tree.terminal.sendInput('\x1b[A')
+    await vi.waitFor(async () => {
+      expect(stripSgr(await fullFrame(tree.terminal))).toContain('> history probe')
+    })
+  })
+
   it('/clear completes as an annotated alias of /new and runs its semantics', async () => {
     const tree = await bootBlue(['first', 'task'], {
       script: [textResponse('first answer')],
