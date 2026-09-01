@@ -1,14 +1,14 @@
 # 内置插件
 
-Blue bundle 在 `dsh-base` 上插入 35 个普通 Cordis sibling：6 个 dsh 支撑行
-与 29 个 Blue product 行。不存在 group/isolate 或私有 service realm。
+Blue bundle 在 `dsh-base` 上插入 36 个普通 Cordis sibling：6 个 dsh 支撑行
+与 30 个 Blue product 行。不存在 group/isolate 或私有 service realm。
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
     BASE["dsh-base"]
-    subgraph GRAPH["flat Cordis sibling graph · 35 inserted rows"]
+    subgraph GRAPH["flat Cordis sibling graph · 36 inserted rows"]
         SUPPORT["dsh support · 6 rows<br/>subagent settings · presets · host runner<br/>workspace · session controller · title"]
         API["blue-api<br/>four direct UI registries"]
         APP["blue-conversation · blue-startup · blue-app"]
@@ -44,7 +44,7 @@ flowchart TB
 - `blue-frontend`、`blue-core`、dark theme；
 - `blue-conversation`、startup、app/current Agent；
 - banner、transcript、official model；
-- basic/cwd/git/title/context/mode/jobs status；
+- basic/cwd/git/title/context/mode/jobs/goal status；
 - activity/queue/todo/BTW/agents/workflow pane；
 - jobs 与 agents command、attachments、paste image、editor-plus、interaction。
 

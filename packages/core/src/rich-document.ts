@@ -19,6 +19,7 @@ export type RichDocumentSegment =
 interface OpenFence {
   readonly marker: '`' | '~'
   readonly length: number
+  readonly indent: number
   readonly start: number
   readonly contentStart: number
   readonly mermaid: boolean
@@ -51,6 +52,7 @@ export function splitRichDocument(source: string): readonly RichDocumentSegment[
       fence = {
         marker: run[0] as '`' | '~',
         length: run.length,
+        indent: match[1]!.length,
         start: line.start,
         contentStart: line.end,
         mermaid: info === 'mermaid',
@@ -61,9 +63,12 @@ export function splitRichDocument(source: string): readonly RichDocumentSegment[
     if (!close.test(line.text)) continue
     if (fence.mermaid) {
       if (fence.start > cursor) segments.push({ kind: 'markdown', source: source.slice(cursor, fence.start) })
+      const fencedSource = source.slice(fence.contentStart, line.start).replace(/\r?\n$/u, '')
       segments.push({
         kind: 'mermaid',
-        source: source.slice(fence.contentStart, line.start).replace(/\r?\n$/u, ''),
+        source: fence.indent === 0
+          ? fencedSource
+          : fencedSource.replace(new RegExp(`^ {0,${String(fence.indent)}}`, 'gmu'), ''),
         fallback: source.slice(fence.start, line.end),
       })
       cursor = line.end
@@ -72,10 +77,6 @@ export function splitRichDocument(source: string): readonly RichDocumentSegment[
   }
   if (cursor < source.length) segments.push({ kind: 'markdown', source: source.slice(cursor) })
   return segments.length === 0 ? [{ kind: 'markdown', source }] : segments
-}
-
-function hasWideSource(source: string): boolean {
-  return Array.from(source).some(character => visibleWidth(character) > 1)
 }
 
 function normalizedRows(output: string): string[] {
@@ -110,7 +111,6 @@ export function renderMermaidRows(source: string, width: number): string[] | und
   const safeWidth = Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
   if (new TextEncoder().encode(source).byteLength > MERMAID_MAX_SOURCE_BYTES) return undefined
   if (source.split(/\r?\n/u).filter(line => line.trim().length > 0).length > MERMAID_MAX_NON_EMPTY_LINES) return undefined
-  if (hasWideSource(source)) return undefined
   const plain = renderAttempt(source, safeWidth, { colorMode: 'none' })
   if (plain !== undefined) return plain
   return renderAttempt(source, safeWidth, {

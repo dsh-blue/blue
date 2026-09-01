@@ -8,8 +8,9 @@ footer, and Blue's shipped pane/status contributions.
 The package reads the selected Agent through `blueCurrentAgent` and consumes
 native dsh `sessionProjections` and tool services. Status entries register on
 `blueStatus`; activity, todo, BTW, Agent, and workflow panes register on
-`bluePanes`. The todo title reflects the native `goal` projection, the jobs
-status reads native `ctx.jobs`, and workflow runs are attributed through
+`bluePanes`. A goal adds its objective to an existing Todo pane while its
+phase, rounds, and live activation stay in the footer; it does not open a
+pane by itself. The jobs status reads native `ctx.jobs`, and workflow runs are attributed through
 native child Sessions. These are the same direct services available to
 external Cordis plugins.
 

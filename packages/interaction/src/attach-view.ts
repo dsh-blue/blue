@@ -353,7 +353,7 @@ export class ChildAttachView implements BlueFocusable {
     while (body.length < budget) body.push('')
     for (const line of body) lines.push(this.frame(line, contentWidth))
     const footer = this.continuable
-      ? `${colors.roleUser(ATTACH_CHROME.prompt)}${this.buffer === '' ? colors.muted(t(ATTACH_CHROME.placeholder)) : `${this.buffer}▌`}`
+      ? `${colors.roleUser(ATTACH_CHROME.prompt)}${this.buffer}▌${this.buffer === '' ? colors.muted(` ${t(ATTACH_CHROME.placeholder)}`) : ''}`
       : colors.muted(t(ATTACH_CHROME.oneShotReadonly))
     lines.push(this.frame(footer, contentWidth))
     const guidance = this.note ?? (this.continuable

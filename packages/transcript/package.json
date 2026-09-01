@@ -53,6 +53,10 @@
       "types": "./lib/types/status-jobs.d.ts",
       "default": "./lib/status-jobs.js"
     },
+    "./status-goal": {
+      "types": "./lib/types/status-goal.d.ts",
+      "default": "./lib/status-goal.js"
+    },
     "./pane-activity": {
       "types": "./lib/types/pane-activity.d.ts",
       "default": "./lib/pane-activity.js"

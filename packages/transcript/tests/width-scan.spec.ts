@@ -26,15 +26,18 @@ import { AgentGroupComponent } from '../src/agent-group.ts'
 import { ReadGroupComponent } from '../src/read-group.ts'
 import { SearchGroupComponent } from '../src/search-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
+import * as agentsPane from '../src/pane-agents.ts'
 import * as todoPane from '../src/pane-todo.ts'
 import { workflowNode, type WorkflowRunState } from '../src/pane-workflow.ts'
+import { goalStatusText } from '../src/status-goal.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
 import { StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
 import { bootPanePlugin } from './pane-fakes.ts'
-import { COLORS } from './status-fakes.ts'
+import { COLORS, fakeAgent } from './status-fakes.ts'
+import { event, subagentCallEvent } from './helpers.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
 import { compileBlueUiNode } from '../../core/src/ui-compiler.ts'
 import {
@@ -278,8 +281,25 @@ describe('transcript width-scan', () => {
       }
     })
 
+    it(`agents pane survives ${name}`, async () => {
+      agentsPane.setPaneAgentsClock(() => 2_000)
+      const harness = await bootPanePlugin(agentsPane, fakeAgent([
+        subagentCallEvent(1, 1, 'width-agent', 'subagent', text, text, { time: 1_000 }),
+      ]))
+      try {
+        for (const width of SCAN_WIDTHS) {
+          expectLinesFit(`AgentsPane/${name}`, harness.screen.paneLines(width), width)
+        }
+      } finally {
+        await harness.dispose()
+        agentsPane.setPaneAgentsClock(undefined)
+      }
+    })
+
     it(`goal badge survives ${name}`, async () => {
-      const harness = await bootPanePlugin(todoPane)
+      const harness = await bootPanePlugin(todoPane, fakeAgent([
+        event('todo/write', { todos: [{ content: 'next', status: 'pending' }] }),
+      ]))
       harness.facts.setGoal({
         goal: {
           id: 'width-goal',
@@ -326,6 +346,26 @@ describe('transcript width-scan', () => {
       const footer = new StatusFooterComponent(status, components, colors)
       status.register({ id: 'scan-title', priority: 90, visible: true, band: 'right', node: { kind: 'text', content: text } })
       status.register({ id: 'scan-left', priority: 10, visible: true, node: { kind: 'text', content: text } })
+      status.register({
+        id: 'scan-goal',
+        priority: 2,
+        visible: true,
+        overflow: 'hide',
+        node: {
+          kind: 'text',
+          content: goalStatusText({
+            id: 'goal-width' as never,
+            revision: 1,
+            objective: text,
+            phase: 'active',
+            maxGoalRounds: 256,
+            roundsStarted: 128,
+            createdAt: 1,
+            updatedAt: 2,
+            activation: 'armed',
+          }),
+        },
+      })
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`FooterShell/${name}`, footer.render(width), width)
       }

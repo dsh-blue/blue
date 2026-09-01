@@ -43,6 +43,8 @@ const approvedPresentation = new Set([
   "border:packages/interaction/src/session-tree.ts:visit(child, depth + 1, index === shown.length - 1 ? '└─' : '├─')",
   "border:packages/transcript/src/agent-group.ts:const branch = isLast ? '└─' : '├─'",
   "border:packages/transcript/src/agent-group.ts:const prefix = isLast ? '   ' : '│  '",
+  "border:packages/transcript/src/pane-agents.ts:children.push({ node: { kind: 'text', content: `  ${index === members.length - 1 ? '   ' : '│  '}    ${phase.label === 'failed' ? `Error: ${detailLine}` : detailLine}`, tone: phase.label === 'failed' ? 'danger' : 'muted' } })",
+  "border:packages/transcript/src/pane-agents.ts:{ text: `  ${index === members.length - 1 ? '└─' : '├─'} `, tone: 'muted' },",
   "border:packages/transcript/src/pane-workflow.ts:{ text: `  ${last ? '└─' : '├─'} `, tone: 'muted' },",
   "border:packages/transcript/src/read-group.ts:const branch = last ? '└─' : '├─'",
   "border:packages/transcript/src/read-group.ts:const continuation = last ? '   ' : '│  '",

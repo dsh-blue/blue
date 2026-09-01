@@ -7,6 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SubagentDescendantListEntry } from '@deepseek-ai/dsh-subagent'
+import type { WorkflowAgentInfo } from '@deepseek-ai/dsh-workflow'
 import { displayServices } from './display-services.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
 import { interactionTranslator } from './locale.ts'
@@ -105,17 +106,25 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function withLiveMetrics(ctx: Context, entries: readonly SubagentDescendantListEntry[]): readonly BlueSubagentTreeEntry[] {
+function withLiveMetrics(
+  ctx: Context,
+  entries: readonly SubagentDescendantListEntry[],
+  workflowLabels: ReadonlyMap<string, string>,
+): readonly BlueSubagentTreeEntry[] {
   const sessions = new Map([...ctx.sessions.list()].map(session => [String(session.id), session]))
   return entries.map(entry => {
     if (entry.kind !== 'child') return entry
+    const workflowLabel = workflowLabels.get(String(entry.id))
+    const labeled = entry.label === undefined && workflowLabel !== undefined
+      ? { ...entry, label: workflowLabel }
+      : entry
     const session = sessions.get(String(entry.id))
-    if (session === undefined) return entry
+    if (session === undefined) return labeled
     const values = ctx.sessionProjections.snapshot(session, ['blueConversationFacts', 'subagentTiming']).values
     const facts = values.blueConversationFacts as { readonly epochTokens?: unknown } | undefined
     const timing = values.subagentTiming as { readonly settledMs?: unknown, readonly active?: { readonly since?: unknown } } | undefined
     return {
-      ...entry,
+      ...labeled,
       ...(typeof facts?.epochTokens === 'number' ? { tokens: facts.epochTokens } : {}),
       ...(typeof timing?.settledMs === 'number' ? { settledMs: timing.settledMs } : {}),
       ...(typeof timing?.active?.since === 'number' ? { activeSince: timing.active.since } : {}),
@@ -126,8 +135,15 @@ function withLiveMetrics(ctx: Context, entries: readonly SubagentDescendantListE
 /** Register `/agents`; every open browser and attach is fiber-owned. */
 export function apply(ctx: Context): void {
   const t = interactionTranslator(ctx)
+  const workflowLabels = new Map<string, string>()
   let closeOpenBrowser: (() => void) | undefined
   let unloaded = false
+  const rememberWorkflowLabel = (agent: WorkflowAgentInfo): void => {
+    const label = agent.label.trim()
+    if (label !== '') workflowLabels.set(String(agent.childId), label)
+  }
+  ctx.on('workflow/agent-start', (_info, agent) => { rememberWorkflowLabel(agent) })
+  ctx.on('workflow/agent-end', (_info, agent) => { rememberWorkflowLabel(agent) })
 
   async function showAgents(signal: AbortSignal): Promise<CommandResult> {
     const display = displayServices(ctx)
@@ -143,7 +159,7 @@ export function apply(ctx: Context): void {
     if (unloaded || ctx.blueCurrentAgent.current() !== parent) return { kind: 'success' }
     if (listed.length === 0) return { kind: 'success', text: t('no subagents in this session') }
     closeOpenBrowser?.()
-    const entries = withLiveMetrics(ctx, listed)
+    const entries = withLiveMetrics(ctx, listed, workflowLabels)
     const byId = new Map(entries.map(entry => [String(entry.id), entry]))
     const expanded = new Set<string>()
     let restore: (() => void) | undefined

@@ -3,8 +3,8 @@
 English | [中文](README.zh.md)
 
 The installable Blue terminal UI bundle for dsh. Its flat
-`cordis.patch.yml` composition adds 35 sibling rows over `dsh-base`: six
-dsh support rows and 29 Blue product rows.
+`cordis.patch.yml` composition adds 36 sibling rows over `dsh-base`: six
+dsh support rows and 30 Blue product rows.
 
 Plugins inherit native dsh services directly and opt into terminal UI with
 `bluePanes`, `blueStatus`, `blueOverlays`, and

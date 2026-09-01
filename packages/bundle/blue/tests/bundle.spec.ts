@@ -16,6 +16,7 @@ import * as bundle from '../src/index.ts'
 import * as BundleInvariant from '../src/invariant.ts'
 import * as agentsCommand from '../../../interaction/src/agents-command.ts'
 import * as jobsCommand from '../../../interaction/src/jobs.ts'
+import * as statusGoal from '../../../transcript/src/status-goal.ts'
 import * as statusJobs from '../../../transcript/src/status-jobs.ts'
 import * as paneWorkflow from '../../../transcript/src/pane-workflow.ts'
 
@@ -92,6 +93,7 @@ describe('blue bundle', () => {
       'blue-status-context',
       'blue-status-mode',
       'blue-status-jobs',
+      'blue-status-goal',
       'blue-pane-activity',
       'blue-pane-queue',
       'blue-pane-todo',
@@ -122,6 +124,7 @@ describe('blue bundle', () => {
   })
 
   it('composes the tool panels as ordinary native-service siblings', () => {
+    expect(statusGoal.inject).toEqual(['blueStatus', 'blueCurrentAgent', 'blueSessionFacts', 'goals'])
     expect(statusJobs.inject).toEqual(['blueStatus', 'blueCurrentAgent', 'jobs'])
     expect(paneWorkflow.inject).toEqual(['bluePanes', 'blueCurrentAgent', 'blueSessionFacts', 'sessions'])
     expect(jobsCommand.inject).toEqual(['commands', 'jobs', 'blueCurrentAgent', 'blueEditorHost'])
@@ -136,6 +139,7 @@ describe('blue bundle', () => {
       'tools',
     ])
     const dependencies = [
+      ...statusGoal.inject,
       ...statusJobs.inject,
       ...paneWorkflow.inject,
       ...jobsCommand.inject,

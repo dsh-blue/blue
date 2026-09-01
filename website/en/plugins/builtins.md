@@ -1,7 +1,7 @@
 # Built-in plugins
 
-The Blue bundle inserts 35 ordinary Cordis siblings over `dsh-base`: six dsh
-support rows and 29 Blue product rows. There is no group/isolate or private
+The Blue bundle inserts 36 ordinary Cordis siblings over `dsh-base`: six dsh
+support rows and 30 Blue product rows. There is no group/isolate or private
 service realm.
 
 <!-- BEGIN diagram:blue-composition -->
@@ -9,7 +9,7 @@ service realm.
 ```mermaid
 flowchart TB
     BASE["dsh-base"]
-    subgraph GRAPH["flat Cordis sibling graph · 35 inserted rows"]
+    subgraph GRAPH["flat Cordis sibling graph · 36 inserted rows"]
         SUPPORT["dsh support · 6 rows<br/>subagent settings · presets · host runner<br/>workspace · session controller · title"]
         API["blue-api<br/>four direct UI registries"]
         APP["blue-conversation · blue-startup · blue-app"]
@@ -45,7 +45,7 @@ flowchart TB
 - `blue-frontend`, `blue-core`, and dark theme;
 - `blue-conversation`, startup, app/current Agent;
 - banner, transcript, and official model;
-- basic/cwd/git/title/context/mode/jobs status;
+- basic/cwd/git/title/context/mode/jobs/goal status;
 - activity/queue/todo/BTW/agents/workflow panes;
 - jobs and agents commands, attachments, paste image, editor-plus, and interaction.
 

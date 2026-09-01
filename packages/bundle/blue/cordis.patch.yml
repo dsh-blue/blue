@@ -147,6 +147,8 @@
       name: '@dsh-blue/blue-interaction/mode-status'
     - id: blue-status-jobs
       name: '@dsh-blue/blue-transcript/status-jobs'
+    - id: blue-status-goal
+      name: '@dsh-blue/blue-transcript/status-goal'
 
     - id: blue-pane-activity
       name: '@dsh-blue/blue-transcript/pane-activity'

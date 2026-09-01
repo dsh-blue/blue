@@ -204,6 +204,7 @@ describe('ChildAttachView', () => {
     expect(plain(rig.view.render(80))[0]).toContain('Subagent · explore')
     expect(plain(rig.view.render(80))[0]).toContain('○ idle · 512 tok · 2s')
     expect(plain(rig.view.render(80)).join('\n')).toContain(ATTACH_CHROME.placeholder)
+    expect(plain(rig.view.render(80)).join('\n')).toContain(`› ▌ ${ATTACH_CHROME.placeholder}`)
     for (const width of [100, 40, 20, 10, 5]) expectLinesFit('attach', rig.view.render(width), width)
     expect(rig.view.render(4)).toEqual([])
     rig.screen.rows = Number.POSITIVE_INFINITY

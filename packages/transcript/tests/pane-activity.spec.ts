@@ -12,7 +12,7 @@ import { buildTipRotation } from '../src/status-tips.ts'
 import { MOON_SPINNER_FRAMES, MOON_SPINNER_INTERVAL_MS } from '../src/spinners.ts'
 import { STATUS_TIPS } from '../src/tips-content.ts'
 import { bootPanePlugin, type PanePluginHarness } from './pane-fakes.ts'
-import { asAgent, COLORS, fakeAgent, type FakeAgent } from './status-fakes.ts'
+import { asAgent, fakeAgent, type FakeAgent } from './status-fakes.ts'
 import {
   assistantEvent,
   event,
@@ -26,7 +26,6 @@ import {
 } from './helpers.ts'
 import { visibleWidth } from '../../core/src/width.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { BlueComponent } from '@dsh-blue/blue-core'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { initialConversationFacts } from '../../conversation/src/facts.ts'
 
@@ -81,22 +80,33 @@ function emit2(ctx: Context, agent: FakeAgent, event: Parameters<typeof turnStar
   ctx.emit('session/event', agent.session, event)
 }
 
-/** Render the mounted (gutter-wrapped) pane as if the child saw `width`. */
-function unwrapped(pane: BlueComponent, width: number): string[] {
-  return pane.render(width)
-}
-
 describe('blue-pane-activity', () => {
   it('mounts one bottom pane that renders the kimi placeholder row while idle', async () => {
-    const { screen, dispose } = await boot()
+    const { ctx, screen, dispose } = await boot()
     expect(activity.name).toBe('blue-pane-activity')
     expect(activity.inject).toEqual(['bluePanes', 'blueSessionFacts'])
+    expect(ctx.bluePanes.list().find(entry => entry.id === 'blue.pane.activity')?.contribution.title).toBe('Activity')
     expect(screen.bottomChildren).toHaveLength(1)
     // kimi's Spacer(1): the placeholder row is always present when the
     // spinner is not, so the dock never jumps at the activity edges.
     expect(screen.paneLines()).toEqual([''])
     await dispose()
     expect(screen.bottomChildren).toHaveLength(0)
+  })
+
+  it('yields the bottom lane while the dedicated Agents pane is visible', async () => {
+    const harness = await boot(runningAgent(fakeAgent([])))
+    const agents = harness.ctx.bluePanes.register({
+      id: 'blue.pane.agents',
+      title: 'Agents',
+      placement: 'bottom',
+      render: () => ({ kind: 'text', content: 'agent row' }),
+    })
+    expect(harness.screen.paneLines()).toEqual(['agent row'])
+    agents.setHidden(true)
+    expect(harness.screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
+    agents.dispose()
+    await harness.dispose()
   })
 
   it('shows the moon row with a teaching tip for a running agent (waiting)', async () => {

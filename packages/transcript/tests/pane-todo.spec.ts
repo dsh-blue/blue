@@ -171,22 +171,39 @@ describe('blue-pane-todo', () => {
     await noTodos.dispose()
   })
 
-  it('renders active, paused, and blocked goal badges, including without todos', async () => {
+  it('does not open a Todo pane for a goal without todo items', async () => {
     const harness = await bootPanePlugin(todo)
+    for (const phase of ['active', 'paused', 'blocked', 'complete'] as const) {
+      harness.facts.setGoal(goalProjection(phase))
+      expect(harness.screen.paneLines()).toEqual([])
+    }
+    harness.facts.setGoal(null)
+    expect(harness.screen.paneLines()).toEqual([])
+    await harness.dispose()
+  })
+
+  it('adds active, paused, and blocked goal context to an existing Todo pane', async () => {
+    const harness = await bootPanePlugin(todo, fakeAgent([todoWrite([{ content: 'next task', status: 'pending' }])]))
     harness.facts.setGoal(goalProjection('active'))
-    expect(harness.screen.paneLines()).toEqual([rule(), '  Todo · ● active · 2/8'])
+    expect(harness.screen.paneLines()).toEqual([
+      rule(), '  Todo · ● active · 2/8', '  ship the badge', row('○', 'next task'),
+    ])
     harness.facts.setGoal(goalProjection('paused', { rounds: 4, max: 12 }))
-    expect(harness.screen.paneLines()).toEqual([rule(), '  Todo · ❚❚ paused · 4/12'])
+    expect(harness.screen.paneLines()).toEqual([
+      rule(), '  Todo · ❚❚ paused · 4/12', '  ship the badge', row('○', 'next task'),
+    ])
     harness.facts.setGoal(goalProjection('blocked', { message: 'tests are red' }))
     expect(harness.screen.paneLines()).toEqual([
       rule(),
       '  Todo · ✕ blocked · 2/8',
+      '  ship the badge',
       '  blocked: tests are red',
+      row('○', 'next task'),
     ])
     harness.facts.setGoal(goalProjection('complete'))
-    expect(harness.screen.paneLines()).toEqual([])
+    expect(harness.screen.paneLines()).toEqual([rule(), TITLE, row('○', 'next task')])
     harness.facts.setGoal(null)
-    expect(harness.screen.paneLines()).toEqual([])
+    expect(harness.screen.paneLines()).toEqual([rule(), TITLE, row('○', 'next task')])
     await harness.dispose()
   })
 

@@ -230,6 +230,9 @@ function todoNode(state: TodoState): BlueUiNode {
     { node: { kind: 'rich-text', spans: titleSpans(state.goal) } },
   ]
   const badge = goalBadge(state.goal)
+  if (badge !== null) {
+    children.push({ node: { kind: 'text', content: `  ${badge.goal.goal.objective}`, tone: 'muted' } })
+  }
   if (badge?.phase === 'blocked') {
     children.push({
       node: {
@@ -277,7 +280,7 @@ export function apply(ctx: Context): void {
     placement: 'bottom',
     priority: 30,
     narrow: 'bottom',
-    render: () => state.dialog || (state.todos.length === 0 && goalBadge(state.goal) === null) ? null : todoNode(state),
+    render: () => state.dialog || state.todos.length === 0 ? null : todoNode(state),
   })
 
   /**

@@ -101,6 +101,8 @@ interface ActivityState {
   flow: string
   /** Whether a dialog panel occupies the editor slot. */
   dialog: boolean
+  /** Whether the dedicated Agents pane currently owns the bottom lane. */
+  agents: boolean
 }
 
 /**
@@ -148,7 +150,7 @@ function activityNode(state: ActivityState, t: BlueTranslate): BlueUiNode {
 
 /** Resolve the pane mode from editor occupancy, projection activity, and Agent status. */
 function activityMode(state: ActivityState, facts: ConversationFacts, statusActive: boolean): ActivityPaneMode {
-  if (state.dialog) return 'hidden'
+  if (state.dialog || state.agents) return 'hidden'
   if (facts.active) return facts.phase
   return statusActive ? 'waiting' : 'idle'
 }
@@ -168,7 +170,7 @@ export function apply(ctx: Context): void {
   mountTranscriptLocale(ctx, 'transcript.activity', ACTIVITY_LOCALE)
   const t = transcriptTranslator(ctx, 'transcript.activity')
   const state: ActivityState = {
-    mode: 'idle', frame: 0, tip: '', flow: '', dialog: false,
+    mode: 'idle', frame: 0, tip: '', flow: '', dialog: false, agents: false,
   }
   const factsService = ctx.get('blueSessionFacts') as SessionFactsService | undefined
   /* v8 ignore next -- blueSessionFacts is an injected service; the fallback
@@ -185,6 +187,7 @@ export function apply(ctx: Context): void {
   let tipIndex = 0
   const pane = ctx.bluePanes.register({
     id: 'blue.pane.activity',
+    title: 'Activity',
     placement: 'bottom',
     priority: 10,
     size: { preferred: 1, max: 1 },
@@ -254,6 +257,11 @@ export function apply(ctx: Context): void {
   })
   ctx.effect(() => () => offFacts?.())
   ctx.effect(() => () => offAgent?.())
+  const offPanes = ctx.bluePanes.subscribe(entries => {
+    state.agents = entries.some(entry => entry.id === 'blue.pane.agents' && !entry.hidden)
+    sync()
+  })
+  ctx.effect(() => offPanes)
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     state.dialog = occupied
     sync()

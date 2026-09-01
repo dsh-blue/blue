@@ -7,7 +7,7 @@
  * session-change rebinding.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import * as paneAgents from '../src/pane-agents.ts'
@@ -26,6 +26,10 @@ const T0 = 1_700_000_000_000
 
 /** The parent session id the tracker admits children by. */
 const PARENT = 'parent-1'
+
+beforeEach(() => {
+  paneAgents.setPaneAgentsClock(() => T0 + 6_000)
+})
 
 afterEach(() => {
   paneAgents.setPaneAgentsClock(undefined)
@@ -64,8 +68,30 @@ function childTurnStart(): SessionEvent<'turn/start'> {
 
 describe('blue-pane-agents plugin', () => {
   it('renders zero rows with no spawn calls', async () => {
-    const { screen } = await boot()
+    const { ctx, screen } = await boot()
     expect(screen.paneLines(80)).toEqual([])
+    const entry = ctx.bluePanes.list().find(candidate => candidate.id === 'blue.pane.agents')
+    expect(entry?.hidden).toBe(true)
+    expect(entry?.contribution.render()).toBeNull()
+  })
+
+  it('covers fallback labels and bounded parent-call errors in the tree', async () => {
+    const { screen } = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'failed-text', 'subagent', JSON.stringify({ description: 'Broken text' })),
+      toolResultEvent(1, 1, 'failed-text', '\nactual failure', { isError: true, time: T0 + 1_000 }),
+      toolCallEvent(1, 1, 'failed-empty', 'subagent', JSON.stringify({ description: 'Broken empty' })),
+      toolResultEvent(1, 1, 'failed-empty', '\n ', { isError: true, time: T0 + 2_000 }),
+      toolCallEvent(1, 1, 'same', 'subagent', JSON.stringify({ name: 'Same', description: 'Same' })),
+      toolResultEvent(1, 1, 'same', 'done', { time: T0 + 3_000 }),
+      toolCallEvent(1, 1, 'unnamed', 'subagent', ''),
+    ])
+    const text = screen.paneLines(140).join('\n')
+    expect(text).toContain('failed Broken text')
+    expect(text).toContain('Error: actual failure')
+    expect(text).toContain('done Same')
+    expect(text).toContain('running subagent')
   })
 
   it('ignores ordinary tool calls and keeps an unacked group across turns', async () => {
@@ -124,7 +150,7 @@ describe('blue-pane-agents plugin', () => {
         message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'bad2', isError: false }] },
       },
     })
-    expect(rig.screen.paneLines(140).join('\n')).toContain('Agents (2)')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('2 agents finished')
   })
 
   it('boots without an agent and survives a malformed result event', async () => {
@@ -152,7 +178,10 @@ describe('blue-pane-agents plugin', () => {
     ])
     const rows = screen.paneLines(140)
     const text = rows.join('\n')
-    expect(rows[0]).toBe('Agents (2)')
+    expect(rows[0]).toBe('─'.repeat(140))
+    expect(rows[1]).toBe('✓ 2 agents finished · 1m 30s')
+    expect(rows[2]).toContain('├─ done Survey tests')
+    expect(rows[3]).toContain('└─ done Map docs')
     expect(text).toContain('done Survey tests')
     expect(text).toContain('done Map docs')
     // No live projection on replay: no tool counts or tokens.
@@ -218,7 +247,7 @@ describe('blue-pane-agents plugin', () => {
     const rows = rig.screen.paneLines(140)
     const text = rows.join('\n')
     expect(text).toContain('running Survey')
-    expect(text).toContain('1 tools')
+    expect(text).toContain('1 tool')
     expect(text).toContain('3200 tokens')
     expect(text).toContain('Using read')
   })
@@ -296,6 +325,7 @@ describe('blue-pane-agents plugin', () => {
     })
     const text = rig.screen.paneLines(140).join('\n')
     expect(text).toContain('failed Worker · Survey tests')
+    expect(text).toContain('Error: Failed')
   })
 
   it('correlates a fork member through its delegation prompt', async () => {

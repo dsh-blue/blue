@@ -1,7 +1,7 @@
 # 功能总览
 
 Blue `0.2.0-alpha.1` 是 `dsh-base` 上的 flat Cordis plugin tree。Bundle
-插入 6 个 dsh 支撑 row 与 29 个 Blue row。
+插入 6 个 dsh 支撑 row 与 30 个 Blue row。
 
 ## 数据与交互
 

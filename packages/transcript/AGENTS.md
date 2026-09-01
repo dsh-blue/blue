@@ -19,8 +19,11 @@ does not parse Mermaid itself; streamed fences remain source until closed, at
 which point core may enhance them or preserve the source fallback.
 
 `SessionFactsService` also mirrors the official `goal` projection for the todo
-badge and clears it on Agent replacement. Jobs status reads the native `jobs`
-registry for the exact current Agent. Workflow rows fold native lifecycle
+title and clears it on Agent replacement. A goal never opens the Todo pane by
+itself: an existing Todo list carries its objective, while the footer reads
+phase, rounds, and process-local activation from native `goals` for the exact
+current Agent. Jobs status reads the native `jobs` registry for that Agent.
+Workflow rows fold native lifecycle
 facts only after a member child id is attributed through the current Agent's
 native Sessions; settled rows clear on the next turn, while live timers and all
 event subscriptions are Fiber-owned.

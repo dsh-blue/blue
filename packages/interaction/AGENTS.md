@@ -21,7 +21,8 @@ overlay contributions use `blueOverlays`.
 `/jobs` reads, kills, and subscribes through the native `jobs` registry for
 the exact current Agent; output is consumed only by explicit Enter. `/agents`
 lists native `subagents`, enriches resident rows from native Sessions and
-projections, and owns its temporary child attach view. Attach does not change
+projections, and fills an absent one-shot descriptor label from the native
+`workflow/agent-start` identity. It owns its temporary child attach view. Attach does not change
 the selected Agent or publish a service; it aborts pending reads, follow-ups,
 listeners, timers, and transcript renderers on close, Agent replacement, or
 Fiber unload.

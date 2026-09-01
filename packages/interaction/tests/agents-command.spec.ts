@@ -208,6 +208,49 @@ describe('blue-agents-command', () => {
     await empty.fiber.dispose()
   })
 
+  it('uses native workflow labels only when one-shot descriptors omit a name', async () => {
+    const rig = await mountCommand()
+    rig.ctx.emit('workflow/agent-start', {} as never, {
+      seq: 1,
+      label: 'Review security boundaries',
+      childId: SessionId('child'),
+    })
+    rig.tree = [child('child', { mode: 'one-shot', label: undefined })]
+    expect(await execute(rig)).toEqual({ kind: 'success' })
+    expect(plain(rig.screen.overlays[0]!.component.render(100)).join('\n')).toContain('Review security boundaries')
+
+    rig.ctx.emit('workflow/agent-start', {} as never, {
+      seq: 2,
+      label: 'Workflow fallback',
+      childId: SessionId('child'),
+    })
+    rig.tree = [child('child', { mode: 'one-shot', label: 'Descriptor label' })]
+    expect(await execute(rig)).toEqual({ kind: 'success' })
+    const second = plain(rig.screen.overlays[1]!.component.render(100)).join('\n')
+    expect(second).toContain('Descriptor label')
+    expect(second).not.toContain('Workflow fallback')
+
+    rig.ctx.emit('workflow/agent-start', {} as never, {
+      seq: 3,
+      label: '   ',
+      childId: SessionId('unnamed'),
+    })
+    rig.tree = [child('unnamed', { mode: 'one-shot', label: undefined })]
+    expect(await execute(rig)).toEqual({ kind: 'success' })
+    expect(plain(rig.screen.overlays[2]!.component.render(100)).join('\n')).toContain('unnamed')
+
+    rig.ctx.emit('workflow/agent-end', {} as never, {
+      seq: 4,
+      label: 'Recovered after renderer reload',
+      childId: SessionId('settled'),
+      outcome: 'completed',
+    })
+    rig.tree = [child('settled', { mode: 'one-shot', label: undefined })]
+    expect(await execute(rig)).toEqual({ kind: 'success' })
+    expect(plain(rig.screen.overlays[3]!.component.render(100)).join('\n')).toContain('Recovered after renderer reload')
+    await rig.fiber.dispose()
+  })
+
   it('browses native descendants, samples live metrics, expands, and attaches directly', async () => {
     const rig = await mountCommand()
     rig.tree = [
