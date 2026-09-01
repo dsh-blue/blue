@@ -1,7 +1,7 @@
 // Real-process regression for Host stdout/stderr bypassing the alternate-
 // screen renderer. A child preload logs a large JSON value after the turn has
-// settled; Blue must repaint the editor/footer cells, and Up must recover the
-// user's prompt rather than the out-of-band JSON.
+// settled; Blue must repaint the editor/footer cells, and Herdr's enhanced Up
+// sequence must recover the user's prompt rather than the out-of-band JSON.
 
 import { createRequire } from 'node:module'
 import { existsSync, readdirSync, chmodSync, statSync } from 'node:fs'
@@ -101,10 +101,10 @@ try {
   }
   if (!recovered.includes('deepseek-v4-flash')) throw new Error('footer was not restored')
 
-  term.write('\x1b[A')
+  term.write('\x1b[57419;1:1u')
   await sleep(250)
   const history = (await screen()).join('\n')
-  if (!history.includes('history prompt')) throw new Error('Up did not restore the user prompt')
+  if (!history.includes('history prompt')) throw new Error('enhanced Up did not restore the user prompt')
   if (history.includes('host-bleed-')) throw new Error('Host JSON entered editor history')
 
   term.write('\x03')

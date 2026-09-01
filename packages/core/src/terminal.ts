@@ -10,6 +10,8 @@
 import {
   Container,
   HStack,
+  isKeyRelease,
+  parseKey,
   ProcessTerminal,
   ScrollView,
   TuiAltScreen,
@@ -39,10 +41,27 @@ interface BlueRuntimeOverlayOptions extends BlueOverlayOptions { readonly maxWid
 
 const KEY_UP = '\x1b[A'
 const KEY_DOWN = '\x1b[B'
+const KEY_LEFT = '\x1b[D'
+const KEY_RIGHT = '\x1b[C'
 const KEY_PAGE_UP = '\x1b[5~'
 const KEY_PAGE_DOWN = '\x1b[6~'
 const KEY_HOME = '\x1b[H'
 const KEY_END = '\x1b[F'
+const KEY_INSERT = '\x1b[2~'
+const KEY_DELETE = '\x1b[3~'
+
+const NORMALIZED_NAVIGATION_INPUT = new Map<string, string>([
+  ['up', KEY_UP],
+  ['down', KEY_DOWN],
+  ['left', KEY_LEFT],
+  ['right', KEY_RIGHT],
+  ['pageUp', KEY_PAGE_UP],
+  ['pageDown', KEY_PAGE_DOWN],
+  ['home', KEY_HOME],
+  ['end', KEY_END],
+  ['insert', KEY_INSERT],
+  ['delete', KEY_DELETE],
+])
 
 /** Renderer choice kept inside core's L0 boundary. */
 export type BlueScreenMode = 'main' | 'alternate'
@@ -226,6 +245,20 @@ export function normalizeWheelInput(data: string): string | undefined {
   if ((button & 64) === 0) return undefined
   const direction = button & 3
   return direction === 0 ? KEY_UP : direction === 1 ? KEY_DOWN : undefined
+}
+
+/**
+ * Normalize unmodified navigation events to the legacy sequences consumed by
+ * Blue's raw-key paths. Enhanced Kitty releases and modified navigation keep
+ * their original encoding so event-type and modifier semantics remain intact.
+ * @param data - one decoded terminal input sequence.
+ * @returns the canonical navigation sequence, or `undefined` when the input
+ *   must pass through unchanged.
+ */
+export function normalizeNavigationInput(data: string): string | undefined {
+  if (isKeyRelease(data)) return undefined
+  const key = parseKey(data)
+  return key === undefined ? undefined : NORMALIZED_NAVIGATION_INPUT.get(key)
 }
 
 /**
@@ -431,6 +464,13 @@ export async function startBlueTerminal(
     ? [...(current as unknown as { inputListeners: Set<TuiInputListener> }).inputListeners][0]
     : undefined
   if (viewportInput !== undefined) current.removeInputListener(viewportInput)
+  // Herdr forwards Kitty functional-key codepoints while tmux commonly emits
+  // legacy CSI forms. Canonicalize both before any Blue or viewport listener
+  // sees them so every raw-key path receives the same navigation vocabulary.
+  const removeNavigationNormalizer = current.addInputListener(data => {
+    const normalized = normalizeNavigationInput(data)
+    return normalized === undefined ? undefined : { data: normalized }
+  })
   // Track dock membership for contextual wheel routing. The editor's handler
   // consumes its own wheel reports; a focused replacement panel receives the
   // direction-key form, while an unfocused/empty tree keeps the raw report for
@@ -917,6 +957,7 @@ export async function startBlueTerminal(
         removeWheelNormalizer()
         removeViewportInput()
         removeContentScrollHandler()
+        removeNavigationNormalizer()
         outputRecovery?.deactivate()
         if (activeRuntime === runtime) activeRuntime = undefined
         return
@@ -929,6 +970,7 @@ export async function startBlueTerminal(
       removeWheelNormalizer()
       removeViewportInput()
       removeContentScrollHandler()
+      removeNavigationNormalizer()
       if (activeRuntime === runtime) activeRuntime = undefined
     },
   }
