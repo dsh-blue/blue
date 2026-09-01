@@ -11,7 +11,8 @@
 import { homedir } from 'node:os'
 import { describe, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { BlueStatusService } from '@dsh-blue/blue-api'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
+import { BlueStatusService, type BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueSemanticColors } from '@dsh-blue/blue-core'
 import {
   AssistantMessageComponent,
@@ -25,13 +26,17 @@ import { AgentGroupComponent } from '../src/agent-group.ts'
 import { ReadGroupComponent } from '../src/read-group.ts'
 import { SearchGroupComponent } from '../src/search-group.ts'
 import { ThinkingComponent } from '../src/thinking.ts'
+import * as todoPane from '../src/pane-todo.ts'
+import { workflowNode, type WorkflowRunState } from '../src/pane-workflow.ts'
 import { createTranscriptModel, TranscriptModelComponent } from '../src/transcript-model.ts'
 import { StatusFooterComponent } from '../src/status-model.ts'
 import { bannerLayout, composeBannerLines, shortenHome } from '../src/banner.ts'
 import type { TranscriptToolItem } from '../src/types.ts'
 import { fakeBlueComponents } from './helpers.ts'
+import { bootPanePlugin } from './pane-fakes.ts'
 import { COLORS } from './status-fakes.ts'
 import { ADVERSARIAL, SCAN_WIDTHS, expectLinesFit } from '../../core/tests/width-scan.ts'
+import { compileBlueUiNode } from '../../core/src/ui-compiler.ts'
 import {
   interpolateLocaleMessage,
   type BlueLocaleCatalog,
@@ -72,6 +77,17 @@ function subagentItem(text: string): TranscriptToolItem {
     arguments: '{}',
     parsedArguments: { description: text, prompt: text },
   } as TranscriptToolItem
+}
+
+/** Compile one public wire node through the renderer used by mounted panes. */
+function renderNode(node: BlueUiNode, width: number): string[] {
+  const compiled = compileBlueUiNode(node, {
+    components: fakeBlueComponents(),
+    colors,
+    getViewport: () => ({ columns: width, rows: 24 }),
+    screenMode: 'main',
+  })
+  return (compiled.ok ? compiled.value.component : compiled.errorComponent).render(width)
 }
 
 describe('transcript width-scan', () => {
@@ -239,6 +255,48 @@ describe('transcript width-scan', () => {
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`AgentGroup/${name}`, new AgentGroupComponent(subagentItem(text), colors, components).render(width), width)
       }
+    })
+
+    it(`workflow pane survives ${name}`, () => {
+      const run = {
+        id: 'width-run',
+        name: text,
+        phases: [{ title: text }],
+        phasesSeen: [text],
+        currentPhase: text,
+        agents: [{ seq: 1, label: text, phase: text, childId: 'child' }],
+        startedAt: 0,
+        stopReason: undefined,
+        endedAt: undefined,
+        agentsStarted: undefined,
+        attributed: true,
+      } satisfies WorkflowRunState
+      const node = workflowNode([run], 1_000)
+      if (node === null) throw new Error('workflow width fixture did not render')
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`WorkflowPane/${name}`, renderNode(node, width), width)
+      }
+    })
+
+    it(`goal badge survives ${name}`, async () => {
+      const harness = await bootPanePlugin(todoPane)
+      harness.facts.setGoal({
+        goal: {
+          id: 'width-goal',
+          revision: 1,
+          objective: text,
+          phase: 'blocked',
+          blockedReason: { code: 'width', message: text },
+          maxGoalRounds: 8,
+        },
+        roundsStarted: 2,
+        createdAt: 1,
+        updatedAt: 2,
+      } as GoalProjection)
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`GoalBadge/${name}`, harness.screen.paneLines(width), width)
+      }
+      await harness.dispose()
     })
 
     it(`banner (composeBannerLines) survives ${name}`, () => {

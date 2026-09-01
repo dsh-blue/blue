@@ -188,6 +188,9 @@ export async function bootDirectBlue(options: { readonly terminal?: FakeTerminal
         'commands',
         'sessionProjections',
         'tools',
+        'jobs',
+        'subagents',
+        'sessions',
         'blueCurrentAgent',
         'bluePanes',
         'blueStatus',
@@ -262,7 +265,7 @@ export const apply = ctx => globalThis.__blueDirectE2E.appApply(ctx, {})
     '- id: direct-sibling',
     `  name: ${fixture('direct-sibling.mjs', `
 export const name = 'direct-sibling'
-export const inject = ['commands', 'sessionProjections', 'tools', 'blueCurrentAgent', 'bluePanes', 'blueStatus', 'blueOverlays', 'blueEditorExtensions']
+export const inject = ['commands', 'sessionProjections', 'tools', 'jobs', 'subagents', 'sessions', 'blueCurrentAgent', 'bluePanes', 'blueStatus', 'blueOverlays', 'blueEditorExtensions']
 export const apply = ctx => globalThis.__blueDirectE2E.consumerApply(ctx)
 `)}`,
     '',
@@ -301,6 +304,12 @@ export const apply = ctx => globalThis.__blueDirectE2E.consumerApply(ctx)
   ctx.provide('appExit', (code: number) => { exits.push(code) })
   ctx.provide('blueStartup', { task: undefined, resume: undefined } as never)
   ctx.provide('agents', { get: (id: unknown) => agents.get(String(id)), list: () => [...agents.values()] } as never)
+  ctx.provide('jobs', {
+    list: () => [],
+    onJobsChanged: () => () => {},
+  } as never)
+  ctx.provide('subagents', { listDescendants: async () => [] } as never)
+  ctx.provide('sessions', { list: () => [...agents.values()].map(agent => agent.session) } as never)
   ctx.provide('sessionController', controller as never)
   const commandFiber = await ctx.plugin(CommandServiceProbe)
   const projectionFiber = await ctx.plugin(ProjectionServiceProbe)

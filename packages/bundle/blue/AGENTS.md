@@ -3,8 +3,8 @@
 This package is the installable flat Cordis composition. Its module entry owns
 no product behavior.
 
-`cordis.patch.yml` inserts 31 ordinary siblings over `dsh-base`: six dsh
-support rows and 25 Blue rows. Dynamic plugins, official Blue rows, and native
+`cordis.patch.yml` inserts 35 ordinary siblings over `dsh-base`: six dsh
+support rows and 29 Blue rows. Dynamic plugins, official Blue rows, and native
 dsh services share one service graph. There is no Cordis group/isolate,
 service deny-list, host facade, adapter layer, or provider owner.
 

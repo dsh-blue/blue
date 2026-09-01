@@ -4,6 +4,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { GoalPhase, GoalProjection } from '@deepseek-ai/dsh-goal'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { initialConversationFacts } from '../../conversation/src/facts.ts'
@@ -44,6 +45,22 @@ function agent(value: Session): Agent {
   return { id: value.id, session: value } as unknown as Agent
 }
 
+function goalProjection(phase: GoalPhase, message?: string): GoalProjection {
+  return {
+    goal: {
+      id: 'goal-1' as GoalProjection['goal']['id'],
+      revision: 3,
+      objective: 'ship the badge',
+      phase,
+      ...(message === undefined ? {} : { blockedReason: { code: 'tests-red', message } }),
+      maxGoalRounds: 8,
+    },
+    roundsStarted: 2,
+    createdAt: 1_000,
+    updatedAt: 2_000,
+  }
+}
+
 describe('SessionFactsService', () => {
   it('replays and follows native projections for the exact Agent and its direct children', () => {
     const ctx = new Context()
@@ -54,8 +71,10 @@ describe('SessionFactsService', () => {
     const current = agent(parentSession)
     const projections = new ProjectionFake()
     const parentFacts = { ...initialConversationFacts(), model: 'm' }
+    const activeGoal = goalProjection('active')
+    const blockedGoal = goalProjection('blocked', 'tests are red')
     const childFacts = { ...initialConversationFacts(), promptText: 'delegate', active: true, phase: 'tool' as const }
-    projections.set(parentSession, { blueConversationFacts: parentFacts, title: 'first' })
+    projections.set(parentSession, { blueConversationFacts: parentFacts, title: 'first', goal: activeGoal })
     projections.set(childSession, { blueConversationFacts: childFacts })
     projections.set(invalidChild, { blueConversationFacts: { phase: 'invalid' } })
     let selected: Agent | null = current
@@ -75,17 +94,21 @@ describe('SessionFactsService', () => {
     const service = new SessionFactsService(ctx)
     const models: Array<string | undefined> = []
     const titles: Array<string | undefined> = []
+    const goals: Array<GoalProjection | null> = []
     const agents: Array<Agent | null> = []
     const children: string[][] = []
-    service.subscribe(facts => models.push(facts.model))
+    const offFacts = service.subscribe(facts => models.push(facts.model))
     const offTitle = service.subscribeTitle(title => titles.push(title))
-    service.subscribeAgent(value => agents.push(value))
+    const offGoal = service.subscribeGoal(goal => goals.push(goal))
+    const offAgent = service.subscribeAgent(value => agents.push(value))
     const offChildren = service.subscribeChildren(value => children.push(value.map(row => row.id)))
 
     expect(service.current).toEqual(parentFacts)
     expect(service.currentTitle).toBe('first')
+    expect(service.currentGoal).toEqual(activeGoal)
     expect(service.currentAgent).toBe(current)
     expect(children.at(-1)).toEqual(['child'])
+    for (const listener of agentListeners) listener(current, 0)
 
     projections.emit(unrelated, 'blueConversationFacts', { ...parentFacts, model: 'ignored' })
     projections.emit(parentSession, 'other', parentFacts)
@@ -93,9 +116,14 @@ describe('SessionFactsService', () => {
     projections.emit(parentSession, 'blueConversationFacts', { ...parentFacts, model: 'next' })
     projections.emit(parentSession, 'title', 'second')
     projections.emit(parentSession, 'title', null)
+    projections.emit(parentSession, 'goal', { phase: 'bad' })
+    projections.emit(parentSession, 'goal', blockedGoal)
+    projections.emit(parentSession, 'goal', blockedGoal)
+    projections.emit(parentSession, 'goal', null)
     projections.emit(childSession, 'blueConversationFacts', { ...childFacts, model: 'child-model' })
     expect(models).toEqual(['m', 'next'])
     expect(titles).toEqual(['first', 'second', undefined])
+    expect(goals).toEqual([activeGoal, blockedGoal, null])
     expect(children.at(-1)).toEqual(['child'])
 
     const untitledSession = session('untitled')
@@ -104,20 +132,69 @@ describe('SessionFactsService', () => {
     selected = untitled
     for (const listener of agentListeners) listener(untitled, 1)
     expect(service.currentTitle).toBeUndefined()
+    expect(service.currentGoal).toBeNull()
 
     selected = null
     for (const listener of agentListeners) listener(null, 1)
     expect(service.current).toEqual(initialConversationFacts())
     expect(service.currentTitle).toBeUndefined()
+    expect(service.currentGoal).toBeNull()
     expect(service.currentAgent).toBeNull()
-    expect(agents).toEqual([current, untitled, null])
+    expect(agents).toEqual([current, current, untitled, null])
     expect(children.at(-1)).toEqual([])
 
     offTitle()
+    offGoal()
+    offFacts()
+    offAgent()
     offChildren()
     service.dispose()
     expect(projections.listenerCount).toBe(0)
     expect(agentListeners.size).toBe(0)
+  })
+
+  it('rejects malformed goal projection values shape by shape', () => {
+    const ctx = new Context()
+    const parentSession = session('parent')
+    const current = agent(parentSession)
+    const projections = new ProjectionFake()
+    projections.set(parentSession, {})
+    ctx.reflect.provide('sessionProjections', projections)
+    ctx.reflect.provide('sessions', { list: () => [] })
+    ctx.reflect.provide('blueCurrentAgent', {
+      current: () => current,
+      revision: () => 0,
+      subscribe(listener: (value: Agent | null, revision: number) => void) {
+        listener(current, 0)
+        return () => {}
+      },
+    })
+    const service = new SessionFactsService(ctx)
+    const goals: Array<GoalProjection | null> = []
+    service.subscribeGoal(goal => goals.push(goal))
+    const valid = goalProjection('active')
+    const malformed: unknown[] = [
+      42,
+      { ...valid, roundsStarted: '2' },
+      { ...valid, createdAt: '1000' },
+      { ...valid, updatedAt: undefined },
+      { ...valid, goal: null },
+      { ...valid, goal: 'goal' },
+      { ...valid, goal: { ...valid.goal, id: 7 } },
+      { ...valid, goal: { ...valid.goal, revision: '3' } },
+      { ...valid, goal: { ...valid.goal, objective: 9 } },
+      { ...valid, goal: { ...valid.goal, phase: 'exploding' } },
+      { ...valid, goal: { ...valid.goal, maxGoalRounds: '8' } },
+      { ...valid, goal: { ...valid.goal, blockedReason: null } },
+      { ...valid, goal: { ...valid.goal, blockedReason: 'red' } },
+      { ...valid, goal: { ...valid.goal, blockedReason: { message: 'red' } } },
+      { ...valid, goal: { ...valid.goal, blockedReason: { code: 'tests-red' } } },
+    ]
+    malformed.forEach((value, index) => projections.emit(parentSession, 'goal', value, index + 2))
+    expect(goals).toEqual([null])
+    projections.emit(parentSession, 'goal', valid, 30)
+    expect(goals).toEqual([null, valid])
+    service.dispose()
   })
 
   it('projects every child activity and optional metadata shape', () => {

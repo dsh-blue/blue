@@ -13,3 +13,10 @@ tools, settings, skills, modes, models, sessions, and persistence.
 and submit transforms around the single Blue editor. `bluePanes` and
 `blueStatus` carry the shipped queue pane and mode badge. There are no
 provider candidates or plugin management facade.
+
+The `./jobs` row registers `/jobs` against native `ctx.jobs`: live jobs sort
+first, Enter explicitly consumes output, and `k` kills a live job. The
+`./agents-command` row registers `/agents` against native `ctx.subagents`,
+`ctx.sessions`, and `ctx.sessionProjections`; its temporary attach view keeps
+the parent Agent selected while rendering a child transcript and offering
+follow-up or interrupt actions where the child mode permits them.

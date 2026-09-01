@@ -12,12 +12,15 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import * as approvalPlugin from '../src/approval-plugin.ts'
+import { ChildAttachView } from '../src/attach-view.ts'
 import { CanonicalFormController, type FormField } from '../src/form-panel.ts'
 import { HelpOverlay, type HelpSection } from '../src/help.ts'
 import { InfoPanel, type InfoSection } from '../src/info-panel.ts'
 import { CanonicalDocumentController } from '../src/frontend-panel.ts'
+import { jobOutputPanelModel, jobsPanelModel } from '../src/jobs.ts'
 import { PlanReviewPanel, planReviewChoices } from '../src/plan-review-panel.ts'
 import { Questionnaire } from '../src/questionnaire.ts'
 import { CanonicalSelectController } from '../src/select-list.ts'
@@ -222,6 +225,61 @@ describe('interaction width-scan', () => {
       for (const width of SCAN_WIDTHS) {
         expectLinesFit(`canonical-loading-document/${name}`, panel.render(width), width)
       }
+    })
+
+    it(`native jobs documents survive ${name}`, () => {
+      const job = {
+        id: text,
+        kind: 'bash',
+        label: text,
+        status: 'failed',
+        startedAt: 1,
+        finishedAt: 2,
+        detail: text,
+        reported: false,
+      } as JobSnapshot
+      const panels = [
+        new CanonicalDocumentController({
+          theme: IDENTITY_THEME as never,
+          components: new FakeBlueComponents(),
+          keymap: new FakeKeymap(),
+          model: () => jobsPanelModel([job], 61_000, key => key),
+          onAction: vi.fn(),
+          onClose: vi.fn(),
+        }),
+        new CanonicalDocumentController({
+          theme: IDENTITY_THEME as never,
+          components: new FakeBlueComponents(),
+          keymap: new FakeKeymap(),
+          model: () => jobOutputPanelModel(job, text, key => key),
+          onAction: vi.fn(),
+          onClose: vi.fn(),
+        }),
+      ]
+      for (const width of SCAN_WIDTHS) {
+        panels.forEach((panel, index) => {
+          expectLinesFit(`native-jobs-${String(index)}/${name}`, panel.render(width), width)
+        })
+      }
+    })
+
+    it(`ChildAttachView survives ${name}`, () => {
+      const { ctx, screen } = fakeBlueContext()
+      const view = new ChildAttachView({
+        ctx,
+        parent: {} as Agent,
+        target: { id: 'child', label: text, mode: 'continuable' },
+        screen,
+        components: new FakeBlueComponents(),
+        colors: IDENTITY_THEME.colors as never,
+        t: key => key,
+        tools: { get: () => undefined },
+        onClose: vi.fn(),
+      })
+      for (const width of SCAN_WIDTHS) {
+        expectLinesFit(`ChildAttachView/${name}`, view.render(width), width)
+      }
+      view.dispose()
     })
 
     it(`approval plugin prompt survives ${name}`, async () => {

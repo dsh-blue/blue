@@ -236,6 +236,7 @@ export interface PanePluginHarness {
   screen: PaneFakeScreen
   keymap: PaneFakeKeymap
   commands: PaneFakeCommands
+  facts: FakeFactsService
   dispose(): Promise<void>
 }
 
@@ -259,23 +260,31 @@ export async function bootPanePlugin(
   const components = fakeBlueComponents()
   const panes = new BluePaneService(ctx)
   const projections = new FakeProjectionService()
+  let selected = current
+  const selectedListeners = new Set<(agent: unknown, revision: number) => void>()
   ctx.on('session/event', (session, event) => projections.emit(session, event))
+  ctx.on('test/session-changed', next => {
+    selected = next === null ? null : next as unknown as FakeAgent
+    for (const listener of selectedListeners) listener(selected === null ? null : asAgent(selected), 1)
+  })
   const serviceNames: Record<string, unknown> = {
     blueScreen: screen,
     blueTheme: { colors: COLORS },
     blueComponents: components,
     blueKeymap: keymap,
     blueCurrentAgent: {
-      current: () => current === null ? null : asAgent(current),
+      current: () => selected === null ? null : asAgent(selected),
       revision: () => 0,
       subscribe(listener: (agent: unknown, revision: number) => void) {
-        listener(current === null ? null : asAgent(current), 0)
-        return () => {}
+        selectedListeners.add(listener)
+        listener(selected === null ? null : asAgent(selected), 0)
+        return () => { selectedListeners.delete(listener) }
       },
     },
     blueSessionFacts: facts,
     sessionProjections: projections,
     commands,
+    facts,
     agents: { create: async () => { throw new Error('fake agents.create is not configured') } },
     agentDefaultModel: { currentSelection: () => ({ provider: 'mock', model: 'mock' }) },
     agentPresets: { mount: async () => {} },
@@ -292,6 +301,7 @@ export async function bootPanePlugin(
     screen,
     keymap,
     commands,
+    facts,
     dispose: () => fiber.dispose(),
   }
 }

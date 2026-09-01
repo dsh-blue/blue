@@ -18,6 +18,13 @@ Assistant Markdown is handed to core's shared Markdown adapter. Transcript
 does not parse Mermaid itself; streamed fences remain source until closed, at
 which point core may enhance them or preserve the source fallback.
 
+`SessionFactsService` also mirrors the official `goal` projection for the todo
+badge and clears it on Agent replacement. Jobs status reads the native `jobs`
+registry for the exact current Agent. Workflow rows fold native lifecycle
+facts only after a member child id is attributed through the current Agent's
+native Sessions; settled rows clear on the next turn, while live timers and all
+event subscriptions are Fiber-owned.
+
 Status producers register directly with `blueStatus`; pane producers register
 directly with `bluePanes`. Blue's shipped rows use the same definitions and
 Fiber cleanup as external plugins. There are no package-private status/pane

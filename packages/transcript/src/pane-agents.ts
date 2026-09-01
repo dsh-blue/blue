@@ -37,6 +37,16 @@ export const name = 'blue-pane-agents'
 /** Services required before the pane can mount. */
 export const inject = ['bluePanes', 'blueSessionFacts']
 
+/** A fresh child must remain waiting for this long before the badge changes. */
+const WAITING_HOLD_MS = 1000
+
+let paneAgentsNow: () => number = Date.now
+
+/** Replace the pane clock for deterministic tests. */
+export function setPaneAgentsClock(now: (() => number) | undefined): void {
+  paneAgentsNow = now ?? Date.now
+}
+
 /** One pane-local member shaped for the existing group-card renderer. */
 interface PaneMember {
   readonly item: TranscriptToolItem
@@ -102,6 +112,33 @@ export function apply(ctx: Context): void {
   let tracker: ReturnType<typeof trackChildAgentModels> | undefined
   let liveLookup: AgentLiveLookup | undefined
   let refresh = (): void => undefined
+  const waitingSince = new Map<string, number>()
+  const waitingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const clearWaiting = (id: string): void => {
+    waitingSince.delete(id)
+    const timer = waitingTimers.get(id)
+    if (timer !== undefined) clearTimeout(timer)
+    waitingTimers.delete(id)
+  }
+  const displayLookup: AgentLiveLookup = (member) => {
+    const live = liveLookup?.(member)
+    if (live?.phase !== 'waiting') {
+      clearWaiting(member.callId)
+      return live
+    }
+    const since = waitingSince.get(member.callId)
+    if (since === undefined) {
+      waitingSince.set(member.callId, paneAgentsNow())
+      const timer = setTimeout(() => {
+        waitingTimers.delete(member.callId)
+        refresh()
+      }, WAITING_HOLD_MS)
+      timer.unref()
+      waitingTimers.set(member.callId, timer)
+      return { ...live, phase: 'running' }
+    }
+    return paneAgentsNow() - since >= WAITING_HOLD_MS ? live : { ...live, phase: 'running' }
+  }
 
   /**
    * Whether every current member truly finished: the parent projection alone
@@ -151,6 +188,7 @@ export function apply(ctx: Context): void {
     sessionId = agent?.id
     lastTurn = -1
     members = []
+    for (const id of waitingSince.keys()) clearWaiting(id)
     refresh()
   })
   ctx.effect(() => () => offAgent())
@@ -161,12 +199,13 @@ export function apply(ctx: Context): void {
     placement: 'bottom',
     priority: 50,
     narrow: 'bottom',
-    render: () => agentsNode(members, liveLookup),
+    render: () => agentsNode(members, displayLookup),
   })
   refresh = () => pane.refresh()
   ctx.effect(() => {
     return () => {
       tracker?.dispose()
+      for (const id of waitingSince.keys()) clearWaiting(id)
       pane.dispose()
     }
   })

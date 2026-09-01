@@ -14,6 +14,10 @@ import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as bundle from '../src/index.ts'
 import * as BundleInvariant from '../src/invariant.ts'
+import * as agentsCommand from '../../../interaction/src/agents-command.ts'
+import * as jobsCommand from '../../../interaction/src/jobs.ts'
+import * as statusJobs from '../../../transcript/src/status-jobs.ts'
+import * as paneWorkflow from '../../../transcript/src/pane-workflow.ts'
 
 /** The patch file's own directory (fixtures and structure live next to src). */
 const patchDir = dirname(fileURLToPath(import.meta.url))
@@ -87,14 +91,18 @@ describe('blue bundle', () => {
       'blue-status-title',
       'blue-status-context',
       'blue-status-mode',
+      'blue-status-jobs',
       'blue-pane-activity',
       'blue-pane-queue',
       'blue-pane-todo',
       'blue-pane-btw',
       'blue-pane-agents',
+      'blue-pane-workflow',
       'blue-attachments',
       'blue-paste-image',
       'blue-editor-plus',
+      'blue-jobs',
+      'blue-agents-command',
       'blue-interaction',
     ])
     // Legacy intent rows are deliberately absent; tool presentation is model-owned.
@@ -111,6 +119,35 @@ describe('blue bundle', () => {
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
     expect(insertedRows.some(row => row.group === true)).toBe(false)
     expect(insertedRows.find(row => row.id === 'blue-app')?.inject).toBeUndefined()
+  })
+
+  it('composes the tool panels as ordinary native-service siblings', () => {
+    expect(statusJobs.inject).toEqual(['blueStatus', 'blueCurrentAgent', 'jobs'])
+    expect(paneWorkflow.inject).toEqual(['bluePanes', 'blueCurrentAgent', 'blueSessionFacts', 'sessions'])
+    expect(jobsCommand.inject).toEqual(['commands', 'jobs', 'blueCurrentAgent', 'blueEditorHost'])
+    expect(agentsCommand.inject).toEqual([
+      'commands',
+      'subagents',
+      'agents',
+      'sessions',
+      'sessionProjections',
+      'blueCurrentAgent',
+      'blueEditorHost',
+      'tools',
+    ])
+    const dependencies = [
+      ...statusJobs.inject,
+      ...paneWorkflow.inject,
+      ...jobsCommand.inject,
+      ...agentsCommand.inject,
+    ]
+    expect(dependencies).not.toEqual(expect.arrayContaining([
+      'blueJobs',
+      'blueSessionReader',
+      'blueSessionActions',
+      'blueSessionProjections',
+      'blueChildAttach',
+    ]))
   })
 
   it('keeps opt-in ecosystem examples out of the default product composition', () => {
