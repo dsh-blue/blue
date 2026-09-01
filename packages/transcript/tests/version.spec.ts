@@ -199,6 +199,9 @@ describe('the harness dependency line', () => {
     expect(source).toContain('BLUE_PLUGIN_SUPPORTED_HARNESS_LINES = [BLUE_PLUGIN_HARNESS_LINE]')
     const fixture = readFileSync(new URL('../../plugin-kit/runtime/conformance.mjs', import.meta.url), 'utf8')
     expect(fixture).toContain(`const pinnedHarnessLine = '${HARNESS_LINE}'`)
+    expect(fixture).toContain("runtimeRequire.resolve('@dsh-blue/blue-api/package.json')")
+    expect(fixture).toContain("apiManifest.peerDependencies?.['@deepseek-ai/cordis']")
+    expect(fixture).not.toMatch(/dependencies\['@deepseek-ai\/cordis'\] \?\?= '\d/u)
   })
 
   it('ci.yml derives the CLI pin from HARNESS_LINE, not a literal', () => {
