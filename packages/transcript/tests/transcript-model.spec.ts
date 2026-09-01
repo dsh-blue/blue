@@ -69,7 +69,7 @@ describe('TranscriptModelService', () => {
   it('bounds the rendered entry window and cleans up on reattach', () => { const entries = Array.from({ length: TRANSCRIPT_MODEL_WINDOW + 3 }, (_, index) => ({ kind: 'text' as const, content: String(index) })); const component = new TranscriptModelComponent(() => model('bounded', entries), plainRenderer()); const rows = component.render(20); expect(rows).toHaveLength(TRANSCRIPT_MODEL_WINDOW); expect(rows[0]).toBe('3'); const first = fixture(); const second = fixture(); const service = new TranscriptModelService(new Context(), first.screen, { renderer: plainRenderer() }); service.register(model('reattach')); service.attach(second.screen); expect(first.children).toHaveLength(0); expect(second.children).toHaveLength(1); service.dispose() })
   it('builds immutable replay/live fixtures without folding session events', () => { const replay = createTranscriptModel('session', [{ kind: 'text', content: 'user' }, { kind: 'code', code: 'assistant' }]); expect(replay.streaming).toBeUndefined(); expect(Object.isFrozen(replay.entries)).toBe(true); const live = appendTranscriptNode(replay, { kind: 'text', content: 'stream' }, true); expect(live.streaming).toBe(true); expect(live.entries).toHaveLength(3); const settled = appendTranscriptNode(live, { kind: 'text', content: 'done' }, false); expect(settled.streaming).toBe(false); expect(replay.entries).toHaveLength(2) })
 
-  it('renders every semantic entry through the plain capability fallback', () => {
+  it('renders every semantic entry through the plain renderer fallback', () => {
     const component = new TranscriptModelComponent(() => model('plain', semanticEntries()), plainRenderer())
     component.setExpanded(true)
     const rows = component.render(80)
@@ -319,6 +319,7 @@ describe('TranscriptModelService', () => {
 
     const active = new TranscriptModelService(new Context(), f.screen, { renderer: plainRenderer(), onPresenceChanged: present => presence.push(present) })
     active.register(model('active'))
+    active.setExpanded(true)
     active.dispose()
     expect(presence.slice(-2)).toEqual([true, false])
   })

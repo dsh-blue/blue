@@ -28,7 +28,7 @@ import type { SessionFactsService } from './session-facts.ts'
 export const name = 'blue-status-git'
 
 /** Services required before the git entry can register. */
-export const inject = ['blueStatusEntries', 'blueSessionFacts']
+export const inject = ['blueStatus', 'blueSessionFacts']
 
 /** Branch probe cadence in milliseconds. */
 export const BRANCH_TTL_MS = 5_000
@@ -245,17 +245,17 @@ export function formatGitBadge(status: GitBadgeStatus): string {
  */
 export function apply(ctx: Context): void {
   const facts = ctx.get('blueSessionFacts') as SessionFactsService
-  let cwd = facts.currentSession?.cwd ?? process.cwd()
+  let cwd = facts.currentAgent?.session.header.cwd ?? process.cwd()
   let cache = createGitBadgeCache(cwd)
 
-  const offSession = facts.subscribeSession((session) => {
-    const next = session?.cwd ?? process.cwd()
+  const offAgent = facts.subscribeAgent((agent) => {
+    const next = agent?.session.header.cwd ?? process.cwd()
     if (next === cwd) return
     cwd = next
     cache = createGitBadgeCache(cwd)
-    ctx.blueStatusEntries.refresh('blue.status.git')
+    ctx.blueStatus.refresh('blue.status.git')
   })
-  ctx.effect(() => () => offSession())
+  ctx.effect(() => () => offAgent())
 
   const model = (): BlueStatusEntry => {
     const status = cache.getStatus()
@@ -264,5 +264,5 @@ export function apply(ctx: Context): void {
     // drive the TTL probe and reveal a repository that appeared in this cwd.
     return { id: 'blue.status.git', priority: 10, node: { kind: 'text', content: text, tone: 'muted' }, visible: true }
   }
-  ctx.effect(() => ctx.blueStatusEntries.register(model))
+  ctx.blueStatus.register(model)
 }

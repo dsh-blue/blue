@@ -1,7 +1,7 @@
 # Blue ecosystem example bundle
 
 An opt-in composition bundle that installs the shared user kit and activates
-all seven runnable examples through seven Cordis rows.
+five runnable examples through five ordinary Cordis rows.
 
 ```sh
 dsh plugin --profile blue-examples add @dsh-blue-example/blue-ecosystem

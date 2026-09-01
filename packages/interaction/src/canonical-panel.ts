@@ -31,6 +31,7 @@ export interface CanonicalContextHint {
 export interface CanonicalNodeSource {
   focused: boolean
   currentNode(): BlueUiNode
+  currentFocusIdentity?(): BlueFocusIdentity | undefined
   handleInput(data: string): void
   invalidate(): void
 }

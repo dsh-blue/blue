@@ -260,6 +260,6 @@ export class Questionnaire implements BlueFocusable {
     const index = itemId === OTHER_ID ? state.options.length : Number(itemId) - 1
     if (!Number.isInteger(index) || index < 0 || index >= this.rowCount(state) || index === state.cursor) return
     state.cursor = index
-    this.adapter.invalidate()
+    this.adapter.focus({ controlId, itemId })
   }
 }

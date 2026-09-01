@@ -14,8 +14,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import type { BluePluginApi } from '../../api/src/contracts.ts'
-import { apply as apiApply } from '../../api/src/host.ts'
+import type { BluePaneRegistry } from '../../api/src/contracts.ts'
+import { apply as apiApply } from '../../api/src/index.ts'
 import { apply } from '../src/index.ts'
 import { apply as themeDarkApply } from '../src/theme-dark.ts'
 import { mkdtempTracked, registerTempDirCleanup } from './temp-dir.ts'
@@ -29,11 +29,10 @@ interface StartupPaneProbe {
   coreApplyStarted: boolean
   appliedBeforeCore: boolean
   appliedBeforeScreen: boolean
-  openOk: boolean
   registerOk: boolean
   renders: number
   gapRenders: number
-  api?: BluePluginApi
+  panes?: BluePaneRegistry
 }
 
 afterEach(async () => {
@@ -51,8 +50,8 @@ async function bootBlueCore(): Promise<{ ctx: Context; output: () => string; pan
   const dir = mkdtempTracked('dsh-blue-core-')
   // The fixtures re-export the real plugins' namespace shape (name + apply)
   // so the Loader exercises the same unwrap path as a packaged install.
-  writeFileSync(join(dir, 'blue-api-host.mjs'), `
-export const name = 'blue-api-host'
+  writeFileSync(join(dir, 'blue-api.mjs'), `
+export const name = 'blue-api'
 export const apply = ctx => globalThis.__blueApiApply(ctx)
 `)
   writeFileSync(join(dir, 'blue-core.mjs'), `
@@ -66,12 +65,12 @@ export const apply = ctx => globalThis.__blueThemeDarkApply(ctx)
 `)
   writeFileSync(join(dir, 'external-pane.mjs'), `
 export const name = 'external-pane'
-export const inject = ['bluePluginHost']
+export const inject = ['bluePanes']
 export const apply = ctx => globalThis.__externalPaneApply(ctx)
 `)
   writeFileSync(join(dir, 'cordis.yml'), [
-    '- id: blue-api-host',
-    `  name: ${pathToFileURL(join(dir, 'blue-api-host.mjs')).href}`,
+    '- id: blue-api',
+    `  name: ${pathToFileURL(join(dir, 'blue-api.mjs')).href}`,
     '- id: external-pane',
     `  name: ${pathToFileURL(join(dir, 'external-pane.mjs')).href}`,
     '- id: blue-core',
@@ -87,7 +86,7 @@ export const apply = ctx => globalThis.__externalPaneApply(ctx)
     __blueThemeDarkApply: typeof themeDarkApply
     __externalPaneApply: (ctx: Context) => void
   }
-  const pane: StartupPaneProbe = { coreApplyStarted: false, appliedBeforeCore: false, appliedBeforeScreen: false, openOk: false, registerOk: false, renders: 0, gapRenders: 0 }
+  const pane: StartupPaneProbe = { coreApplyStarted: false, appliedBeforeCore: false, appliedBeforeScreen: false, registerOk: false, renders: 0, gapRenders: 0 }
   globals.__blueApiApply = apiApply
   globals.__delayBlueCoreImport = () => new Promise<void>(resolve => setTimeout(resolve, 50))
   globals.__blueCoreApply = (ctx) => {
@@ -98,11 +97,8 @@ export const apply = ctx => globalThis.__externalPaneApply(ctx)
   globals.__externalPaneApply = (ctx) => {
     pane.appliedBeforeCore = !pane.coreApplyStarted
     pane.appliedBeforeScreen = ctx.get('blueScreen') === undefined
-    const opened = ctx.bluePluginHost.open(ctx, { id: '@acme/startup-pane', api: '^1.0.0-beta.1', capabilities: ['panes'] })
-    pane.openOk = opened.ok
-    if (!opened.ok) return
-    pane.api = opened.value
-    const registered = opened.value.panes!.register({
+    pane.panes = ctx.bluePanes
+    ctx.bluePanes.register({
       id: 'startup-pane',
       placement: 'bottom',
       render: () => {
@@ -110,7 +106,7 @@ export const apply = ctx => globalThis.__externalPaneApply(ctx)
         return { kind: 'text', content: 'startup-pane' }
       },
     })
-    pane.registerOk = registered.ok
+    pane.registerOk = true
   }
 
   const chunks: string[] = []
@@ -143,11 +139,10 @@ describe('blue-core plugin through the real Loader', () => {
     expect(output()).toContain('\x1b[?1002h')
   })
 
-  it('buffers host-only panes before core import and replays them across renderer gaps', async () => {
+  it('renders direct panes registered before core import and replays them across renderer gaps', async () => {
     const { ctx, output, pane } = await bootBlueCore()
     expect(pane.appliedBeforeCore).toBe(true)
     expect(pane.appliedBeforeScreen).toBe(true)
-    expect(pane.openOk).toBe(true)
     expect(pane.registerOk).toBe(true)
 
     ctx.blueScreen.requestRender(true)
@@ -159,14 +154,14 @@ describe('blue-core plugin through the real Loader', () => {
     expect(coreEntry).toBeDefined()
     await ctx.loader.update(coreEntry!.id, { disabled: true })
     await ctx.loader.await()
-    expect(pane.api!.panes!.register({
+    pane.panes!.register({
       id: 'during-renderer-gap',
       placement: 'bottom',
       render: () => {
         pane.gapRenders += 1
         return { kind: 'text', content: 'renderer-gap-pane' }
       },
-    })).toMatchObject({ ok: true })
+    })
 
     await ctx.loader.update(coreEntry!.id, { disabled: false })
     await ctx.loader.await()
@@ -174,15 +169,6 @@ describe('blue-core plugin through the real Loader', () => {
     await new Promise<void>(resolve => setTimeout(resolve, 50))
     expect(pane.gapRenders).toBeGreaterThan(0)
     expect(output()).toContain('renderer-gap-pane')
-
-    const apiEntry = [...ctx.loader.entries()].find(entry => entry.options.id === 'blue-api-host')
-    expect(apiEntry).toBeDefined()
-    await ctx.loader.update(apiEntry!.id, { disabled: true })
-    await ctx.loader.await()
-    expect(pane.api!.panes!.register({ id: 'after-host-unload', placement: 'bottom', render: () => null })).toMatchObject({
-      ok: false,
-      code: 'BLUE_ACTION_REJECTED',
-    })
   })
 
   it('broadcasts blue/terminal-theme-changed when the terminal reports a scheme', async () => {

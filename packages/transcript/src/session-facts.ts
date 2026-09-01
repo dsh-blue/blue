@@ -1,18 +1,16 @@
 /**
  * Renderer-neutral bridge from the official conversation-facts projection to
  * status and dock consumers. It owns only the current renderer-neutral session
- * snapshot and immutable whole-value facts; it never receives an Agent or
- * Session and never scans a Harness event log.
+ * Agent selection and immutable whole-value projection facts.
  *
  * @module @dsh-blue/blue-transcript/session-facts
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { BlueRegistration, BlueSessionSnapshot } from '@dsh-blue/blue-api'
-import type {
-  BlueChildSessionProjectionSnapshot,
-  BlueSessionProjectionReader,
-} from '@dsh-blue/blue-app'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-session-title/types'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import { initialConversationFacts } from '@dsh-blue/blue-conversation'
 
@@ -35,29 +33,30 @@ declare module '@deepseek-ai/cordis' {
 
 /** Session-scoped facts bridge for status and dock model producers. */
 export class SessionFactsService extends Service {
-  private session: BlueSessionSnapshot | null = null
+  private agent: Agent | null = null
   private facts: ConversationFacts = initialConversationFacts()
   private title: string | undefined
   private readonly listeners = new Set<(facts: ConversationFacts) => void>()
   private readonly titleListeners = new Set<(title: string | undefined) => void>()
-  private readonly sessionListeners = new Set<(session: BlueSessionSnapshot | null) => void>()
+  private readonly agentListeners = new Set<(agent: Agent | null) => void>()
   private readonly childListeners = new Set<(children: readonly ChildSessionFacts[]) => void>()
   private readonly children = new Map<string, ChildSessionFacts>()
-  private readonly offProjection: (() => void) | undefined
-  private readonly offChildProjection: (() => void) | undefined
-  private readonly sessionRegistration: BlueRegistration | undefined
+  private readonly offProjection: () => void
+  private readonly offAgent: () => void
 
   constructor(ctx: Context) {
     super(ctx, 'blueSessionFacts')
-    const projections = ctx.get('blueSessionProjections') as BlueSessionProjectionReader | undefined
-    this.offProjection = projections?.subscribe((key, value) => {
-      if (key === 'blueConversationFacts' && isFacts(value)) this.publish(value)
-      if (key === 'title' && isTitle(value)) this.publishTitle(value ?? undefined)
+    this.offProjection = ctx.sessionProjections.onChanged((session, key, value) => {
+      if (session === this.agent?.session) {
+        if (key === 'blueConversationFacts' && isFacts(value)) this.publish(value)
+        if (key === 'title' && isTitle(value)) this.publishTitle(value ?? undefined)
+        return
+      }
+      if (key === 'blueConversationFacts' && this.isDirectChild(session) && isFacts(value)) {
+        this.publishChild(String(session.id), value)
+      }
     })
-    this.offChildProjection = projections?.subscribeChildren(child => {
-      if (child.key === 'blueConversationFacts' && isFacts(child.value)) this.publishChild(child)
-    })
-    this.sessionRegistration = ctx.get('blueSessionReader')?.subscribe(next => this.attach(next))
+    this.offAgent = ctx.blueCurrentAgent.subscribe(next => { this.attach(next) })
   }
 
   /** Current facts; the returned object is projection-owned readonly data. */
@@ -70,10 +69,8 @@ export class SessionFactsService extends Service {
     return this.title
   }
 
-  /** Current renderer-neutral session snapshot. */
-  get currentSession(): BlueSessionSnapshot | null {
-    return this.session
-  }
+  /** Current raw dsh Agent selected by Blue. */
+  get currentAgent(): Agent | null { return this.agent }
 
   /** Subscribe to whole-value changes; the current value is delivered first. */
   subscribe(listener: (facts: ConversationFacts) => void): () => void {
@@ -89,11 +86,11 @@ export class SessionFactsService extends Service {
     return () => this.titleListeners.delete(listener)
   }
 
-  /** Subscribe to current-session identity, cwd, status, and model changes. */
-  subscribeSession(listener: (session: BlueSessionSnapshot | null) => void): () => void {
-    this.sessionListeners.add(listener)
-    listener(this.session)
-    return () => this.sessionListeners.delete(listener)
+  /** Subscribe to exact current-Agent changes. */
+  subscribeAgent(listener: (agent: Agent | null) => void): () => void {
+    this.agentListeners.add(listener)
+    listener(this.agent)
+    return () => this.agentListeners.delete(listener)
   }
 
   /** Subscribe to projection-backed child-session run facts for the active parent. */
@@ -103,35 +100,37 @@ export class SessionFactsService extends Service {
     return () => this.childListeners.delete(listener)
   }
 
-  /** Attach the service to a renderer-neutral current-session snapshot. */
-  attach(session: BlueSessionSnapshot | null): void {
-    const switched = this.session?.id !== session?.id
-    this.session = session
-    for (const listener of this.sessionListeners) listener(session)
+  /** Attach the service to the exact selected Agent. */
+  attach(agent: Agent | null): void {
+    const switched = this.agent !== agent
+    this.agent = agent
+    for (const listener of this.agentListeners) listener(agent)
     if (!switched) return
 
     this.children.clear()
-    const projections = this.ctx.get('blueSessionProjections') as BlueSessionProjectionReader | undefined
-    const facts = session === null ? undefined : projections?.current('blueConversationFacts')?.value
+    const snapshot = agent === null
+      ? undefined
+      : this.ctx.sessionProjections.snapshot(agent.session, ['blueConversationFacts', 'title'])
+    const facts = snapshot?.values.blueConversationFacts
     this.publish(isFacts(facts) ? facts : initialConversationFacts())
-    const title = session === null ? undefined : projections?.current('title')?.value
+    const title = snapshot?.values.title
     this.publishTitle(isTitle(title) ? title ?? undefined : undefined)
-    for (const child of projections?.children('blueConversationFacts') ?? []) {
-      if (isFacts(child.value)) this.children.set(child.id, projectChildSessionFacts(child.id, child.value))
+    for (const child of this.directChildren()) {
+      const childFacts = this.ctx.sessionProjections.snapshot(child, ['blueConversationFacts']).values.blueConversationFacts
+      if (isFacts(childFacts)) this.children.set(String(child.id), projectChildSessionFacts(String(child.id), childFacts))
     }
     this.publishChildren()
   }
 
   dispose(): void {
-    this.offProjection?.()
-    this.offChildProjection?.()
-    this.sessionRegistration?.dispose()
+    this.offProjection()
+    this.offAgent()
     this.listeners.clear()
     this.titleListeners.clear()
-    this.sessionListeners.clear()
+    this.agentListeners.clear()
     this.childListeners.clear()
     this.children.clear()
-    this.session = null
+    this.agent = null
     this.facts = initialConversationFacts()
     this.title = undefined
   }
@@ -147,8 +146,8 @@ export class SessionFactsService extends Service {
     for (const listener of this.titleListeners) listener(next)
   }
 
-  private publishChild(child: BlueChildSessionProjectionSnapshot): void {
-    this.children.set(child.id, projectChildSessionFacts(child.id, child.value as ConversationFacts))
+  private publishChild(id: string, facts: ConversationFacts): void {
+    this.children.set(id, projectChildSessionFacts(id, facts))
     this.publishChildren()
   }
 
@@ -159,6 +158,19 @@ export class SessionFactsService extends Service {
 
   private childrenForCurrentSession(): readonly ChildSessionFacts[] {
     return [...this.children.values()]
+  }
+
+  private directChildren(): readonly Session[] {
+    const parent = this.agent
+    if (parent === null) return []
+    return [...this.ctx.sessions.list()].filter(session => this.isDirectChild(session))
+  }
+
+  private isDirectChild(session: Session): boolean {
+    const parent = this.agent
+    return parent !== null
+      && session.header.origin === 'subagent'
+      && session.header.parentSession === parent.id
   }
 }
 

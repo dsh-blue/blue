@@ -66,11 +66,11 @@ export function traceDetailPanelModel(item: TraceItem, text: string): FrontendPa
 /** Register `/trace` and its copy subcommands. */
 export function registerTraceCommand(ctx: Context): () => void {
   async function loadItems(): Promise<{ sessionId: SessionId, records: SessionEventRecord[], events: SessionEvent[], items: TraceItem[] } | undefined> {
-    const current = ctx.blueSessionReader.current()
+    const current = ctx.blueCurrentAgent.current()
     const query = ctx.get('sessionQuery')
     if (current === null) return undefined
     if (query === undefined) throw new Error('session query is unavailable')
-    const sessionId = SessionId(current.id)
+    const sessionId = current.id
     const snapshot = await query.readSession(sessionId)
     const records = buildSessionEventRecords(sessionId, snapshot.events)
     return { sessionId, records, events: snapshot.events, items: aggregateTraceItems(records, snapshot.events) }

@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-app",
   "description": "Blue terminal UI application: command-line startup and the Agent driver that wires sessions to the Blue transcript and interaction layers",
-  "version": "0.1.2-alpha.1",
+  "version": "0.2.0-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -21,10 +21,6 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
-    "./plugin-host-session-bridge": {
-      "types": "./lib/types/plugin-host-session-bridge.d.ts",
-      "default": "./lib/plugin-host-session-bridge.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -38,21 +34,23 @@
   },
   "dependencies": {
     "@dsh-blue/blue-api": "workspace:*",
-    "@deepseek-ai/dsh-cmdline": "0.1.2-alpha.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-cmdline": "0.1.2-alpha.3",
     "@deepseek-ai/schemastery": "3.18.2",
     "commander": "^15.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "^1.0.3",
-    "@deepseek-ai/dsh-agent": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent-default-model": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-commands": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-plan-mode": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-skill": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-llm": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-session": "^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-commands": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-plan-mode": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-skill": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-llm": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session": "^0.1.2-alpha.3",
     "@deepseek-ai/cordis": "^4.0.2"
   },
   "peerDependenciesMeta": {
@@ -66,15 +64,16 @@
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3",
-    "@deepseek-ai/dsh-agent": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent-default-model": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent-presets": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-commands": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-plan-mode": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-skill": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-llm": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-session": "0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-default-model": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-presets": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-commands": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-plan-mode": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-skill": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-llm": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
     "@deepseek-ai/cordis": "4.0.2"
   }
 }

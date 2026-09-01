@@ -22,9 +22,7 @@ export function releaseRepository(relativeDir) {
 export const RELEASE_PACKAGE_DIRS = [
   'packages/api',
   'packages/ui',
-  'packages/plugin-kit',
   'packages/frontend',
-  'packages/harness-adapter',
   'packages/conversation',
   'packages/core',
   'packages/app',
@@ -35,12 +33,7 @@ export const RELEASE_PACKAGE_DIRS = [
 ]
 
 /** Packages validated independently but deliberately excluded from release. */
-export const VALIDATION_PACKAGE_DIRS = [
-  'packages/context',
-  'packages/remote',
-  'packages/openpencil',
-  'packages/lark',
-]
+export const VALIDATION_PACKAGE_DIRS = []
 
 /** Publish-shaped ecosystem examples built and validated outside the release set. */
 export const ECOSYSTEM_PACKAGE_DIRS = [
@@ -49,8 +42,6 @@ export const ECOSYSTEM_PACKAGE_DIRS = [
   'examples/right-inspector',
   'examples/bottom-log',
   'examples/overlay',
-  'examples/status-provider',
-  'examples/editor-provider',
   'examples/ui-gallery',
   'examples/blue-ecosystem',
 ]

@@ -167,7 +167,7 @@ export class PlanReviewPanel implements BlueFocusable {
     const index = Number(itemId)
     if (!Number.isInteger(index) || index < 0 || index >= this.labels.length || index === this.cursor) return
     this.cursor = index
-    this.adapter.invalidate()
+    this.adapter.focus({ controlId, itemId })
   }
 
   private submitRevision(value: string): void {

@@ -1,7 +1,7 @@
 # 快速上手
 
 ::: info 当前发布线
-`v0.1.2-alpha.1` 是当前 alpha。普通安装使用 **`alpha`** 通道；插件适配、CI 和可复现环境应锁定 Blue `0.1.2-alpha.1` 与 Harness `0.1.2-alpha.2`，不兼容 Harness RC。本页是用户安装路径；贡献者的本地开发安装（源码检出、link 安装、迭代环）在开发手册的[贡献本仓库](/plugins/contributing)页。
+`v0.2.0-alpha.1` 是当前 alpha。普通安装使用 **`alpha`** 通道；CI 和可复现环境应锁定 Blue `0.2.0-alpha.1` 与 Harness `0.1.2-alpha.3`。本页是用户安装路径；贡献者的本地开发安装见[贡献本仓库](/plugins/contributing)。
 :::
 
 ## 前置条件
@@ -10,7 +10,7 @@
 | --- | --- |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | pnpm | 11（首次装配、升级和 `plugin` 管理需要；日常启动已校准的 profile 不会重复检查。推荐先执行 `npm i -g pnpm@11`，或 `corepack enable && corepack prepare pnpm@11.7.0 --activate`） |
-| dsh CLI | 推荐的 `blue` 启动器已内含精确版本 `0.1.2-alpha.2`；只有下方“dsh 直装”路径需要单独安装 |
+| dsh CLI | 推荐的 `blue` 启动器已内含精确版本 `0.1.2-alpha.3`；只有下方“dsh 直装”路径需要单独安装 |
 
 ## 安装（预览版）
 

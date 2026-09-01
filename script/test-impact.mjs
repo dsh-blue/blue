@@ -119,7 +119,7 @@ export function classifyChanges(inputFiles) {
     if (isStructuralBuildPath(file)) {
       build = true
       checkLib = true
-      if (owner !== undefined && (file.endsWith('blue.plugin.json') || file.endsWith('package.json'))) validatePackages.add(owner)
+      if (owner !== undefined && file.endsWith('package.json')) validatePackages.add(owner)
     }
     if (!CODE_PATTERN.test(file)) continue
 

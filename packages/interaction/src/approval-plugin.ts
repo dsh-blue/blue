@@ -10,9 +10,7 @@
  * with the rejection reason. The panel replaces the editor in its dock
  * slot (D30), so below it only the footer remains. Session-scoped
  * allowances are remembered by the frontend tree and session id and
- * short-circuit later prompts for the same tool. Yolo (`/yolo`, S24a)
- * short-circuits every prompt while on — the policy stays `'ask'`, this
- * answerer is the auto-approve surface (see `./mode-state.ts`).
+ * short-circuit later prompts for the same tool.
  * Concurrent requests
  * serialize on a Fiber-owned FIFO chain so only one prompt is visible at
  * a time. Requests for any other agent — and requests arriving before a
@@ -26,6 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueScreen, BlueTheme } from '@dsh-blue/blue-core'
 import type { ApprovalOutcome, ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter } from './canonical-panel.ts'
 import { mountEditorReplacement } from './editor-instance.ts'
@@ -34,7 +33,7 @@ import { interactionTranslator, observeInteractionLocale } from './locale.ts'
 /** Stable Cordis plugin name. */
 export const name = 'blue-approval'
 /** Services required before the answerer can listen. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionReader', 'blueSessionActions']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueCurrentAgent']
 
 /** Decoded input sequences the prompt handles directly (no keymap actions). */
 /** Construction options for {@link ApprovalPrompt}. */
@@ -199,7 +198,7 @@ class ApprovalPrompt implements BlueFocusable {
     const index = Number(itemId)
     if (!Number.isInteger(index) || index < 0 || index >= this.labels().length || index === this.cursor) return
     this.cursor = index
-    this.adapter.invalidate()
+    this.adapter.focus({ controlId, itemId })
     this.options.screen.requestRender()
   }
 }
@@ -210,8 +209,7 @@ class ApprovalPrompt implements BlueFocusable {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const reader = ctx.blueSessionReader
-  const actions = ctx.blueSessionActions
+  const currentAgent = ctx.blueCurrentAgent
   const sessionAllowances = new Map<string, Set<string>>()
   const queuedPrompts: Array<() => void> = []
   const cancelPrompts = new Set<() => void>()
@@ -274,18 +272,16 @@ export function apply(ctx: Context): void {
     req: ApprovalRequest,
     next: () => Promise<ApprovalOutcome>,
   ): Promise<ApprovalOutcome> => {
-    if (!actions.isCurrentAgent(req.agent)) return next()
-    const sessionId = reader.current()?.id
-    if (sessionId === undefined) return next()
+    if (currentAgent.current() !== req.agent) return next()
+    const sessionId = String(req.agent.id)
     if (sessionAllowances.get(sessionId)?.has(req.toolName) === true) {
       return Promise.resolve<ApprovalOutcome>('allowed-once')
     }
     if (req.signal?.aborted) return Promise.resolve<ApprovalOutcome>('cancelled')
-    if (actions.modeState()?.mode === 'yolo') return Promise.resolve<ApprovalOutcome>('allowed-once')
     return enqueueApproval((registerCancel) => {
-      if (!actions.isCurrentAgent(req.agent)) return Promise.resolve<ApprovalOutcome>('cancelled')
+      if (currentAgent.current() !== req.agent) return Promise.resolve<ApprovalOutcome>('cancelled')
       return prompt(ctx, req, registerCancel, () => {
-        if (!actions.isCurrentAgent(req.agent) || reader.current()?.id !== sessionId) return
+        if (currentAgent.current() !== req.agent) return
         let tools = sessionAllowances.get(sessionId)
         if (tools === undefined) {
           tools = new Set()
@@ -293,22 +289,27 @@ export function apply(ctx: Context): void {
         }
         tools.add(req.toolName)
       }, (reason) => {
-        actions.steerCurrentAgent(req.agent, `User rejected ${req.toolName}: ${reason}`)
+        if (currentAgent.current() !== req.agent) return
+        req.agent.steer(createUserMessage({
+          content: [{ type: 'text', text: `User rejected ${req.toolName}: ${reason}` }],
+          source: { kind: 'user' },
+        }))
       })
     }, req.signal)
   }
 
   ctx.on('approval/request', (req, next) => answer(req, next))
-  let observedSessionId = reader.current()?.id
-  const sessionRegistration = reader.subscribe(snapshot => {
-    const next = snapshot?.id
+  let observedSessionId = currentAgent.current()?.id
+  const sessionRegistration = currentAgent.subscribe(agent => {
+    const next = agent?.id
     if (next === observedSessionId) return
     observedSessionId = next
+    sessionAllowances.clear()
     for (const cancel of cancelPrompts) cancel()
   })
   ctx.effect(() => () => {
     disposed = true
-    sessionRegistration.dispose()
+    sessionRegistration()
     for (const cancel of cancelPrompts) cancel()
     queuedPrompts.splice(0)
     sessionAllowances.clear()

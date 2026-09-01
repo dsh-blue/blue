@@ -29,8 +29,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import type { BlueSessionToolSchema } from '@dsh-blue/blue-app'
-// Empty type import carries the app-owned tool-catalog action service.
+import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import type {} from '@dsh-blue/blue-app'
 
 /** The loader module specifier an MCP server entry declares. */
@@ -91,7 +90,7 @@ export interface McpServerView {
   /** Tools registered under this server's namespace (global registry view). */
   readonly registeredCount: number
   /** The session-visible tools of this server (equals the global view when no session is live). */
-  readonly toolsVisible: readonly BlueSessionToolSchema[]
+  readonly toolsVisible: readonly ToolSchema[]
 }
 
 /** The whole `/mcp` read: servers plus the join's honest leftovers. */
@@ -209,9 +208,9 @@ export async function collectMcpServers(ctx: Context): Promise<McpCatalog> {
     | { entries(): Generator<Entry, void, void> }
     | undefined
   if (loader === undefined) throw new Error('the host composes no loader service')
-  const observed = await ctx.blueSessionActions.toolCatalog()
-  if (!observed.ok) throw new Error(observed.message)
-  const catalog = observed.value
+  const tools = ctx.get('tools')
+  if (tools === undefined) throw new Error('the host composes no tools service')
+  const agent = ctx.blueCurrentAgent.current()
 
   // The declared servers, in entry-tree order; the normalized fiber config
   // is preferred, the raw options config covers never-started entries.
@@ -228,7 +227,7 @@ export async function collectMcpServers(ctx: Context): Promise<McpCatalog> {
 
   // The global registry view: the registered (health) counts, and the
   // orphans — mcp__-named tools no declared server owns.
-  const globalSchemas = catalog.registered
+  const globalSchemas = tools.schemas()
   const registered = new Map<string, number>()
   let orphanCount = 0
   const prefixes = configs
@@ -248,9 +247,9 @@ export async function collectMcpServers(ctx: Context): Promise<McpCatalog> {
   // The session-visible view: the agent's preset scope when a session is
   // live, the global view otherwise (the process-level truth /mcp degrades
   // to — the panel notes the missing session).
-  const sessionLive = catalog.sessionLive
-  const visibleSchemas = catalog.visible
-  const visible = new Map<string, BlueSessionToolSchema[]>()
+  const sessionLive = agent !== null
+  const visibleSchemas = agent === null ? globalSchemas : tools.schemas(agent)
+  const visible = new Map<string, ToolSchema[]>()
     for (const schema of visibleSchemas) {
       if (!schema.name.startsWith(MCP_PREFIX)) continue
       const owner = prefixes.find(prefix => schema.name.startsWith(prefix))

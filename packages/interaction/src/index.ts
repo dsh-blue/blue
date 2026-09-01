@@ -13,9 +13,7 @@
  * terminal mirror (`blue-terminal-title`, the OSC 0 window title over the
  * upstream session-title fold), the consolidated `blue` settings namespace
  * (`blue-settings`), and the
- * boot-time update check (`blue-update-check`). The author-command environment
- * child publishes the installed plugin kit through trusted Harness shell facts.
- * All
+ * boot-time update check (`blue-update-check`). All
  * registrations are effect-bound, so unloading the fiber reverts every
  * contribution.
  *
@@ -25,7 +23,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import * as approvalPlugin from './approval-plugin.ts'
-import * as authorCommandEnvironment from './author-command-environment.ts'
 import * as commandsPlugin from './commands-plugin.ts'
 import { CommandModelService } from './command-model.ts'
 import * as inputPlugin from './input-plugin.ts'
@@ -50,8 +47,8 @@ export { InteractionStateService } from './runtime-state.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-interaction'
-/** App-owned session boundaries required before child interaction fibers mount. */
-export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
+/** App-owned current-Agent selection required before child interaction fibers mount. */
+export const inject = ['blueCurrentAgent', 'skills']
 
 /** Interaction configuration; the override identifies acceptance profiles without changing the release line. */
 export interface Config {
@@ -78,7 +75,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => () => editorHost.dispose())
   const skillsCatalog = new SkillsCatalogService(ctx)
   ctx.effect(() => () => skillsCatalog.dispose())
-  ctx.plugin(authorCommandEnvironment)
   ctx.plugin(keysPlugin)
   ctx.plugin(CommandModelService)
   ctx.plugin(EditorModelService)

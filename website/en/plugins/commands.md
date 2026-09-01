@@ -1,94 +1,31 @@
-# Commands
+# Native dsh commands
 
-The `commands` capability registers slash commands into the Harness command registry: they automatically appear in the editor's slash completion and in `/help`, with no extra UI registration.
-
-## Contract
+Blue defines no command adapter. Depend on `@deepseek-ai/dsh-commands` and use
+`ctx.commands` directly.
 
 ```ts
-api.commands?.register(contribution: BlueCommandContribution): BlueResult<BlueRegistration>
-```
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-commands'
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `string` | the command name (the user types `/id`). Must match `^[a-z][a-z0-9_-]*$` — note this is stricter than a general contribution id: **dots are not allowed** |
-| `label` | `string` | a non-empty description, shown in completion and `/help` |
-| `execute` | `(args, options?) => Promise<BlueResult>` | the handler, see below |
-| `priority` | `number?` | optional integer metadata |
+export const inject = ['commands']
 
-The arguments of `execute(args, options)`:
-
-| Argument | Description |
-| --- | --- |
-| `args` | the array of `rawInput` trimmed and split on whitespace; `[]` when there are no arguments |
-| `options.signal` | an `AbortSignal`, fired when the session is aborted — long-running tasks must respond to it |
-| `options.rawInput` | the raw input line (unsplit), for when you need to parse quotes yourself |
-
-## Full example
-
-An abortable command that appends text to a file. The `manifest` below is the
-canonical `blue.plugin.json` result from `validateBluePluginManifestV1()`. Its
-capability request includes at least:
-
-```json
-{
-  "capabilities": {
-    "required": [
-      { "name": "commands", "version": "^1.0.0", "resources": { "names": ["clip"] } }
-    ],
-    "optional": [
-      { "name": "notifications.publish", "version": "^1.0.0" }
-    ]
-  }
+export function apply(ctx: Context): void {
+  ctx.commands.register({
+    name: 'health',
+    description: 'Show build health',
+    handler: (_args, _options) => ({
+      kind: 'success',
+      text: 'healthy',
+    }),
+  })
 }
 ```
 
-```ts
-const opened = ctx.bluePluginHost.open(ctx, manifest)
-if (!opened.ok) return
-const api = opened.value.api
+For the current session, also inject `blueCurrentAgent`, obtain the Agent when
+the handler runs, and pass `agent.session` to native services such as
+`sessionProjections`. The
+[Harness reference](https://deepseek-harness.github.io/deepseek-harness/reference/)
+is authoritative for command definitions, args/options, and results.
 
-const registered = api.commands?.register({
-  id: 'clip',
-  label: 'Append text to ~/clip.log',
-  execute: async (args, { signal } = {}) => {
-    if (args.length === 0) {
-      return { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'usage: /clip <text>' }
-    }
-    if (signal?.aborted) {
-      return { ok: false, code: 'BLUE_ABORTED', message: 'aborted' }
-    }
-    await appendFile(`${homedir()}/clip.log`, `${args.join(' ')}\n`)
-    const published = api.notifications?.publish({
-      id: 'clip.saved',
-      view: { kind: 'text', content: `saved ${args.length} word(s)` },
-      tone: 'success',
-    })
-    if (published !== undefined && !published.ok) return published
-    return { ok: true, value: undefined }
-  },
-})
-if (registered !== undefined && !registered.ok) ctx.logger.warn(registered.message)
-```
-
-## Behavior details
-
-- **Names are exact resources**: the canonical manifest declares 1–64 command names. Registering an ungranted name returns `BLUE_RESOURCE_DENIED`, and one consumer may retain at most 64 command contributions;
-- **Duplicate ids are rejected**: `register()` returns `BLUE_DUPLICATE_ID`. Colliding with a built-in command or another plugin's command fails at registration time too — always check `register`'s return value and degrade on failure;
-- **The return value is the user feedback**: the `message` of `{ ok: false, code, message }` is shown as error text in the editor notice bar; an exception thrown by `execute` is backstopped by the bridge layer into `plugin command failed: ...` — a backstop is not a contract, so return structured errors on your own;
-- **Success is silent**: `{ ok: true }` produces no output. To give the user feedback, request [`notifications.publish`](/en/plugins/notifications) and publish one;
-- **Unload means disappearance**: registrations bind to the caller's Fiber; once the plugin unloads, the command is removed from the registry and vanishes from completion and `/help` alike.
-- **Old callbacks cannot commit**: owner replacement, consumer unload, or signal abort rejects late results from the old command generation. The Host never replays command actions after an owner gap.
-
-## Common pitfalls
-
-| Symptom | Cause |
-| --- | --- |
-| `BLUE_INVALID_CONTRIBUTION` | the id contains uppercase letters, dots, or a leading digit; `label` is empty; `execute` is not a function |
-| `BLUE_ACTION_REJECTED` | the id starts with `blue.` / `blue:` / `blue-` / `@dsh-blue/` — that is Blue's reserved namespace |
-| `BLUE_DUPLICATE_ID` | name collision with an already-registered command (including built-ins) |
-| my command is missing from completion | `register()` failed and you never checked the return value; or the plugin row never made it into the patch |
-
-## Reference
-
-- The design rationale behind argument and abort semantics lives in [Core concepts](/en/plugins/concepts);
-- How built-in commands register: see `blue-interaction` ([Built-in plugins](/en/plugins/builtins)).
+Registration follows the plugin Fiber. Do not create a second command protocol
+through Blue UI actions.

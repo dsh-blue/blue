@@ -12,7 +12,6 @@ export const summaryMetric = defineBlueComponent<{
   readonly detail: string
 }>({
   id: '@dsh-blue-example/summary-metric',
-  api: '^1.0.0-beta.1',
   render: props => ui.surface({
     chrome: 'lane',
     padding: 1,

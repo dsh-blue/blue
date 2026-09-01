@@ -1,5 +1,5 @@
 /**
- * @dsh-blue/blue-transcript — renderer adapter for the frontend runtime.
+ * @dsh-blue/blue-transcript — terminal transcript surfaces for the frontend runtime.
  * The official conversation plugin publishes a renderer-neutral transcript
  * model from the Harness projection; this plugin owns component
  * reconciliation, Ctrl-O expansion, settings, dock chrome, and the
@@ -18,8 +18,7 @@ import type {} from '@dsh-blue/blue-app'
 // Carries the optional host `settings` service Context merge.
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { UserMessageImages } from './components.ts'
-import { BlueStatusCompositionService, BlueStatusEntryService, StatusFooterComponent } from './status-model.ts'
-import { BlueBottomPaneService } from './dock-model.ts'
+import { StatusFooterComponent } from './status-model.ts'
 import { BlueModelToolService } from './tool-model.ts'
 import { TranscriptModelService } from './transcript-model.ts'
 import { SessionFactsService } from './session-facts.ts'
@@ -89,7 +88,7 @@ export {
 export const name = 'blue-transcript'
 
 /** Services the plugin requires before it can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueSessionReader', 'blueSessionProjections']
+export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueKeymap', 'blueStatus', 'blueCurrentAgent', 'sessionProjections', 'sessions']
 
 /** The global action toggling tool-output expansion (Ctrl-O). */
 export const ACTION_TOGGLE_COLLAPSE = 'blue.transcript.toggle-collapse'
@@ -103,7 +102,7 @@ export const EXPAND_TURNS = DEFAULT_EXPAND_TURNS
 /** The plugin-wide expansion state forwarded to the semantic transcript model. */
 interface CollapseToggle { expanded: boolean }
 /**
- * Mount the renderer adapter and model footer. The official transcript
+ * Mount the transcript components and model footer. The official transcript
  * consumer owns projection binding; this fiber provides only the shared
  * model registry, dock chrome, settings, and global Ctrl-O expansion action.
  * @param ctx - plugin context.
@@ -120,7 +119,7 @@ export function apply(ctx: Context): void {
   presentation.apply(ctx.get('settings')?.get(BLUE_NS))
 
   // Optional image wiring is renderer-owned; the projected model carries only
-  // durable references and the byte loader stays in this renderer adapter.
+  // durable references and the byte loader stays in this terminal layer.
   const imageDependencies = (): UserMessageImages => {
     const attachments = ctx.get('attachments') as
       | { readImage(ref: unknown): Promise<{ data: Uint8Array }> }
@@ -139,12 +138,6 @@ export function apply(ctx: Context): void {
 
   const sessionFacts = new SessionFactsService(ctx)
   ctx.effect(() => () => sessionFacts.dispose())
-  const statusEntries = new BlueStatusEntryService(ctx, screen)
-  const bottomPanes = new BlueBottomPaneService(ctx, {
-    components: ctx.blueComponents,
-    colors,
-    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
-  })
   const toolModels = new BlueModelToolService(ctx, undefined, {
     components: ctx.blueComponents,
     colors,
@@ -160,30 +153,25 @@ export function apply(ctx: Context): void {
       t,
     },
   })
-  ctx.effect(() => () => statusEntries.dispose())
-  ctx.effect(() => () => bottomPanes.dispose())
   ctx.effect(() => () => toolModels.dispose())
   ctx.effect(() => () => transcriptModels.dispose())
   const footer = new StatusFooterComponent(
-    statusEntries,
+    ctx.blueStatus,
     ctx.blueComponents,
     colors,
     () => ({ columns: screen.columns, rows: screen.rows }),
   )
-  const statusComposition = new BlueStatusCompositionService(ctx, statusEntries, footer, {
-    components: ctx.blueComponents,
-    colors,
-    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
-    requestRender: () => screen.requestRender(),
+  const offStatus = ctx.blueStatus.subscribe(() => {
+    footer.invalidate()
+    screen.requestRender()
   })
-  ctx.effect(() => () => statusComposition.dispose())
-  bottomPanes.attach(screen)
+  ctx.effect(() => offStatus)
   toolModels.attach(screen)
   transcriptModels.attach(screen)
   // The footer pins to the dock's lowest slot (S12): the two-row status
   // stays on the terminal's last rows beneath the editor, the kimi layout
   // dialog panels pull up over.
-  ctx.effect(() => screen.addBottomChild(new GutterComponent(statusComposition), 'bottom'))
+  ctx.effect(() => screen.addBottomChild(new GutterComponent(footer), 'bottom'))
 
   let offKeymap: () => void = () => {}
   const registerKeymap = (): void => {

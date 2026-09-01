@@ -39,7 +39,7 @@ import { ui } from '@dsh-blue/blue-ui'
   `default | muted | accent | success | warning | danger`。
 - `emphasis` 是 `normal | strong`；省略时按普通文本处理。
 
-下面的“默认”描述 `0.1.2-alpha.1` 当前 Blue TUI。wire contract 只承诺字段语义，
+下面的“默认”描述 `0.2.0-alpha.1` 当前 Blue TUI。wire contract 只承诺字段语义，
 不会承诺具体边框字符、颜色值或按键绑定。
 
 ## 内容节点
@@ -268,8 +268,8 @@ ui.document({
 })
 ```
 
-`document` 可用于普通 pane 与 capturing overlay，不能用于 status、notification、
-editor shell 或 `sections.body`。
+`document` 可用于普通 pane、passive overlay 与 capturing overlay，不能用于
+status、notification、editor extension 或 `sections.body`。
 
 ### `chart`
 
@@ -317,8 +317,9 @@ ui.chart({
 
 数值必须 finite，`null` 表示缺失数据。series id 与 heatmap level value 必须唯一；
 bar values 数量匹配 category，heatmap 矩阵维度匹配 row/column label。每个 chart
-最多 20 个 series，单棵树最多 4,000 个 chart cell。使用 `document` 或 `chart`
-的插件必须要求 API `^1.0.0-beta.2`。
+最多 20 个 series，单棵树最多 4,000 个 chart cell。与 `document` 一样，`chart`
+可用于普通 pane、passive overlay 与 capturing overlay，不能进入更窄的 status、
+notification、editor extension 或 `BlueView` 树。
 
 ## 布局节点
 
@@ -978,7 +979,7 @@ Pane 和 overlay 把 handler 放在 contribution/request 上，而不是放进�
 onEvent: (
   event: BlueUiEvent,
   context: BlueUiEventContext,
-) => BlueResult | Promise<BlueResult>
+) => void | Promise<void>
 ```
 
 | 事件 | 来源 | 载荷 |
@@ -990,8 +991,8 @@ onEvent: (
 | `tab-change` | tabs | `controlId`、`tabId` |
 | `dismiss` | 可关闭 surface，例如 overlay Escape | 无 control id |
 
-`context` 包含当前 `surfaceId`、`revision`、`AbortSignal` 和可选的一次性
-`userGesture`。`value-change`、`selection-change`、`tab-change` 按 control id
+`context` 包含当前 `surfaceId`、`revision` 与 `AbortSignal`。
+`value-change`、`selection-change`、`tab-change` 按 control id
 latest-wins；`activate`、`submit`、`dismiss` 按 surface FIFO。handler 成功后 Blue
 自动重渲染；失败、abort、timeout、旧 generation 或卸载后的结果不会提交。
 

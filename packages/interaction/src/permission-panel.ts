@@ -81,8 +81,9 @@ export function openPermissionPanel(ctx: Context): void {
     getSharedEditor(ctx)?.notice?.('permission picker is unavailable: the Blue screen is not mounted')
     return
   }
-  const current = ctx.blueSessionActions.permissionPreset()
-  if (current === undefined) return
+  const agent = ctx.blueCurrentAgent.current()
+  if (agent === null) return
+  const current = ctx.permissionPresets.current(agent.session)
   const rows: SelectRow[] = presets.names.map(name => ({
     value: name,
     label: presets.optionOf(name).name,
@@ -94,7 +95,7 @@ export function openPermissionPanel(ctx: Context): void {
   }
 
   const dispatch = (name: string): void => {
-    void ctx.blueSessionActions.executeCommand(`/permission ${name}`, new AbortController().signal).then(
+    void ctx.commands.execute(agent, `/permission ${name}`, [], new AbortController().signal).then(
       execution => {
         if (execution === undefined) return
         const { result } = execution

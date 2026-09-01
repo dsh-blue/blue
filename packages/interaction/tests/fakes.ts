@@ -6,7 +6,12 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import {
+  BlueEditorExtensionService,
+  BlueOverlayService,
+  BluePaneService,
+  BlueStatusService,
+} from '../../api/src/services.ts'
 // Width truth is pi-tui itself (D48): the fake SGR-stripped counters that
 // used to live here were exact only for ASCII, so CJK mis-budgets stayed
 // green in tests while tripping the real width guard. Fakes now delegate to
@@ -47,10 +52,6 @@ import { EditorHostService, setEditorSlotSwap } from '../src/editor-instance.ts'
 import {
   INTERACTION_KEY_ACTIONS,
 } from '../src/keys.ts'
-import { BlueBottomPaneService } from '../../transcript/src/dock-model.ts'
-import { rewindCandidates } from '../../app/src/rewind.ts'
-import { foldYolo } from '../../app/src/mode.ts'
-import { sessionDetails as buildSessionDetails } from '../../app/src/session-details.ts'
 import { SkillsCatalogService } from '../src/skills-catalog.ts'
 import { InteractionStateService } from '../src/runtime-state.ts'
 import { DEFAULT_SETTINGS } from '../src/settings.ts'
@@ -895,7 +896,12 @@ function isFocusable(component: BlueComponent | null): component is BlueFocusabl
   return component !== null && 'focused' in component
 }
 
-/** A context with the four fake Blue services provided. */
+interface TestSessionState {
+  readonly current?: unknown | null
+  readonly modelRef?: { current: { provider: string, model: string, reasoningEffort?: string } }
+}
+
+/** A context with the renderer services and native dsh session seams provided. */
 export function fakeBlueContext(options: { readonly display?: boolean; readonly dock?: boolean } = {}): {
   ctx: Context
   screen: FakeScreen
@@ -916,425 +922,89 @@ export function fakeBlueContext(options: { readonly display?: boolean; readonly 
     ctx.provide('blueKeymap', keymap as unknown as BlueKeymapService)
     ctx.provide('blueComponents', components as unknown as BlueComponentsService)
   }
-  type FakeAgent = {
-    readonly id: string
-    status: string
-    readonly session?: {
-      readonly header?: { readonly cwd?: string }
-      readonly events?: readonly never[]
-      requestHeader?(): unknown
-    }
-    readonly inbox: {
-      readonly nextTurn: readonly { readonly id: string, readonly content: readonly { readonly type: string, readonly text?: string }[] }[]
-      readonly nextStep: readonly { readonly id: string, readonly content: readonly { readonly type: string, readonly text?: string }[] }[]
-      remove(id: string): boolean
-    }
-    followup(message: unknown): void
-    steer(message: unknown): void
-    cancel(reason: { readonly kind: 'user' }): void
+  const testSession = (): TestSessionState | undefined => ctx.get('testSession') as TestSessionState | undefined
+  const active = (): unknown | null => {
+    const value = testSession()?.current
+    return value ?? null
   }
-  const active = (): FakeAgent | undefined => {
-    const value = ctx.get('testSession')?.current as unknown
-    return value === null || value === undefined ? undefined : value as FakeAgent
-  }
-  const yoloByAgent = new WeakMap<object, boolean>()
-  const readMode = (): { mode: 'normal' | 'plan' | 'yolo', pending: boolean } | undefined => {
+  const listeners = new Set<(agent: unknown | null, revision: number) => void>()
+  let revision = 0
+  const publishAgent = (): void => {
+    revision += 1
     const agent = active()
-    if (agent === undefined) return undefined
-    let yolo = yoloByAgent.get(agent)
-    if (yolo === undefined) {
-      yolo = foldYolo(agent.session?.events ?? [])
-      yoloByAgent.set(agent, yolo)
-    }
-    if (yolo) return { mode: 'yolo', pending: false }
-    const planMode = ctx.get('planMode') as unknown as { get(agent: unknown): { active: boolean, pending?: boolean } } | undefined
-    const state = planMode?.get(agent)
-    if (state?.pending === true) return { mode: 'plan', pending: true }
-    return { mode: state?.active === true ? 'plan' : 'normal', pending: false }
+    for (const listener of listeners) listener(agent, revision)
   }
-  const snapshot = () => {
-    const agent = active()
-    if (agent === undefined) return null
-    const selection = ctx.get('testSession')?.modelRef?.current
-    return {
-      id: String(agent.id),
-      cwd: agent.session?.header?.cwd ?? process.cwd(),
-      status: agent.status === 'running' ? 'running' as const : 'idle' as const,
-      mode: readMode()?.mode ?? 'normal',
-      ...(selection === undefined ? {} : {
-        model: {
-          id: selection.model,
-          provider: selection.provider,
-          ...(selection.reasoningEffort === undefined ? {} : { effort: selection.reasoningEffort }),
-        },
-      }),
-    }
-  }
-  const sessionListeners = new Set<(value: ReturnType<typeof snapshot>) => void>()
-  const publishSession = (): void => {
-    const value = snapshot()
-    for (const listener of sessionListeners) listener(value)
-  }
-  ctx.provide('blueSessionReader', {
-    current: snapshot,
-    subscribe(listener) {
-      sessionListeners.add(listener)
-      listener(snapshot())
-      let disposed = false
-      return {
-        get disposed() { return disposed },
-        dispose() {
-          if (disposed) return
-          disposed = true
-          sessionListeners.delete(listener)
-        },
-      }
+  ctx.provide('blueCurrentAgent', {
+    current: active,
+    revision: () => revision,
+    subscribe(listener: (agent: unknown | null, revision: number) => void) {
+      listeners.add(listener)
+      listener(active(), revision)
+      return ctx.effect(() => () => { listeners.delete(listener) })
     },
-    async request(action) {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      if (action.kind === 'interrupt') agent.cancel({ kind: 'user' })
-      else {
-        const message = createUserMessage({ content: [{ type: 'text', text: action.text }], source: { kind: 'user' } })
-        if (action.kind === 'followup') agent.followup(message)
-        else agent.steer(message)
-      }
-      return { ok: true as const, value: undefined }
+  } as never)
+  new BluePaneService(ctx)
+  new BlueStatusService(ctx)
+  new BlueOverlayService(ctx)
+  new BlueEditorExtensionService(ctx)
+  const projectionListeners = new Set<(session: unknown, key: string, value: unknown, seq: number) => void>()
+  ctx.provide('sessionProjections', {
+    snapshot: (_session: unknown, keys?: readonly string[]) => {
+      const selection = testSession()?.modelRef?.current
+      const values = selection === undefined || (keys !== undefined && !keys.includes('modelSelection'))
+        ? {}
+        : { modelSelection: { lastUsed: selection, next: selection } }
+      return { asOfSeq: 0, values }
     },
-  })
-  ctx.provide('blueRequests', { begin: () => ({ sessionEpoch: 0, requestEpoch: 1, scope: 'main' }) } as never)
+    onChanged: (listener: (session: unknown, key: string, value: unknown, seq: number) => void) => {
+      projectionListeners.add(listener)
+      return ctx.effect(() => () => { projectionListeners.delete(listener) })
+    },
+  } as never)
+  ctx.provide('sessionController', {
+    selectModel: async (request: { sessionId: string, provider: string, model: string, reasoningEffort?: string }) => {
+      const state = testSession()
+      if (state?.current === null || state?.modelRef === undefined) throw new Error('no session is live yet')
+      const selected = {
+        provider: request.provider,
+        model: request.model,
+        ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }),
+      }
+      state.modelRef.current = selected
+      const session = (state.current as { session?: unknown } | undefined)?.session
+      if (session !== undefined) {
+        for (const listener of projectionListeners) {
+          listener(session, 'modelSelection', { lastUsed: selected, next: selected }, 0)
+        }
+      }
+      return { selected }
+    },
+  } as never)
+  ctx.provide('tools', { schemas: () => [] } as never)
+  let requestEpoch = 0
+  let activeRequest: { sessionEpoch: number, requestEpoch: number, scope: 'main' | 'btw' | 'subagent' } | undefined
+  ctx.provide('blueRequests', {
+    sessionEpoch: 0,
+    active: () => activeRequest,
+    begin: (scope: 'main' | 'btw' | 'subagent' = 'main') => {
+      activeRequest = { sessionEpoch: 0, requestEpoch: ++requestEpoch, scope }
+      return activeRequest
+    },
+    transition: (ref: typeof activeRequest, state: string) => {
+      if (ref === activeRequest && ['completed', 'failed', 'aborted', 'interrupted'].includes(state)) activeRequest = undefined
+    },
+    interrupt: () => { activeRequest = undefined },
+    commitSession: () => { activeRequest = undefined; return 0 },
+  } as never)
   ctx.provide('blueRetractions', { tryRetract: () => false })
-  const textOf = (message: FakeAgent['inbox']['nextTurn'][number]): string =>
-    message.content.flatMap(block => block.type === 'text' && block.text !== undefined ? [block.text] : []).join('\n')
-  const sessionActions = {
-    followup(blocks) {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      const message = createUserMessage({ content: [...blocks] as never, source: { kind: 'user' } })
-      agent.followup(message)
-      return { ok: true as const, value: { messageId: String(message.id) } }
-    },
-    steer(blocks) {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      const message = createUserMessage({ content: [...blocks] as never, source: { kind: 'user' } })
-      agent.steer(message)
-      return { ok: true as const, value: { messageId: String(message.id) } }
-    },
-    interrupt() {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      if (agent.status !== 'running') return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'No active request' }
-      agent.cancel({ kind: 'user' })
-      return { ok: true as const, value: undefined }
-    },
-    queued() {
-      const agent = active()
-      if (agent === undefined) return []
-      return [
-        ...agent.inbox.nextTurn.map(message => ({ id: String(message.id), target: 'turn' as const, text: textOf(message) })),
-        ...agent.inbox.nextStep.map(message => ({ id: String(message.id), target: 'step' as const, text: textOf(message) })),
-      ]
-    },
-    async flush() {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      await ctx.get('sessions')?.flush(agent.session as never)
-      return { ok: true as const, value: undefined }
-    },
-    rewindCandidates() {
-      const events = (active() as unknown as { readonly session?: { readonly events?: readonly never[] } } | undefined)?.session?.events
-      return events === undefined ? [] : rewindCandidates(events)
-    },
-    commands() {
-      const agent = active()
-      const commands = ctx.get('commands')
-      if (agent === undefined || commands === undefined) return []
-      return commands.list(agent as never).map(command => ({
-        name: command.name,
-        description: command.description,
-        ...(command.input?.hint === undefined ? {} : { inputHint: command.input.hint }),
-      }))
-    },
-    executeCommand(line, signal = new AbortController().signal) {
-      const agent = active()
-      const commands = ctx.get('commands')
-      return agent === undefined || commands === undefined
-        ? Promise.resolve(undefined)
-        : commands.execute(agent as never, line, [], signal)
-    },
-    modeState: readMode,
-    planModeAvailable() {
-      return ctx.get('planMode') !== undefined
-    },
-    setYolo(enabled: boolean) {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      if (enabled) {
-        const planMode = ctx.get('planMode') as unknown as { set(agent: unknown, active: boolean): unknown } | undefined
-        if (typeof planMode?.set === 'function') planMode.set(agent, false)
-      }
-      yoloByAgent.set(agent, enabled)
-      publishSession()
-      return { ok: true as const, value: undefined }
-    },
-    permissionPreset() {
-      const agent = active()
-      const presets = ctx.get('permissionPresets') as unknown as { current(session: unknown): string } | undefined
-      const session = (agent as unknown as { session?: unknown } | undefined)?.session
-      return presets === undefined || session === undefined ? undefined : presets.current(session)
-    },
-    sessionDetails() {
-      const agent = active()
-      if (agent?.session === undefined) return undefined
-      const source = ctx.get('sessionProjections') as unknown as {
-        snapshot(session: unknown): { values: Readonly<Record<string, unknown>> }
-      } | undefined
-      return buildSessionDetails(
-        agent as never,
-        sessionActions.modelSelection(),
-        source?.snapshot(agent.session).values,
-      )
-    },
-    modelSelection() {
-      const selection = ctx.get('testSession')?.modelRef?.current
-      if (selection !== undefined) return selection
-      const header = active()?.session?.requestHeader?.() as {
-        readonly config?: { readonly provider: string, readonly model: string, readonly reasoningEffort?: string }
-      } | undefined
-      return header?.config
-    },
-    hasRequestHeader() {
-      return active()?.session?.requestHeader?.() !== undefined
-    },
-    selectModel(selection) {
-      const ref = ctx.get('testSession')?.modelRef
-      if (ref === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      const previous = ref.current
-      ref.current = selection as never
-      publishSession()
-      return { ok: true as const, value: previous }
-    },
-    isCurrentAgent(candidate: unknown) {
-      return candidate === active()
-    },
-    steerCurrentAgent(candidate: unknown, text: string) {
-      const agent = active()
-      if (agent === undefined || candidate !== agent) {
-        return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      }
-      agent.steer(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
-      return { ok: true as const, value: undefined }
-    },
-    async presets() {
-      const roster = ctx.get('agentPresets') as unknown as {
-        list(): Promise<readonly {
-          readonly id: string
-          readonly trust: 'system' | 'user'
-          readonly name?: string
-          readonly description?: string
-          readonly order?: number
-          readonly broken?: string
-        }[]>
-      } | undefined
-      if (roster === undefined) {
-        return { ok: false as const, code: 'BLUE_CAPABILITY_ABSENT' as const, message: 'agent presets are unavailable: the host composes no roster' }
-      }
-      try {
-        return { ok: true as const, value: await roster.list() }
-      } catch (error) {
-        return {
-          ok: false as const,
-          code: 'BLUE_ACTION_REJECTED' as const,
-          message: `could not list presets: ${error instanceof Error ? error.message : String(error)}`,
-        }
-      }
-    },
-    currentPreset() {
-      const agent = active()
-      const roster = ctx.get('agentPresets') as unknown as {
-        composedPreset(agentCtx: unknown): string | undefined
-      } | undefined
-      return agent === undefined || roster === undefined ? undefined : roster.composedPreset(agent.ctx)
-    },
-    async selectPreset(id: string) {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      const roster = ctx.get('agentPresets') as unknown as {
-        recompose(agentCtx: unknown, id: string): Promise<{ readonly id: string }>
-      } | undefined
-      if (roster === undefined) {
-        return { ok: false as const, code: 'BLUE_CAPABILITY_ABSENT' as const, message: 'agent presets are unavailable: the host composes no roster' }
-      }
-      if (agent.status !== 'idle') {
-        return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'cannot switch presets while the agent is running' }
-      }
-      const session = agent.session as { readonly events?: readonly { readonly type: string }[], append(type: string, data: unknown): void } | undefined
-      if (session?.events?.some(event => event.type === 'turn/start') === true) {
-        return { ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'cannot switch presets: this session has already started (blank sessions only)' }
-      }
-      try {
-        const selected = await roster.recompose(agent.ctx, id)
-        if (active() !== agent) {
-          return { ok: false as const, code: 'BLUE_ABORTED' as const, message: 'the active session changed before the preset switch completed' }
-        }
-        session?.append('agent-preset/selected', { agentPreset: selected.id })
-        return { ok: true as const, value: `preset ${selected.id}` }
-      } catch (error) {
-        return {
-          ok: false as const,
-          code: 'BLUE_ACTION_REJECTED' as const,
-          message: error instanceof Error ? error.message : String(error),
-        }
-      }
-    },
-    async toolCatalog() {
-      const tools = ctx.get('tools') as unknown as {
-        schemas(scope?: unknown): readonly {
-          readonly name: string
-          readonly description: string
-          readonly parameters?: Readonly<Record<string, unknown>>
-        }[]
-      } | undefined
-      if (tools === undefined) {
-        return { ok: false as const, code: 'BLUE_CAPABILITY_ABSENT' as const, message: 'tool registry is unavailable: the host composes no tools service' }
-      }
-      const registered = tools.schemas()
-      const agent = active()
-      if (agent === undefined) return { ok: true as const, value: { sessionLive: false, registered, visible: registered } }
-      const roster = ctx.get('agentPresets') as unknown as {
-        composedPreset(agentCtx: unknown): string | undefined
-        standingKeyFor(id?: string): Promise<object>
-      } | undefined
-      try {
-        const current = roster?.composedPreset(agent.ctx)
-        const scope = roster === undefined || current === undefined ? undefined : await roster.standingKeyFor(current)
-        if (active() !== agent) {
-          return { ok: false as const, code: 'BLUE_ABORTED' as const, message: 'the active session changed before the tool catalog completed' }
-        }
-        return {
-          ok: true as const,
-          value: { sessionLive: true, registered, visible: scope === undefined ? registered : tools.schemas(scope) },
-        }
-      } catch (error) {
-        return {
-          ok: false as const,
-          code: 'BLUE_ACTION_REJECTED' as const,
-          message: `could not resolve the preset composition: ${error instanceof Error ? error.message : String(error)}`,
-        }
-      }
-    },
-    async skillSnapshot() {
-      const agent = active()
-      if (agent === undefined) return { ok: false as const, code: 'BLUE_SESSION_UNAVAILABLE' as const, message: 'No session' }
-      const skills = ctx.get('skills') as unknown as {
-        snapshot(options: { readonly cwd?: string, readonly scope: unknown }): Promise<{
-          readonly complete: boolean
-          readonly skills: readonly {
-            readonly name: string
-            readonly description: string
-            readonly whenToUse?: string
-            readonly source: string
-            readonly invocation: { readonly modelInvocable: boolean, readonly userInvocable: boolean }
-          }[]
-        }>
-      } | undefined
-      if (skills === undefined) {
-        return { ok: false as const, code: 'BLUE_CAPABILITY_ABSENT' as const, message: 'the host composes no skills service' }
-      }
-      try {
-        const cwd = agent.session?.header?.cwd
-        const value = await skills.snapshot({ ...(cwd === undefined ? {} : { cwd }), scope: agent })
-        if (active() !== agent) {
-          return { ok: false as const, code: 'BLUE_ABORTED' as const, message: 'the active session changed before the skill snapshot completed' }
-        }
-        return { ok: true as const, value }
-      } catch (error) {
-        return {
-          ok: false as const,
-          code: 'BLUE_ACTION_REJECTED' as const,
-          message: error instanceof Error ? error.message : String(error),
-        }
-      }
-    },
-    subscribeSkillChanges(listener: () => void) {
-      const off = ctx.on('skills/change', listener)
-      let disposed = false
-      return {
-        get disposed() { return disposed },
-        dispose() {
-          if (disposed) return
-          disposed = true
-          off()
-        },
-      }
-    },
-    async createSideSession() { return undefined },
-  }
-  ctx.provide('blueSessionActions', sessionActions)
-  ctx.provide('blueSessionProjections', {
-    current: (key: string) => {
-      const agent = active()
-      const source = ctx.get('sessionProjections') as unknown as { snapshot(session: unknown): { asOfSeq?: number, values: Record<string, unknown> } } | undefined
-      if (agent?.session === undefined || source === undefined) return undefined
-      const value = source.snapshot(agent.session)
-      return { asOfSeq: value.asOfSeq ?? 0, value: value.values[key] }
-    },
-    currentMany: (keys: readonly string[]) => {
-      const agent = active()
-      const source = ctx.get('sessionProjections') as unknown as { snapshot(session: unknown): { asOfSeq?: number, values: Record<string, unknown> } } | undefined
-      if (agent?.session === undefined || source === undefined) return undefined
-      const snapshot = source.snapshot(agent.session)
-      return { asOfSeq: snapshot.asOfSeq ?? 0, values: Object.fromEntries(keys.map(key => [key, snapshot.values[key]])) }
-    },
-    subscribe: (listener: (key: string, value: unknown, seq: number) => void) => {
-      const source = ctx.get('sessionProjections') as unknown as {
-        onChanged(callback: (session: unknown, key: string, value: unknown, seq: number) => void): () => void
-      } | undefined
-      if (source === undefined) return () => {}
-      return source.onChanged((session, key, value, seq) => {
-        if (session === active()?.session) listener(key, value, seq)
-      })
-    },
-    children: () => [],
-    subscribeChildren: () => () => {},
-  })
-  ctx.on('test/session-changed', publishSession)
-  const inboxChanged = (payload: { readonly agent?: unknown }): void => {
-    if (payload.agent === active()) publishSession()
-  }
-  ctx.on('agent/inbox/inserted', inboxChanged)
-  ctx.on('agent/inbox/claimed', inboxChanged)
-  ctx.on('agent/inbox/discarded', inboxChanged)
-  ctx.on('agent/status', publishSession)
-  ctx.on('commands/change', publishSession)
-  ctx.on('session/event', (session, event) => {
-    const agent = active()
-    if (agent?.session === undefined || session !== agent.session) return
-    publishSession()
-    if (event.type !== 'plan/mode' || !event.data.active || readMode()?.mode !== 'yolo') return
-    queueMicrotask(() => {
-      void sessionActions.executeCommand('/yolo off').then((execution) => {
-        const text = execution?.result.text
-        if (text !== undefined) ctx.emit('blue/mode-notice', text)
-      }, (error: unknown) => {
-        ctx.logger.warn(`yolo exclusivity dispatch failed: ${error instanceof Error ? error.message : String(error)}`)
-      })
-    })
-  })
+  ctx.on('test/session-changed', publishAgent)
+  ctx.on('agent/status', publishAgent)
   new SkillsCatalogService(ctx)
   new InteractionStateService(ctx, DEFAULT_SETTINGS)
-  if (options.dock !== false) new BlueBottomPaneService(ctx, {
-    components,
-    colors: theme.colors,
-    viewport: () => ({ columns: screen.columns, rows: screen.rows }),
-  }, screen)
   new EditorHostService(ctx)
   // The D30 editor-slot swap stands in for `blue-input`'s real machinery:
   // dialog specs assert the mounted panel through the overlay registry.
   setEditorSlotSwap(ctx, { mount: component => screen.mountDialogPanel(component) })
-  // Installing the dock model performs one initial synchronization repaint.
-  // Tests count repaints caused by the behavior under test, not fixture boot.
   screen.renderRequests = 0
   return { ctx, screen, theme, keymap, components }
 }

@@ -78,7 +78,7 @@ export default globalThis.__blueInteractionFixtures.userQuestions
 `)
   writeFileSync(join(dir, 'interaction.mjs'), `
 export const name = 'blue-interaction'
-export const inject = ['blueSessionReader', 'blueSessionActions', 'blueRequests', 'blueRetractions']
+export const inject = ['blueCurrentAgent', 'skills']
 export const apply = ctx => globalThis.__blueInteractionFixtures.interactionApply(ctx)
 `)
 
@@ -89,24 +89,31 @@ export const apply = ctx => globalThis.__blueInteractionFixtures.interactionAppl
   })
 
   const ctx = new Context()
-  ctx.provide('blueSessionReader', {
+  ctx.provide('blueCurrentAgent', {
     current: () => null,
-    subscribe: () => ({ disposed: false, dispose() {} }),
-    request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }),
-  })
-  ctx.provide('blueSessionActions', {
-    skillSnapshot: async () => ({ ok: false, code: 'BLUE_CAPABILITY_ABSENT', absent: { capability: 'skills', reason: 'not composed' } }),
-    subscribeSkillChanges: () => ({ disposed: false, dispose() {} }),
+    revision: () => 0,
+    subscribe: (listener: (agent: null, revision: number) => void) => {
+      listener(null, 0)
+      return () => {}
+    },
   } as never)
-  ctx.provide('blueRequests', { begin: () => ({ sessionEpoch: 0, requestEpoch: 1, scope: 'main' }) } as never)
+  ctx.provide('skills', { snapshot: async () => ({ complete: true, skills: [] }) } as never)
+  ctx.provide('sessionProjections', {
+    snapshot: () => ({ asOfSeq: 0, values: {} }),
+    onChanged: () => () => {},
+  } as never)
+  ctx.provide('sessionController', { selectModel: async () => { throw new Error('no session') } } as never)
+  ctx.provide('sessions', { list: () => [], flush: async () => false } as never)
+  ctx.provide('tools', { schemas: () => [] } as never)
+  ctx.provide('blueRequests', {
+    sessionEpoch: 0,
+    active: () => undefined,
+    begin: () => ({ sessionEpoch: 0, requestEpoch: 1, scope: 'main' }),
+    transition: () => {},
+    interrupt: () => {},
+    commitSession: () => 0,
+  } as never)
   ctx.provide('blueRetractions', { tryRetract: () => false })
-  ctx.provide('blueSessionProjections', {
-    current: () => undefined,
-    currentMany: () => undefined,
-    subscribe: () => () => {},
-    children: () => [],
-    subscribeChildren: () => () => {},
-  })
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })

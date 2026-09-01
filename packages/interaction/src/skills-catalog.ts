@@ -21,8 +21,7 @@
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { BlueRegistration } from '@dsh-blue/blue-api'
-import type { BlueSessionActions, BlueSessionSkill } from '@dsh-blue/blue-app'
+import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import type {} from '@dsh-blue/blue-app'
 
 declare module '@deepseek-ai/cordis' {
@@ -50,28 +49,26 @@ const SKILL_PREFIX = /(^|\s)#([a-z0-9-]*)$/
 
 /** Frontend-tree-scoped skill cache and invalidation owner. */
 export class SkillsCatalogService extends Service {
-  private settled: readonly BlueSessionSkill[] | undefined
+  private settled: readonly SkillSummary[] | undefined
   private epoch = 0
   private flight: { readonly epoch: number, readonly promise: Promise<void> } | undefined
   private observedSessionId: string | undefined
-  private readonly actions: BlueSessionActions
-  private readonly sessionRegistration: BlueRegistration
-  private readonly skillRegistration: BlueRegistration
+  private readonly sessionRegistration: () => void
+  private readonly skillRegistration: () => void
   private disposed = false
 
   /** @param ctx - interaction-root context carrying app session services. */
   constructor(ctx: Context) {
     super(ctx, 'blueSkillsCatalog')
-    this.actions = ctx.blueSessionActions
-    this.observedSessionId = ctx.blueSessionReader.current()?.id
-    this.sessionRegistration = ctx.blueSessionReader.subscribe(snapshot => {
-      const next = snapshot?.id
+    this.observedSessionId = ctx.blueCurrentAgent.current()?.id
+    this.sessionRegistration = ctx.blueCurrentAgent.subscribe(agent => {
+      const next = agent?.id
       if (next === this.observedSessionId) return
       this.observedSessionId = next
       this.drop()
       void this.refresh()
     })
-    this.skillRegistration = this.actions.subscribeSkillChanges(() => {
+    this.skillRegistration = ctx.on('skills/change', () => {
       this.drop()
       void this.refresh()
     })
@@ -79,14 +76,14 @@ export class SkillsCatalogService extends Service {
   }
 
   /** Settled user-invocable skills, synchronously readable by autocomplete. */
-  userInvocable(): readonly BlueSessionSkill[] {
+  userInvocable(): readonly SkillSummary[] {
     return this.settled?.filter(skill => skill.invocation.userInvocable) ?? []
   }
 
   /** Refresh once per epoch, preserving a last-good complete observation. */
   refresh(): Promise<void> {
     if (this.disposed) return Promise.resolve()
-    const currentId = this.ctx.blueSessionReader.current()?.id
+    const currentId = this.ctx.blueCurrentAgent.current()?.id
     if (currentId !== this.observedSessionId) {
       this.observedSessionId = currentId
       this.drop()
@@ -105,13 +102,13 @@ export class SkillsCatalogService extends Service {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.sessionRegistration.dispose()
-    this.skillRegistration.dispose()
+    this.sessionRegistration()
+    this.skillRegistration()
     this.drop()
   }
 
   /** Test-only direct settlement seam, scoped to this service instance. */
-  setForTest(skills: readonly BlueSessionSkill[] | undefined): void {
+  setForTest(skills: readonly SkillSummary[] | undefined): void {
     this.epoch += 1
     this.settled = skills === undefined ? undefined : [...skills]
   }
@@ -122,20 +119,25 @@ export class SkillsCatalogService extends Service {
   }
 
   private async settle(ticket: number): Promise<void> {
-    const result = await this.actions.skillSnapshot()
-    if (this.disposed || ticket !== this.epoch) return
-    if (!result.ok) {
-      if (result.code === 'BLUE_SESSION_UNAVAILABLE' || result.code === 'BLUE_CAPABILITY_ABSENT') {
-        this.settled = undefined
-      }
+    const agent = this.ctx.blueCurrentAgent.current()
+    if (agent === null) {
+      this.settled = undefined
       return
     }
-    if (result.value.complete) this.settled = result.value.skills
+    let result: Awaited<ReturnType<typeof this.ctx.skills.snapshot>>
+    try {
+      result = await this.ctx.skills.snapshot({ cwd: agent.session.header.cwd, scope: agent })
+    } catch {
+      return
+    }
+    if (this.disposed || ticket !== this.epoch) return
+    if (this.ctx.blueCurrentAgent.current() !== agent) return
+    if (result.complete) this.settled = result.skills
   }
 }
 
 /** Read the current tree's settled user-invocable skills. */
-export function userInvocableSkills(ctx: Context): readonly BlueSessionSkill[] {
+export function userInvocableSkills(ctx: Context): readonly SkillSummary[] {
   return ctx.blueSkillsCatalog.userInvocable()
 }
 
@@ -184,6 +186,6 @@ export function refresh(ctx: Context): Promise<void> {
  * `skills` service pin the settled list and assert the pure readers).
  * @param skills - the summaries to settle, or `undefined` to drop.
  */
-export function __setCatalogForTest(ctx: Context, skills: readonly BlueSessionSkill[] | undefined): void {
+export function __setCatalogForTest(ctx: Context, skills: readonly SkillSummary[] | undefined): void {
   ctx.blueSkillsCatalog.setForTest(skills)
 }

@@ -15,26 +15,27 @@ import type { SessionFactsService } from './session-facts.ts'
 /** Stable Cordis plugin name. */
 export const name = 'blue-status-basic-model'
 /** Services required before the baseline model can register. */
-export const inject = ['blueStatusEntries', 'blueSessionFacts']
+export const inject = ['blueStatus', 'blueSessionFacts']
 
 /** Register the baseline model row. */
 export function apply(ctx: Context): void {
   const factsService = ctx.get('blueSessionFacts') as SessionFactsService
   let facts: ConversationFacts = factsService.current
-  let session = factsService.currentSession
+  let agent = factsService.currentAgent
   let text = ''
   const derive = (): void => {
-    text = session?.model?.id
-      ?? facts.model
+    text = facts.model
+      ?? agent?.session.requestHeader()?.config.model
+      ?? agent?.options.model
       ?? facts.provider
-      ?? (session === null ? '' : 'no model')
+      ?? (agent === null ? '' : 'no model')
   }
   derive()
   const model = (): BlueStatusEntry => ({ id: 'blue.status.basic', priority: 0, node: { kind: 'text', content: text, tone: 'default' }, visible: text !== '' })
-  const refresh = (): void => { derive(); ctx.blueStatusEntries.refresh('blue.status.basic') }
+  const refresh = (): void => { derive(); ctx.blueStatus.refresh('blue.status.basic') }
   const offFacts = factsService.subscribe(next => { facts = next; refresh() })
-  const offSession = factsService.subscribeSession(next => { session = next; refresh() })
+  const offAgent = factsService.subscribeAgent(next => { agent = next; refresh() })
   ctx.effect(() => () => offFacts())
-  ctx.effect(() => () => offSession())
-  ctx.effect(() => ctx.blueStatusEntries.register(model))
+  ctx.effect(() => () => offAgent())
+  ctx.blueStatus.register(model)
 }

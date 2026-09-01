@@ -16,57 +16,47 @@ profile until the relevant package is rebuilt.
 
 | Area | Responsibility | Instructions |
 | --- | --- | --- |
-| `packages/api` | Beta renderer-neutral public contracts and plugin host | [AGENTS.md](packages/api/AGENTS.md) |
+| `packages/api` | Renderer-neutral contracts and four direct Blue UI services | [AGENTS.md](packages/api/AGENTS.md) |
 | `packages/ui` | Pure public wire-node builders | [AGENTS.md](packages/ui/AGENTS.md) |
-| `packages/plugin-kit` | Published create/validate/conformance author CLI | [AGENTS.md](packages/plugin-kit/AGENTS.md) |
-| `packages/frontend` | Renderer-neutral models, locale, and provider lifecycle | [AGENTS.md](packages/frontend/AGENTS.md) |
-| `packages/harness-adapter` | Narrow removable Harness adapters | [AGENTS.md](packages/harness-adapter/AGENTS.md) |
+| `packages/frontend` | Renderer-neutral models, locale, theme, and notifications | [AGENTS.md](packages/frontend/AGENTS.md) |
 | `packages/conversation` | Official append-origin conversation projection | [AGENTS.md](packages/conversation/AGENTS.md) |
-| `packages/app` | Startup, Agent ownership, session readers/projections/actions | [AGENTS.md](packages/app/AGENTS.md) |
+| `packages/app` | Startup, current-Agent selection, navigation, and request lifecycle | [AGENTS.md](packages/app/AGENTS.md) |
 | `packages/core` | The only pi-tui and raw-terminal adapter | [AGENTS.md](packages/core/AGENTS.md) |
-| `packages/transcript` | Transcript, status, bottom panes, tool presentation | [AGENTS.md](packages/transcript/AGENTS.md) |
+| `packages/transcript` | Transcript, direct status/pane contributions, tool presentation | [AGENTS.md](packages/transcript/AGENTS.md) |
 | `packages/interaction` | Editor, commands, dialogs, and interaction state | [AGENTS.md](packages/interaction/AGENTS.md) |
-| `packages/context` | Validation-only context slice | [AGENTS.md](packages/context/AGENTS.md) |
-| `packages/remote` | Validation-only remote transport adapter | [AGENTS.md](packages/remote/AGENTS.md) |
-| `packages/openpencil` | Validation-only tool-presentation adapter | [AGENTS.md](packages/openpencil/AGENTS.md) |
-| `packages/lark` | Validation-only command/notification adapter | [AGENTS.md](packages/lark/AGENTS.md) |
 | `packages/bundle/blue` | Installable composition and `blue-cordis` preset | [AGENTS.md](packages/bundle/blue/AGENTS.md) |
 | `packages/cli` | Dependency-free global `blue` launcher | [AGENTS.md](packages/cli/AGENTS.md) |
 | `examples` | Publish-shaped external consumers and composition | [AGENTS.md](examples/blue-ecosystem/AGENTS.md) |
 
-`script/package-contract.mjs` is the source of truth for release,
-validation-only, and example package sets. `docs/blue-architecture.md` describes
-the current runtime; `docs/blue-plugin-contract-v1.md` describes the target
-public contract; roadmaps and history do not prove an implementation exists.
+`script/package-contract.mjs` is the source of truth for release and example
+package sets. `docs/blue-architecture.md` and `docs/blue-seams.md` describe
+the current runtime. History and release notes do not define current behavior.
 
 ## Architecture Rules
 
-- Dependency direction is Harness domain -> projection/action boundary ->
-  renderer-neutral frontend model -> renderer adapter. Domain packages do not
-  depend on Blue. Only `packages/core` imports pi-tui or handles ANSI, raw
-  terminal state, focus, layout, and visible-width truth.
+- Blue and external plugins consume documented native dsh services directly.
+  Blue-specific UI contributions use only `bluePanes`, `blueStatus`,
+  `blueOverlays`, and `blueEditorExtensions`. Only `packages/core` imports
+  pi-tui or handles ANSI, raw terminal state, focus, layout, and visible-width
+  truth.
 - Events are facts, projections are current readonly state, and actions are
   structured writes. Renderers do not fold Harness session events or retain
   Agent/Session objects as a second source of truth.
-- Host, agent, session, frontend-tree, and provider-Fiber state have explicit
-  owners. Product mutable state must not be a module singleton. Every
-  registration, listener, timer, provider, and asynchronous continuation has
-  unload and stale-generation behavior.
+- Harness owns Agent/session/domain state. App owns only current-Agent
+  selection and startup coordination. Product mutable state must not be a
+  module singleton. Every registration, listener, timer, and asynchronous
+  continuation has unload and stale-generation behavior.
 - Renderer-neutral models contain readonly data and structured actions only:
   no pi-tui, React/DOM, ANSI, terminal width, focus handle, renderer key
   binding, Promise, Agent, Session, or renderer object.
-- Compatibility adapters consume documented APIs, centralize capability and
-  version differences, expose only a narrow renderer-neutral seam, and record
-  a deletion condition. Missing optional capability uses an absent/plain
-  fallback and must not block the Agent loop.
-- Provider replacement follows `capture -> abort -> dispose -> activate ->
-  restore`; activation failure restores the defined plain fallback.
 - New public surfaces need a real consumer, headless lifecycle evidence,
   relevant replay/abort/late-result tests, renderer width coverage, bundle
   composition coverage, and dedicated-profile acceptance.
 - Cordis entries export `name`, optional `inject`, and `apply(ctx)`. Effects are
-  Fiber-owned. Requests to the app owner use narrow services/events rather
-  than carrying Agent or Session objects.
+  Fiber-owned. Agent-scoped native dsh services use the exact Agent selected by
+  `blueCurrentAgent`.
+- Do not add a Blue manifest, capability host, adapter facade, private runtime
+  realm, provider owner, compatibility export, or special plugin-author CLI.
 
 Package `AGENTS.md` files hold only non-obvious implementation boundaries,
 ownership, change rules, and verification triggers. Update one when a change
@@ -134,11 +124,9 @@ update its export, source entry, types target, and files inclusion;
 - Tests create temporary roots with `mkdtempTracked()` and register
   `registerTempDirCleanup()` from `packages/core/tests/temp-dir.ts`. Do not use
   raw `mkdtempSync` for profile/session fixtures.
-- `packages/bundle/blue/tests/e2e.spec.ts` is the whole-tree Cordis test.
-  Independent plugin compatibility uses
-  `node script/blue-plugin-fixture.mjs <package> --install` on the sole Harness
-  line declared by the machine catalog; an override is diagnostic evidence,
-  not a new compatibility claim.
+- `packages/bundle/blue/tests/e2e.spec.ts` is the whole-tree Cordis test. It
+  proves native dsh service access, direct UI registration, exact Agent scope,
+  Fiber cleanup, and renderer reload.
 
 ## Worktree And Acceptance
 
@@ -208,5 +196,4 @@ The three skills under
 dynamic runtime prototyping, durable external Blue plugin creation/migration,
 and user-owned composition editing. They are not required for ordinary Blue
 source development. Run `pnpm run check:agent-docs` after changing these
-instructions and `pnpm run check:plugin-authoring-docs` after changing the
-shipped author skill.
+instructions or shipped skills.

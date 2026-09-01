@@ -276,11 +276,11 @@ describe('openPermissionPanel', () => {
     expect(notices).toEqual([])
   })
 
-  it('is a silent no-op when the current preset cannot be projected', async () => {
+  it('is a silent no-op without a current Agent', async () => {
     const mounted = await mount()
-    ;(mounted.ctx.blueSessionActions as unknown as { permissionPreset: () => undefined }).permissionPreset
-      = () => undefined
+    ;(mounted.ctx.get('testSession') as { current: Agent | null }).current = null
     openPermissionPanel(mounted.ctx)
     expect(mounted.overlays).toHaveLength(0)
   })
+
 })

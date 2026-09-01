@@ -57,8 +57,6 @@ jobs:
       # website/public/shots/*.svg; the committed files must match byte for
       # byte. Runs after the build because the painter needs lib/index.js.
       - run: pnpm shots:check
-      - run: pnpm check:plugin-authoring-docs
-      - run: pnpm fixture:plugin-tutorial
       # W5-C ecosystem contract: static package boundaries plus a one-project
       # packed install on this release's sole supported Harness line.
       - run: pnpm check:examples

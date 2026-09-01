@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-api",
-  "description": "Beta, renderer-independent public contracts for Blue Cordis plugins",
-  "version": "0.1.2-alpha.1",
+  "description": "Direct renderer-independent Cordis UI services for Blue plugins",
+  "version": "0.2.0-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -17,21 +17,10 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
-    "./protocol/v1": {
-      "types": "./lib/types/protocol-v1.d.ts",
-      "default": "./lib/protocol-v1.js"
-    },
-    "./capabilities/v1": {
-      "types": "./lib/types/capabilities-v1.d.ts",
-      "default": "./lib/capabilities-v1.js"
-    },
-    "./schema/blue.plugin.v1.schema.json": "./schema/blue.plugin.v1.schema.json",
-    "./schema/blue.plugin.v1.corpus.json": "./schema/blue.plugin.v1.corpus.json",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/**/*",
-    "schema/*.json"
+    "lib/**/*"
   ],
   "license": "MIT",
   "repository": {
@@ -42,17 +31,10 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2"
   },
-  "dependencies": {
-    "ajv": "8.20.0",
-    "semver": "7.8.5",
-    "validate-npm-package-name": "7.0.2"
-  },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3",
-    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.2",
-    "@types/semver": "7.8.0",
-    "@types/validate-npm-package-name": "4.0.2"
+    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.3"
   }
 }

@@ -558,15 +558,11 @@ describe('blue-editor-plus slash completion', () => {
       description: 'Route the conversation',
       handler: () => ({ kind: 'success' }),
     })
-    const commands = ctx.blueSessionActions.commands()
-    ;(ctx.blueSessionActions as unknown as { commands: () => readonly unknown[] }).commands
-      = () => [...commands, { name: 'raw' }]
     const suggestions = await provider.getSuggestions(['/r'], 0, 2, { signal: signal() })
     const byName = new Map(suggestions?.items.map(item => [item.label, item.description]))
     expect(byName.get('/resume')).toBe('<question> — Resume a previous session')
     // A command without an argument hint keeps its plain summary.
     expect(byName.get('/router')).toBe('Route the conversation')
-    expect(byName.get('/raw')).toBe('')
   })
 
   it('matches aliases behind the canonical name, labeling alias hits with the alias list', async () => {

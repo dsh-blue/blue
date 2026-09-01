@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CanonicalDocumentController, type FrontendPanelDocument } from '../src/frontend-panel.ts'
 import { fakeBlueContext, KEY } from './fakes.ts'
 
-function fixture(initial?: FrontendPanelDocument, options: { focused?: boolean, hint?: string, showSelectedVariantInFooter?: boolean, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
+function fixture(initial?: FrontendPanelDocument, options: { focused?: boolean, hint?: string, showSelectedVariantInFooter?: boolean, t?: (key: string) => string, onUnhandledInput?: (data: string, id: string | undefined) => { readonly kind: string } | undefined } = {}) {
   const display = fakeBlueContext()
   let model: FrontendPanelDocument = initial ?? { mode: 'info', title: 'Fixture', view: { kind: 'text', content: 'body' }, submit: { kind: 'refresh' } }
   const onAction = vi.fn()
@@ -13,6 +13,7 @@ function fixture(initial?: FrontendPanelDocument, options: { focused?: boolean, 
     ...display, model: () => model, onAction, onClose, maxVisible: 5,
     ...(options.hint === undefined ? {} : { contextHints: () => [{ id: 'custom', keys: options.hint!, priority: 95 }] }),
     ...(options.showSelectedVariantInFooter === undefined ? {} : { showSelectedVariantInFooter: options.showSelectedVariantInFooter }),
+    ...(options.t === undefined ? {} : { t: options.t }),
     ...(options.onUnhandledInput === undefined ? {} : { onUnhandledInput: options.onUnhandledInput }),
   })
   if (options.focused !== false) panel.focused = true
@@ -31,6 +32,9 @@ describe('CanonicalDocumentController', () => {
     passive.panel.handleInput('x')
     passive.panel.handleInput(KEY.escape)
     expect(passive.onClose).toHaveBeenCalledOnce()
+
+    const translated = fixture(undefined, { t: key => `translated:${key}` })
+    expect(translated.panel.render(40)).toBeDefined()
 
   })
 
@@ -365,6 +369,8 @@ describe('CanonicalDocumentController', () => {
     variant.panel.handleInput('\x1bs')
     const emptyVariants = fixture({ mode: 'select', title: 'No variants', items: [{ id: 'a', label: 'A', variants: [] }] })
     expect(extractList(emptyVariants.panel.currentNode()).items[0]!.detailSpans).toEqual([])
+    const inlineWithoutVariants = fixture({ mode: 'select', title: 'Inline', variantNavigation: 'inline', items: [{ id: 'a', label: 'A' }] })
+    expect(inlineWithoutVariants.panel.render(80).join('\n')).toContain('Inline')
     const variantsFirst = fixture({ mode: 'select', title: 'First', items: [{ id: 'a', label: 'A', variantsFirst: true, variants: [{ id: 'only', label: 'Only' }] }] })
     expect(extractList(variantsFirst.panel.currentNode()).items[0]!.detailSpans).toEqual([
       { text: '[Only]', tone: 'accent', emphasis: 'strong' },

@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { decodeStorageRecord, SessionId } from '@deepseek-ai/dsh-session'
+import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { TranscriptItem, TranscriptToolItem } from '@dsh-blue/blue-transcript'
@@ -474,8 +474,8 @@ export function registerExportCommands(ctx: Context): () => void {
    * @param signal - the dispatching UI request's cancellation signal.
    */
   async function readSessionSource(signal: AbortSignal): Promise<SessionExportSource | undefined> {
-    const session = ctx.blueSessionReader.current()
-    if (session === null) return undefined
+    const agent = ctx.blueCurrentAgent.current()
+    if (agent === null) return undefined
     const persistence = ctx.get('sessionPersistence')
     if (persistence === undefined) throw new Error('session persistence is unavailable')
     if (persistence.supportsRawArtifacts === false) {
@@ -485,9 +485,8 @@ export function registerExportCommands(ctx: Context): () => void {
     // write-behind), so a durable read must flush first — the SessionStore's
     // documented pre-read channel (`ctx.get`, never the inject proxy).
     // Safe with no store, no listener (flush returns false), or any backend.
-    const flushed = await ctx.blueSessionActions.flush()
-    if (!flushed.ok) throw new Error(flushed.message)
-    const raw = await persistence.readRaw(SessionId(session.id), signal)
+    await ctx.sessions.flush(agent.session)
+    const raw = await persistence.readRaw(agent.id, signal)
     if (raw === undefined) throw new Error('the session has no stored artifact yet')
     const events: SessionEvent[] = []
     for (const line of raw.content.split('\n')) {
@@ -500,9 +499,9 @@ export function registerExportCommands(ctx: Context): () => void {
       }
       events.push(...decodeStorageRecord(value))
     }
-    const projection = ctx.blueSessionProjections.current('blueConversation')?.value
+    const projection = ctx.sessionProjections.snapshot(agent.session, ['blueConversation']).values.blueConversation
     const items = isConversationProjection(projection) ? projectionItems(projection) : []
-    return { id: session.id, cwd: session.cwd, events, items }
+    return { id: String(agent.id), cwd: agent.session.header.cwd, events, items }
   }
 
   /**

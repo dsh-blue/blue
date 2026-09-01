@@ -13,17 +13,14 @@ List `detailSpans`, like all inline semantic content, pass through unchanged
 and are cloned/frozen with their list item. Do not add hidden layout metadata
 or renderer callbacks to nodes.
 
+Document and chart builders preserve only the public wire data. They must not
+import, configure, or expose Mermaid/chart renderer libraries, and they remain
+outside the narrower status, editor-extension, and `BlueView` unions.
+
 `defineBlueComponent` is a package-level composition factory. It validates
-component id/API metadata and the render function, then freezes render output.
+the component id and render function, then freezes render output.
 It must not validate node schemas, register component kinds, capture a Fiber,
 or create a runtime registry. Core owns schema admission, quotas, and compile.
 
 Keep runtime source fully covered. Type fixtures must prove component prop
 inference, the explicit child boundary, and rejection of custom node kinds.
-
-Examples using `document` or `chart` record API metadata as
-`^1.0.0-beta.2`; older node-only examples may retain compatible beta.1 ranges.
-The pure builders do not promote that Beta host contract to Stable v1.
-Component metadata accepts semver prerelease identifiers so the executable
-Beta range is not rejected; formal shared semver validation remains a later
-machine-contract delivery.

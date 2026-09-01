@@ -1,7 +1,7 @@
 # Blue 生态示例 Bundle
 
-这是一个 opt-in composition bundle：安装共享用户 Kit，并通过七条 Cordis row
-激活全部七个可运行示例。
+这是一个 opt-in composition bundle：安装共享用户 Kit，并通过五条普通 Cordis
+row 激活五个可运行示例。
 
 ```sh
 dsh plugin --profile blue-examples add @dsh-blue-example/blue-ecosystem

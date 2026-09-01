@@ -30,6 +30,8 @@ describe('EditorModelService', () => {
     const service = new EditorModelService(ctx)
     const seen: string[] = []
     const off = service.subscribe(model => { if (model) seen.push(model.value) })
+    ctx.emit('blue/input-editor-changed')
+    ctx.emit('blue/editor-model-changed')
     expect(service.current).toMatchObject({ value: 'draft', set: { kind: 'editor.set' }, submit: { kind: 'editor.submit' }, abort: { kind: 'editor.abort' } })
     expect(service.update('next')).toBe(true)
     expect(service.execute({ kind: 'editor.set', value: 'set' })).toBe(true)

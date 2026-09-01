@@ -1,11 +1,14 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as frontend from '../src/index.ts'
 
 const root = resolve(import.meta.dirname, '../../..')
-const headlessPackages = ['frontend', 'harness-adapter', 'context', 'remote'] as const
+const headlessPackages = ['api', 'frontend', 'ui'] as const
 const forbidden = /(?:@earendil-works\/pi-tui|from ['\"](?:react|react-dom|domino)|\b(?:ANSI|process\.stdout|process\.stdin|raw terminal)\b)/i
+
+afterEach(() => { vi.restoreAllMocks() })
 
 async function sourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -29,9 +32,25 @@ describe('frontend runtime architecture boundary', () => {
   })
 
   it('exposes a renderer-neutral public surface without renderer objects', () => {
-    expect(frontend.FrontendHost).toBeTypeOf('function')
     expect(frontend.freezeModel).toBeTypeOf('function')
-    expect(frontend.plainProvider).toMatchObject({ id: 'plain', capabilities: [] })
+    expect(frontend.BlueLocaleService).toBeTypeOf('function')
+    expect(frontend.NotificationModelService).toBeTypeOf('function')
     expect(Object.keys(frontend)).not.toContain('Terminal')
+  })
+
+  it.each([
+    ['zh-CN', 'zh'],
+    ['en-US', 'en'],
+  ] as const)('mounts and disposes the locale service for %s', async (systemLocale, expected) => {
+    vi.spyOn(Intl, 'DateTimeFormat').mockReturnValue({
+      resolvedOptions: () => ({ locale: systemLocale }),
+    } as Intl.DateTimeFormat)
+    const ctx = new Context()
+    frontend.apply(ctx)
+    expect(frontend.name).toBe('blue-frontend')
+    expect(ctx.blueLocale.locale).toBe(expected)
+    const service = ctx.blueLocale
+    await ctx.fiber.dispose()
+    expect(service.setPreference('zh')).toBe(false)
   })
 })

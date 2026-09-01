@@ -1,45 +1,19 @@
-/**
- * Beta, renderer-independent public contracts for Blue Cordis plugins.
- *
+/** Direct renderer-independent Cordis UI services for Blue.
  * @module @dsh-blue/blue-api
  */
+import type { Context } from '@deepseek-ai/cordis'
+import { BlueEditorExtensionService, BlueOverlayService, BluePaneService, BlueStatusService } from './services.ts'
 
-export {
-  validateBlueManifest,
-  type BlueCapability,
-  type BlueBetaCapability,
-  type BlueExperimentalCapability,
-  type BlueManifestErrorCode,
-  type BlueManifestResult,
-  type BluePluginDefinition,
-  type BluePluginManifest,
-} from './manifest.ts'
-export {
-  BluePluginHostService,
-  apply,
-  apply as applyHost,
-  name,
-  name as hostName,
-  type BluePluginHostSnapshot,
-  type BluePluginHostOptions,
-  type BluePluginHostOverlayEntry,
-  type BluePluginHostPaneEntry,
-} from './host.ts'
-export {
-  BLUE_CAPABILITY_CATALOG_V1,
-  getBlueCapabilityDefinition,
-  negotiateBlueCapabilities,
-  type BlueCapabilityAdmission,
-  type BlueCapabilityAdmissionFailure,
-  type BlueCapabilityAdmissionSuccess,
-  type BlueCapabilityDefinition,
-  type BlueCapabilityNegotiationOptions,
-  type BlueCapabilityResourceKind,
-} from './capabilities-v1.ts'
 export type * from './contracts.ts'
+export { BlueEditorExtensionService, BlueOverlayService, BluePaneService, BlueStatusService } from './services.ts'
 
-/** Blue's public API Beta version. */
-export const BLUE_API_VERSION = '1.0.0-beta.2'
+export const BLUE_API_VERSION = '2.0.0'
+export const BLUE_VERSION = '0.2.0-alpha.1'
+export const name = 'blue-api'
 
-/** Blue's release version, kept here as the public version owner. */
-export const BLUE_VERSION = '0.1.2-alpha.1'
+export function apply(ctx: Context): void {
+  ctx.plugin(BluePaneService)
+  ctx.plugin(BlueOverlayService)
+  ctx.plugin(BlueStatusService)
+  ctx.plugin(BlueEditorExtensionService)
+}

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import type { ConversationProjection, ConversationToolEntry } from '@dsh-blue/blue-conversation'
 import {
@@ -141,24 +143,26 @@ function readResult(meta: ReadMeta | undefined, isError = false): ConversationTo
 function sourceFixture(initial: ConversationProjection | unknown = projection(), initialSeq = 0) {
   let snapshotValue = initial
   let snapshotSeq = initialSeq
-  let changed: ((key: string, value: unknown, seq: number) => void) | undefined
+  const session = { id: 'session-1' } as unknown as Session
+  let changed: ((session: Session, key: string, value: unknown, seq: number) => void) | undefined
   const off = vi.fn()
   const source: ConversationProjectionSource = {
-    current: vi.fn(() => ({ asOfSeq: snapshotSeq, value: snapshotValue })),
-    subscribe: vi.fn(listener => {
+    snapshot: vi.fn(() => ({ asOfSeq: snapshotSeq, values: { blueConversation: snapshotValue } })),
+    onChanged: vi.fn(listener => {
       changed = listener
       return off
     }),
   }
   return {
     source,
+    session,
     off,
     set(value: unknown, seq: number) {
       snapshotValue = value
       snapshotSeq = seq
     },
     emit(key: string, value: unknown, seq: number) {
-      changed?.(key, value, seq)
+      changed?.(session, key, value, seq)
     },
   }
 }
@@ -456,7 +460,7 @@ describe('OfficialConversationModelSource', () => {
       const entry = model.entries[0]
       published.push(entry?.kind === 'transcript-assistant' ? entry.text : 'empty')
     })
-    source.attach(true)
+    source.attach(f.session)
     expect(source.snapshot().entries[0]).toMatchObject({ text: 'baseline' })
     expect(published).toEqual(['baseline'])
 
@@ -472,9 +476,9 @@ describe('OfficialConversationModelSource', () => {
     expect(published).toEqual(['baseline', 'live'])
 
     f.set({ entries: 'bad', streaming: false }, 7)
-    source.attach(true)
+    source.attach(f.session)
     expect(source.snapshot().entries).toEqual([])
-    source.attach(false)
+    source.attach(null)
     expect(published.at(-1)).toBe('empty')
     source.dispose()
     source.dispose()
@@ -484,11 +488,11 @@ describe('OfficialConversationModelSource', () => {
 
   it('accepts a projection snapshot without sequence metadata', () => {
     const fixture = sourceFixture(projection(), 4)
-    fixture.source.current = vi.fn(() => ({ value: projection([
+    fixture.set(projection([
       { kind: 'assistant', id: 'a-1', seq: 1, turn: 0, step: 0, text: 'baseline', streaming: false },
-    ]) }) as never)
+    ]), -1)
     const source = new OfficialConversationModelSource(fixture.source, toolSource(), () => undefined)
-    source.attach(true)
+    source.attach(fixture.session)
     expect(source.snapshot().entries[0]).toMatchObject({ text: 'baseline' })
     source.dispose()
   })
@@ -496,16 +500,33 @@ describe('OfficialConversationModelSource', () => {
 
 describe('official conversation plugin', () => {
   it('registers one Fiber-owned model and follows structurally valid session bindings', () => {
-    const f = sourceFixture(projection(), 0)
+    const f = sourceFixture(projection([
+      transcriptTool(),
+      transcriptTool({ id: 'tool-2', seq: 5, callId: 'call-2', name: 'plain' }),
+    ]), 0)
     const refresh = vi.fn()
     const unregister = vi.fn()
     const cleanups: Array<() => void> = []
     let registered: (() => unknown) | undefined
-    let sessionChanged: ((session: { readonly id: string } | null) => void) | undefined
-    let registrationDisposed = false
+    const listeners = new Set<(agent: Agent | null, revision: number) => void>()
+    const first = { session: f.session } as unknown as Agent
+    let current: Agent | null = first
+    const toolScopes: unknown[] = []
     const ctx = {
-      blueSessionProjections: f.source,
-      tools: toolSource(),
+      sessionProjections: f.source,
+      tools: {
+        get(toolName: string, scope: unknown) {
+          toolScopes.push(scope)
+          if (toolName === 'read') {
+            current = null
+            return {
+              presentCall: () => ({ card: 'generic', title: 'Read' }),
+              presentResult: () => ({ card: 'generic', title: 'Read result', content: [] }),
+            }
+          }
+          return {}
+        },
+      },
       blueTranscriptModels: {
         refresh,
         register(source: () => unknown) {
@@ -513,11 +534,12 @@ describe('official conversation plugin', () => {
           return unregister
         },
       },
-      blueSessionReader: {
-        subscribe(listener: typeof sessionChanged) {
-          sessionChanged = listener
-          listener?.({ id: 'session-1' })
-          return { get disposed() { return registrationDisposed }, dispose() { registrationDisposed = true; sessionChanged = undefined } }
+      blueCurrentAgent: {
+        current: () => current,
+        subscribe(listener: (agent: Agent | null, revision: number) => void) {
+          listeners.add(listener)
+          listener(current, 0)
+          return () => listeners.delete(listener)
         },
       },
       effect(effect: () => () => void) {
@@ -529,16 +551,19 @@ describe('official conversation plugin', () => {
 
     apply(ctx as never)
     expect(name).toBe('blue-transcript-official')
-    expect(inject).toEqual(['blueConversationProjection', 'blueSessionProjections', 'blueSessionReader', 'blueTranscriptModels', 'blueToolPresentations'])
+    expect(inject).toEqual(['blueConversationReady', 'sessionProjections', 'blueCurrentAgent', 'blueTranscriptModels', 'tools'])
     expect(registered?.()).toMatchObject({ id: 'official-conversation' })
     expect(refresh).toHaveBeenCalledWith('official-conversation')
+    expect(toolScopes).toEqual([first, undefined])
 
-    sessionChanged?.(null)
-    sessionChanged?.({ id: 'session-2' })
-    expect(f.source.current).toHaveBeenCalledTimes(2)
+    current = null
+    for (const listener of listeners) listener(null, 1)
+    current = { session: { id: 'session-2' } } as unknown as Agent
+    for (const listener of listeners) listener(current, 2)
+    expect(f.source.snapshot).toHaveBeenCalledTimes(2)
     for (const cleanup of cleanups.reverse()) cleanup()
     expect(unregister).toHaveBeenCalledOnce()
     expect(f.off).toHaveBeenCalledOnce()
-    expect(registrationDisposed).toBe(true)
+    expect(listeners.size).toBe(0)
   })
 })

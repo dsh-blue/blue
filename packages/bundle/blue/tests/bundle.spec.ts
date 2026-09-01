@@ -26,6 +26,7 @@ const webAppPatch = readFileSync(join(patchDir, '..', 'node_modules', '@deepseek
 interface PatchRow {
   readonly id?: string
   readonly name?: string
+  readonly inject?: readonly string[]
   readonly group?: boolean
   readonly isolate?: Readonly<Record<string, boolean>>
   readonly config?: readonly PatchRow[]
@@ -66,43 +67,35 @@ describe('blue bundle', () => {
   })
 
   it('inserts every Blue row with the projection-backed transcript in the baseline segment', () => {
-    // The private runtime group contains the complete product segment. The
-    // public host crosses its boundary; management and raw backing services do
-    // not. Flattening the ids here keeps the product-order assertion explicit.
+    // Blue is an ordinary sibling composition. Flattening the ids keeps the
+    // complete direct-service product order explicit.
     const ids = [...patch.matchAll(/^\s*- id: (blue-[\w-]+)$/gm)].map(match => match[1]!)
     expect(ids).toEqual([
-      'blue-creative-host',
-      'blue-runtime-private',
-      'blue-api-host',
-      'blue-locale',
+      'blue-api',
+      'blue-frontend',
       'blue-core',
       'blue-theme-dark',
+      'blue-conversation',
+      'blue-startup',
+      'blue-app',
       'blue-banner',
       'blue-transcript',
-      'blue-status-basic',
-      'blue-conversation',
       'blue-transcript-official',
-      'blue-editor-plus',
-      'blue-attachments',
-      'blue-paste-image',
+      'blue-status-basic',
       'blue-status-cwd',
       'blue-status-git',
       'blue-status-title',
-      'blue-status-mode',
       'blue-status-context',
+      'blue-status-mode',
       'blue-pane-activity',
       'blue-pane-queue',
       'blue-pane-todo',
       'blue-pane-btw',
       'blue-pane-agents',
-      'blue-plugin-view-bridge',
-      'blue-status-provider-owner',
+      'blue-attachments',
+      'blue-paste-image',
+      'blue-editor-plus',
       'blue-interaction',
-      'blue-editor-provider-owner',
-      'blue-plugin-interaction-bridge',
-      'blue-startup',
-      'blue-app',
-      'blue-plugin-session-bridge',
     ])
     // Legacy intent rows are deliberately absent; tool presentation is model-owned.
     expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-diff'")
@@ -110,34 +103,14 @@ describe('blue bundle', () => {
     expect(patch).not.toContain("name: '@dsh-blue/blue-transcript/intent-cordis'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/attachments'")
     expect(patch).toContain("name: '@dsh-blue/blue-interaction/paste-image'")
-    expect(patch).toContain("name: '@dsh-blue/blue-harness-adapter/locale'")
+    expect(patch).toContain("name: '@dsh-blue/blue-frontend'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/banner'")
     expect(patch).toContain("name: '@dsh-blue/blue-conversation'")
     expect(patch).toContain("name: '@dsh-blue/blue-transcript/official-model'")
     expect(patch).not.toMatch(/- id: blue-(?:context|conversation|transcript-official|openpencil|lark)\n\s+name:[^\n]+\n\s+disabled: true/gu)
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/plugin-host-bridge'")
-    expect(patch).toContain("name: '@dsh-blue/blue-transcript/status-provider-owner'")
-    expect(patch).toContain("name: '@dsh-blue/blue-interaction/editor-provider-owner'")
-    expect(patch).toContain("name: '@dsh-blue/blue-interaction/plugin-host-bridge'")
-    expect(patch).toContain("name: '@dsh-blue/blue-app/plugin-host-session-bridge'")
-    expect(patch).toMatch(/- id: blue-app[\s\S]*?- id: blue-plugin-session-bridge\n\s+name: '@dsh-blue\/blue-app\/plugin-host-session-bridge'\n\s+inject: \[bluePluginControl, blueSessionReader, blueSessionProjections\]/u)
     expect(patch).toContain("name: '@deepseek-ai/dsh-agent-presets'")
-
-    const privateGroup = insertedRows.find(row => row.id === 'blue-runtime-private')
-    expect(privateGroup).toMatchObject({
-      name: 'cordis:group',
-      group: true,
-      isolate: {
-        bluePluginControl: true,
-        blueSessionActions: true,
-        blueSessionProjections: true,
-        blueSessionReader: true,
-      },
-    })
-    expect(privateGroup?.config?.at(0)?.id).toBe('blue-api-host')
-    expect(privateGroup?.config?.at(-1)?.id).toBe('blue-plugin-session-bridge')
-    expect(insertedRows.filter(row => row.id === 'blue-api-host')).toEqual([])
-    expect(patch).not.toContain('blueSessionRequester')
+    expect(insertedRows.some(row => row.group === true)).toBe(false)
+    expect(insertedRows.find(row => row.id === 'blue-app')?.inject).toBeUndefined()
   })
 
   it('keeps opt-in ecosystem examples out of the default product composition', () => {
@@ -165,7 +138,7 @@ describe('blue bundle', () => {
     const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
     }
-    expect(manifest.dependencies?.['@deepseek-ai/dsh-tool-subagent']).toBe('0.1.2-alpha.2')
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-tool-subagent']).toBe('0.1.2-alpha.3')
   })
 
   it('keeps the host fallback persona valid for agents without preset model variables', () => {
@@ -180,9 +153,7 @@ describe('blue bundle', () => {
     // presets park `tool-cordis` and fail the roster's activation audit.
     expect(patch).toContain('- id: cordis-host-runner')
     expect(patch).toContain("name: '@deepseek-ai/dsh-cordis-host-runner'")
-    expect(patch).toContain('- id: blue-creative-host')
-    expect(patch).toMatch(/- id: blue-creative-host[\s\S]*?isolate:[\s\S]*?blueScreen: true[\s\S]*?bluePluginControl: true[\s\S]*?commands: true[\s\S]*?planMode: true[\s\S]*?config:[\s\S]*?- id: cordis-host-runner/u)
-    expect(patch).not.toMatch(/isolate:[\s\S]*?bluePluginHost: true/u)
+    expect(patch).not.toContain('isolate:')
     expect(patch.indexOf('- id: cordis-host-runner')).toBeLessThan(patch.indexOf('- id: blue-core'))
     // The package must install with the bundle (dsh plugin add), exactly as
     // the agent-presets roster's own runtime dependency rides it.
@@ -190,6 +161,19 @@ describe('blue bundle', () => {
       dependencies?: Record<string, string>
     }
     expect(manifest.dependencies?.['@deepseek-ai/dsh-cordis-host-runner']).toBeDefined()
+  })
+
+  it('mounts the native workspace dependency before the session controller', () => {
+    expect(patch).toContain('- id: workspace')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-workspace'")
+    expect(patch).toContain('- id: session-controller')
+    expect(patch).toContain("name: '@deepseek-ai/dsh-api-session-controller'")
+    expect(patch.indexOf('- id: workspace')).toBeLessThan(patch.indexOf('- id: session-controller'))
+
+    const manifest = JSON.parse(readFileSync(join(patchDir, '..', 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-workspace']).toBe('0.1.2-alpha.3')
   })
 
   it('keeps the host fallback persona valid for agents without preset model variables', () => {

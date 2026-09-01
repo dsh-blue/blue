@@ -1,17 +1,36 @@
 # Blue package and release workflow
 
-Blue publishes twelve packages as one `0.1.2-alpha.1` lockstep release. The release set includes the renderer-neutral `@dsh-blue/blue-ui` and no-checkout `@dsh-blue/blue-plugin-kit` packages alongside api, frontend, harness-adapter, conversation, core, transcript, interaction, app, bundle, and cli. Build output is generated from the package manifests: runtime exports and `bin` entries are the tsdown inputs, while TypeScript emits declarations into the ignored build cache. Published packages contain runtime JavaScript, declarations, and only the configuration or documentation required by consumers; source files, intermediate JavaScript, and maps are not distribution artifacts. Context, remote, OpenPencil, and Lark are validation-only packages outside this release set. The independent Harness dependency line is exactly `0.1.2-alpha.2`; RC Harness releases are outside this release's compatibility contract.
+Blue publishes ten packages as one `0.2.0-alpha.1` lockstep release:
+`api`, `ui`, `frontend`, `conversation`, `core`, `app`,
+`transcript`, `interaction`, `bundle/blue`, and `cli`. The exact release
+order lives in `script/package-contract.mjs`. The supported Harness line is
+`0.1.2-alpha.3`.
 
-Run the local release gates in this order:
+Package manifests are the build source of truth. Concrete JavaScript exports
+and bins become tsdown entries; TypeScript project references emit declarations.
+Published packages contain runtime JavaScript, declarations, and explicitly
+listed consumer configuration. Source, maps, workspace protocols, and local
+paths must not leak.
+
+Run:
 
 ```sh
-pnpm build
-pnpm check:lib
-pnpm check:pack
+pnpm run build
+pnpm run check:lib
+pnpm run check:pack
+pnpm run check:examples
 ```
 
-`check:pack` creates `.artifacts/pack/index.json` and twelve tarballs. It runs `publint`, AreTheTypesWrong, manifest checks, bin checks, dependency protocol checks, shrinkwrap checks, package-size budgets, and a no-checkout installed-bin fixture for the author kit. Release automation consumes those exact tarballs; it never rebuilds a second copy.
+`check:pack` writes `.artifacts/pack/index.json` and ten tarballs, then runs
+manifest/export/bin/protocol checks, publint, AreTheTypesWrong, package budgets,
+and an external UI-kit install fixture. Release automation publishes those
+exact artifacts and does not rebuild.
 
-`@dsh-blue/blue-cli` carries an npm shrinkwrap for its nested dsh host. Update it only with `pnpm release:lock-cli`, which resolves in an isolated npm project so pnpm workspace links cannot leak into the published lock. The profile itself remains a dsh-managed pnpm workspace: install `pnpm@11` before first `blue` boot or an upgrade. A matching profile starts without a repeated pnpm check.
+`@dsh-blue/blue-cli` carries archived dsh runtimes. Refresh its isolated npm
+lock with `pnpm run release:lock-cli`; do not resolve it through workspace
+links.
 
-Tags run the CI-only release workflow. It publishes each verified tarball to `candidate`, installs the exact registry versions on Linux, macOS, and Windows, then promotes by release phase: alpha to `alpha`, RC to `rc` and `latest`, and stable to `latest`. The current credential is a granular npm token stored as the repository `NPM_TOKEN` Actions secret; the auth step is intentionally isolated so it can later be replaced by npm Trusted Publishing/OIDC without changing build, verification, or promotion behavior. npm may refuse deleting the temporary `candidate` tag, so cleanup is best-effort after the release tags converge.
+Tags execute the CI release workflow: publish verified artifacts to
+`candidate`, install the exact registry versions on Linux/macOS/Windows, then
+promote alpha to `alpha`, RC to `rc` and `latest`, and stable to
+`latest`. Local release commands must not publish.

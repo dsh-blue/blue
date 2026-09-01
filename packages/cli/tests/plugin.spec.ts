@@ -12,7 +12,7 @@ afterEach(() => {
 })
 
 const registry = {
-  plugins: [{ id: 'blue-doudizhu', package: '@dsh-blue/blue-doudizhu', version: '0.1.0', title: { en: 'Doudizhu', zh: '斗地主' }, tagline: { en: 'cards' }, capabilities: ['commands'], verified: true, repo: 'https://github.com/dsh-blue/blue-doudizhu' }],
+  plugins: [{ id: 'blue-doudizhu', package: '@dsh-blue/blue-doudizhu', version: '0.1.0', title: { en: 'Doudizhu', zh: '斗地主' }, tagline: { en: 'cards' }, verified: true, repo: 'https://github.com/dsh-blue/blue-doudizhu' }],
 }
 
 function mount(): { out: string[], err: string[], exits: number[] } {
@@ -55,7 +55,7 @@ describe('handlePluginCommand', () => {
     const sparse = {
       plugins: [
         { id: 'zh-only', title: { zh: '中文标题' } },
-        { id: 7, package: '@scope/seven', title: { en: 42 }, capabilities: undefined, verified: false },
+        { id: 7, package: '@scope/seven', title: { en: 42 }, verified: false },
         {},
       ],
     }
@@ -66,7 +66,6 @@ describe('handlePluginCommand', () => {
     expect(await handlePluginCommand(['info', '@scope/seven'])).toBe(true)
     expect(await handlePluginCommand(['info'])).toBe(true)
     expect(capture.out.join('')).toContain('zh-only\t\t中文标题')
-    expect(capture.out.join('')).toContain('"capabilities": []')
     expect(capture.out.join('')).toContain('"verified": false')
 
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))

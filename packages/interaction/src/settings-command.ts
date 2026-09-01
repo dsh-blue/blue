@@ -529,7 +529,7 @@ export class CanonicalSettingsController implements BlueFocusable, CanonicalNode
   private move(delta: 1 | -1): void {
     if (this.items.length === 0) return
     this.cursor = (this.cursor + this.items.length + delta) % this.items.length
-    this.adapter.invalidate()
+    this.adapter.focus({ controlId: 'settings-list', itemId: this.items[this.cursor]!.id })
   }
 
   private activate(): void {
@@ -590,7 +590,9 @@ export class SettingsNoticeController implements BlueFocusable {
    */
   handleInput(data: string): void {
     this.options.inner.handleInput(data)
-    this.adapter.invalidate()
+    const identity = this.options.inner.currentFocusIdentity?.()
+    if (identity === undefined) this.adapter.invalidate()
+    else this.adapter.focus(identity)
   }
 
   /** No cached render state of its own; the inner panel keeps its own. */
@@ -698,8 +700,10 @@ export function registerSettingsCommand(ctx: Context): () => void {
         const presets = ctx.get('permissionPresets') as PermissionPresetsService | undefined
         // Discovery failures degrade to omitting the row, like a host
         // without the roster.
-        const listed = await ctx.blueSessionActions.presets()
-        const agentPresetIds = listed.ok ? listed.value.map(row => row.id) : undefined
+        const roster = ctx.get('agentPresets')
+        const agentPresetIds = roster === undefined
+          ? undefined
+          : await roster.list().then(rows => rows.map(row => row.id), () => undefined)
         return buildGroups(settings, { presets, agentPresetIds }, t)
       }
 

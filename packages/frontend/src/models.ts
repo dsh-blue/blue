@@ -4,7 +4,6 @@ import type { BlueUiNode } from '@dsh-blue/blue-api'
 export type Action = Readonly<{ readonly kind: string; readonly [key: string]: unknown }>
 export interface CommandModel { readonly kind: 'command'; readonly id: string; readonly label: string; readonly description?: string; readonly enabled: boolean; readonly action?: Action }
 export interface NotificationModel { readonly kind: 'notification'; readonly id: string; readonly severity: 'info' | 'success' | 'warning' | 'error'; readonly message: string; readonly durationMs?: number; readonly dedupeKey?: string }
-export interface ProviderModel { readonly providerId: string; readonly capabilities: readonly string[]; readonly nodes: readonly BlueUiNode[] }
 export interface ToolPresentationModel { readonly kind: 'tool'; readonly id: string; readonly name: string; readonly call?: BlueUiNode; readonly result?: BlueUiNode; readonly expanded?: boolean; readonly action?: Action }
 export interface ThemeModel { readonly kind: 'theme'; readonly id: string; readonly name: string; readonly colors: Readonly<Record<string, string>>; readonly dark: boolean }
 export interface EditorModel { readonly kind: 'editor'; readonly id: string; readonly value: string; readonly placeholder?: string; readonly enabled: boolean; readonly set?: Action; readonly submit?: Action; readonly abort?: Action }

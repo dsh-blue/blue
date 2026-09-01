@@ -47,11 +47,11 @@ describe('resolveExternalEditorCommand', () => {
   it('prefers a configured blue.editorCommand over $VISUAL/$EDITOR', async () => {
     const ctx = new Context()
     new InteractionStateService(ctx, settingsPlugin.DEFAULT_SETTINGS)
-    ctx.provide('blueSessionReader', {
+    ctx.provide('blueCurrentAgent', {
       current: () => null,
-      subscribe: () => ({ disposed: false, dispose() {} }),
-      request: async () => ({ ok: false, code: 'BLUE_SESSION_UNAVAILABLE', message: 'No session' }),
-    })
+      revision: () => 0,
+      subscribe: () => () => {},
+    } as never)
     await ctx.plugin(MemorySettings, { blue: { editorCommand: '  my-editor --wait  ' } })
     await ctx.plugin(settingsPlugin)
     await vi.waitFor(() => {

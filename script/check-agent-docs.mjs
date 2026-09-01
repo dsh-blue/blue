@@ -38,12 +38,6 @@ export function auditAgentDocs(root, options = {}) {
     const manifest = JSON.parse(readFileSync(join(root, packageDir, 'package.json'), 'utf8'))
     return manifest.version
   }))
-  const protocolFile = join(root, 'packages', 'api', 'src', 'manifest-v1.generated.ts')
-  if (existsSync(protocolFile)) {
-    const protocolSource = readFileSync(protocolFile, 'utf8')
-    const protocolVersion = /BLUE_PLUGIN_PROTOCOL_VERSION = ["']([^"']+)/u.exec(protocolSource)?.[1]
-    if (protocolVersion !== undefined) packageVersions.add(protocolVersion)
-  }
   const harnessSource = join(root, 'packages', 'interaction', 'src', 'session-commands.ts')
   if (existsSync(harnessSource)) {
     const harnessVersion = /HARNESS_LINE = '([^']+)'/u.exec(readFileSync(harnessSource, 'utf8'))?.[1]

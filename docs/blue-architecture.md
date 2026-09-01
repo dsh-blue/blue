@@ -1,227 +1,114 @@
-# Blue 架构设计
+# Blue 2.0 架构
 
-> 本文描述当前 frontend-runtime cutover 架构。历史阶段设计保存在 `docs/history/`；旧 `blueSession`、event fold、`blueStatus` 和 `blueIntents` 方案已被本架构取代。
-
-## 1. 核心方向
-
-Blue 把 Harness domain 转换为 renderer-neutral frontend model，再由 TUI adapter 呈现：
-
-```text
-Harness domain -> projection/action boundary -> frontend model -> TUI adapter -> terminal
-```
-
-Harness 继续拥有 Agent、Session、工具、持久化、权限、模型路由和业务事件。Blue 不保存第二套 Agent 真相。事件表示已经发生的事实，projection 表示当前状态，action 表示带结构化结果的写请求。
-
-## 2. 分层
+Blue 是 `dsh-base` 上的一组普通 Cordis sibling 插件。它不建立第二个插件
+模型，不拦截或复制 dsh service graph，也不为外部插件建立私有 runtime realm。
 
 <!-- BEGIN diagram:blue-layers -->
 <!-- single source 单一来源: docs/diagrams/blue-layers.zh.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    ROOT["dsh 进程 — 一棵 Cordis 树<br/>Loader · Fiber 生命周期 · 事件/服务总线"]
+    ROOT["一个 dsh 进程 · 一张 Cordis service graph"]
+    DSH["dsh 原生服务<br/>commands · sessionProjections · tools · agents"]
+    PLUGIN["普通 Cordis 插件<br/>Blue 官方行与外部 sibling"]
+    AGENT["blueCurrentAgent<br/>当前选择的精确 Agent"]
+    UI["Blue 直接 UI 服务<br/>bluePanes · blueStatus<br/>blueOverlays · blueEditorExtensions"]
+    CORE["blue-core renderer<br/>唯一 pi-tui 与原始终端 owner"]
+    TERM["终端"]
 
-    subgraph BASE["dsh-base 行 · Harness domain 插件"]
-        HAR["agents · sessions · tools · approval<br/>commands · events"]
-    end
-
-    subgraph BLUE["Blue 行 — cordis.patch.yml 组合的 34 个 Fiber 插件（卸载回滚 · 可热替换 · 可省略）"]
-        direction TB
-        subgraph DOM["Domain 侧 — 唯一持有 Agent/Session 对象"]
-            direction LR
-            CONV["blue-conversation<br/>Harness 事件 → projection 投影"]
-            APP["blue-app<br/>blueSessionReader · blueSessionActions"]
-        end
-        subgraph UI["UI 侧 — 只见 readonly 数据与 action"]
-            direction TB
-            FE["blue-api · blue-ui · blue-frontend<br/>UI wire/builders · readonly models · provider host"]
-            ADP["blue-transcript · blue-interaction<br/>transcript · 命令 · 面板 · 状态栏 · dock"]
-            KRN["blue-core — TUI kernel<br/>全树唯一 import pi-tui"]
-            FE --> ADP
-            ADP --> KRN
-        end
-        CONV -- "projection · 当前状态" --> FE
-        APP -- "readonly snapshot" --> FE
-        UI -- "action · 带 BlueResult 的写请求" --> DOM
-    end
-
-    TERM["终端 — pi-tui · ANSI · 键盘"]
-
-    ROOT --> BASE
-    ROOT --> BLUE
-    HAR ==> CONV
-    HAR ==> APP
-    KRN --> TERM
-
-    linkStyle 2,3,4 stroke:#2bc8e8,stroke-width:3px
+    ROOT --> DSH
+    ROOT --> PLUGIN
+    DSH --> PLUGIN
+    AGENT --> PLUGIN
+    PLUGIN --> UI
+    UI --> CORE
+    CORE --> TERM
 ```
 <!-- END diagram:blue-layers -->
 
-依赖方向是单向的：
+## 运行时原则
 
-- `blue-conversation` 是 Harness-domain projection，不依赖 frontend 或 renderer。
-- `blue-app` 独占 Agent/Session 对象，只向外提供 readonly reader/projection values 和 structured actions。
-- `blue-api`、`blue-frontend` 只包含 renderer-neutral contract/model/provider lifecycle。
-- `blue-transcript` 与 `blue-interaction` 把 model/action 适配到 TUI feature。
-- `blue-core` 是全树唯一 pi-tui、ANSI、raw terminal、focus、layout 和 width-truth owner。
-- `blue` bundle 只负责 composition、preset、disable list 和显式依赖顺序。
+1. 插件直接 inject 并使用 dsh 原生服务，例如 `commands`、
+   `sessionProjections`、`tools` 和 `settings`。与 `planMode` 同 realm 的插件
+   可以直接 inject 它；根级 UI 插件通过原生 `plan` projection 读取状态、通过
+   原生 `/plan` 命令写入，不增加 Blue adapter。
+2. Blue 只增加终端 UI 所需的四个 service：
+   `bluePanes`、`blueStatus`、`blueOverlays`、
+   `blueEditorExtensions`。
+3. `blueCurrentAgent` 只表达当前 Blue frontend 选择的精确 Agent。插件拿到
+   Agent 后，仍调用原生 dsh service；该对象不是 renderer model。
+4. 注册、listener、timer 与异步 continuation 都属于创建它们的 Cordis Fiber。
+   Fiber unload 是唯一的插件贡献清理机制。
+5. 只有 `packages/core` import pi-tui、处理 ANSI/raw mode、焦点、布局和
+   visible width。
 
-`blue-context`、`blue-remote`、`blue-openpencil`、`blue-lark` 是 validation-only package，不进入正式 bundle dependency closure。
+## 包边界
 
-## 3. 数据流
+| 包 | 当前职责 |
+| --- | --- |
+| `api` | renderer-neutral node/event contract 与四个直接 UI registry |
+| `ui` | 纯 node builder 和 `defineBlueComponent` |
+| `frontend` | renderer-neutral locale、theme、notification 与 transcript models |
+| `conversation` | 注册官方 append-origin `sessionProjections` |
+| `app` | startup、session navigation、current Agent、request/retraction/title cadence |
+| `core` | pi-tui/terminal owner，并渲染 pane/overlay registry |
+| `transcript` | projection-backed transcript、tool presentation、status 与 pane contributors |
+| `interaction` | editor、原生 dsh commands、dialog 和 editor-extension consumer |
+| `bundle/blue` | `dsh-base` 上的 flat composition 与 presets |
+| `cli` | dependency-free `blue` launcher |
 
-### Conversation 与 transcript
+不存在第二套插件作者工具、Harness service adapter 包、validation-only adapter
+包、可替换 provider owner、插件 bridge 或 app session facade。
 
-```text
-session/event
-  -> blue-conversation (official SessionProjectionRegistry)
-  -> blueConversation + blueConversationFacts
-  -> app blueSessionProjections values/seq boundary
-  -> official transcript / SessionFactsService
-  -> TranscriptModel + canonical BlueStatusNode / BlueUiNode producers
-  -> transcript TUI components
-```
+## 状态所有权
 
-只有 domain/app owner 可以观察原始 session events。Transcript、status 和 pane 不折叠 event log。`blueConversation` 覆盖 user/assistant/thinking/tool/image/error/interruption/retraction 的 replay/live 收敛；`blueConversationFacts` 覆盖 phase、usage、todo、request model 和 child-agent call facts。
+- Harness 的 Agent、Session、command、tool 与 projection 状态仍由 Harness
+  package 持有。
+- app 持有当前 Agent selection；它不重做 Harness command/tool/projection API。
+- API registry 持有当前 UI contribution definitions，且每项 registration 随
+  consumer Fiber 清理。
+- transcript 与 interaction 持有它们自己的 renderer-neutral/TUI product state。
+- core 持有 terminal、focus、layout 与编译后的 renderer object。
 
-### Interaction 与写请求
+Renderer 可以根据当前 Agent 调用 projection snapshot，但不能折叠第二份
+Harness session event truth。
 
-```text
-input / command / panel
-  -> blueSessionActions or capability-specific public action
-  -> app-owned Agent operation
-  -> Harness durable event/projection
-  -> model refresh
-```
-
-Renderer 不持有 Agent/Session。切换、followup、steer、interrupt、mode/model/preset/tool/skill、rewind 和 side-session 操作都经过 app action boundary。会话切换以 reader epoch 和 projection seq 驱逐旧 callback。
-
-### Locale 与展示重投影
-
-```text
-process locale + locale.preference
-  -> blue-harness-adapter locale adapter
-  -> frontend-tree BlueLocaleService snapshot/revision/catalog
-  -> interaction/transcript package translators
-  -> in-place panel, completion and transcript presentation refresh
-```
-
-`locale.preference` 的 wire value 保持 `undefined | 'zh' | 'en'`，本地化 label 只属于展示层。切换语言时，settings controller、cursor、form draft、editor draft 和 completion owner identity 保持不变；consumer 只根据新的 locale revision 重投影展示。Locale service 和 catalog 都是 frontend-tree/Fiber scoped，卸载或 reload 后旧订阅不能继续刷新 UI。
-
-### 外部插件
-
-```text
-manifest
-  -> bluePluginHost.open()
-  -> capability-scoped pane/overlay/status/command/notification.publish contribution
-  -> owner bridge
-  -> canonical core compiler / Harness command registry / notice consumer
-```
-
-第三方 contribution 与内置 consumer 使用同一 renderer-neutral view vocabulary，但不能访问 Loader、root renderer、Agent、Session、`bluePluginControl` 或 raw app backing services。当前公共 API 是 `1.0.0-beta.1`；generic `session.act` 与全局 notification observation 不在该边界中。
-
-## 4. Scope 与生命周期
-
-| Scope | Owner state |
-|---|---|
-| host | plugin contribution registries、models/credentials/MCP registries |
-| agent | tool/persona/preset composition，始终留在 Harness/app owner |
-| session | official projection cells、durable actions 和 watermark |
-| frontend tree | editor host、draft、alias/settings cache、locale service、paste state、transcript presentation policy |
-| provider Fiber | subscription、timer、abort controller、renderer component cache |
-
-Provider swap 必须遵循 `capture -> abort -> dispose -> activate -> restore`。每个 async callback 都检查 generation/session epoch；卸载后不得重新挂载 UI 或写入替换 session。
-
-## 5. Renderer 边界
-
-`blue-core` 提供 `blueScreen`、`blueKeymap`、`blueComponents`、`blueTerminalInfo` 和 theme provider。其它包不得 import pi-tui 或自行实现 visible-width math。
-
-`blue-transcript` 拥有：
-
-- semantic `TranscriptModelService` 与最多 200 项的 renderer reconciliation；
-- package-private `BlueStatusEntryService` 两行 footer；
-- package-private、bottom-only `BlueBottomPaneService`；public panes/overlays 由 core surface bridge 独立挂载；
-- official tool presentation -> canonical `ToolPresentationModel.call/result` node conversion；
-- frontend-tree-scoped `TranscriptPresentationPolicy`。
-
-`blue-interaction` 拥有：
-
-- input/editor 与通用 panel components；
-- frontend-tree-scoped `EditorHostService` 和 `InteractionStateService`；
-- command/question/approval workflows；
-- abort、unload 和 late-result rejection。
-
-旧 `fold.ts`、七种 frontend `View`、core `frontend-renderer`、generic frontend status/dock model、`blueIntents`、intent subpath、child event tracker 和 shared-editor singleton 已删除。Provider、tool、generic transcript 与 context UI data 均使用 canonical `BlueUiNode`；公共 `BlueView` 仅是 canonical content-leaf subset。
-
-## 6. 包职责
-
-| Package | Role |
-|---|---|
-| `@dsh-blue/blue-api` | Beta manifest、`BlueResult`、readonly public views 与 capability-scoped plugin host |
-| `@dsh-blue/blue-frontend` | readonly command/editor/transcript/tool/theme/locale models 与 provider host |
-| `@dsh-blue/blue-harness-adapter` | session/projection/action/model/question/locale 的窄兼容 adapter |
-| `@dsh-blue/blue-conversation` | append-origin conversation 与 shared facts official projections |
-| `@dsh-blue/blue-app` | CLI startup、Agent driver、session reader/projection/action boundary |
-| `@dsh-blue/blue-core` | 唯一 TUI kernel 与 terminal adapter |
-| `@dsh-blue/blue-transcript` | transcript/status/bottom-pane/tool model consumer 与 TUI renderer |
-| `@dsh-blue/blue-interaction` | editor、commands、panels、question/approval 与 tree-scoped interaction state |
-| `@dsh-blue/blue` | installable composition、thin-host preset 和 row-order assertions |
-| `@dsh-blue/blue-cli` | standalone launcher 与 profile calibration |
-
-## 7. Bundle composition
+## Composition
 
 <!-- BEGIN diagram:blue-composition -->
 <!-- single source 单一来源: docs/diagrams/blue-composition.mmd — edit the .mmd, then `pnpm run diagrams:sync` -->
 ```mermaid
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 34 Blue-owned rows · 34 条 Blue 自有行"]
-        subgraph host["host support 宿主支撑 - 3 rows"]
-            presets["subagent model settings · agent-presets<br/>upstream shipped + blue-cordis"]
-            creative["blue-creative-host"]
-        end
-        subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
-            subgraph product["product UI 产品 UI - 30 rows"]
-                subgraph baseline["baseline 基线 - 9 rows"]
-                    api["blue-api-host · blue-locale"]
-                    core["blue-core · blue-theme-dark"]
-                    chrome["blue-banner · blue-transcript · blue-status-basic"]
-                    conversation["blue-conversation · blue-transcript-official"]
-                end
-                subgraph enhancement["enhancement 增强 - 15 droppable rows"]
-                    editorPlus["blue-editor-plus"]
-                    att["blue-attachments · blue-paste-image"]
-                    statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-                    panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-                    viewBridge["blue-plugin-view-bridge"]
-                    statusOwner["blue-status-provider-owner"]
-                end
-                subgraph assembly["assembly 装配 - 6 rows"]
-                    interaction["blue-interaction · blue-plugin-interaction-bridge"]
-                    editorOwner["blue-editor-provider-owner"]
-                    startup["blue-startup · blue-app"]
-                    sessionBridge["blue-plugin-session-bridge"]
-                end
-            end
-        end
+    BASE["dsh-base"]
+    subgraph GRAPH["flat Cordis sibling graph · 31 inserted rows"]
+        SUPPORT["dsh support · 6 rows<br/>subagent settings · presets · host runner<br/>workspace · session controller · title"]
+        API["blue-api<br/>four direct UI registries"]
+        APP["blue-conversation · blue-startup · blue-app"]
+        VIEW["blue-frontend · blue-core · theme"]
+        PRODUCT["transcript · status · panes · editor · interaction"]
+        PLUGINS["external Cordis plugins"]
     end
-    validation["validation-only, not bundle rows\nblue-context · blue-remote · blue-openpencil · blue-lark"]
-    dshbase["dsh-base - agent plane composed behind presets"]
-    bundle -.-> dshbase
+    NATIVE["native dsh services"]
 
-    classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,panes,viewBridge,statusOwner,validation optional;
+    BASE --> NATIVE
+    NATIVE --> SUPPORT
+    NATIVE --> APP
+    NATIVE --> PRODUCT
+    NATIVE --> PLUGINS
+    API --> VIEW
+    API --> PRODUCT
+    API --> PLUGINS
+    APP --> PRODUCT
+    VIEW --> PRODUCT
 ```
 <!-- END diagram:blue-composition -->
 
-34 条 Blue 自有行由 3 条 host-support、1 条 private-runtime composition group 和 30 条 product row 组成。产品段内：
+`cordis.patch.yml` 插入 31 个普通 sibling：6 个 dsh 支撑行和 25 个 Blue
+product 行。YAML 顺序不代表启动顺序；所有顺序要求必须由 `inject` 表达。
+动态 Cordis plugin 与官方 Blue 行处在同一 service graph。
 
-- baseline 9 行，包含 locale runtime/settings adapter、conversation projection 与 official transcript consumer；
-- enhancement 15 行，可逐项移除；
-- assembly 6 行，提供 interaction、provider/public bridge、startup、app 与 public session owner bridge。
+## 验证
 
-`blue-runtime-private` 包住完整 product segment，隔离 `bluePluginControl`、`blueSessionReader`、`blueSessionProjections` 与 `blueSessionActions`；public `bluePluginHost` 仍可被普通 sibling 使用。
-
-Dock 的稳定顺序由 model priority/id 加显式 row-level `inject` 共同约束，不依赖 Cordis sibling 碰巧按文件顺序完成。
-
-## 8. 验证门禁
-
-每个新 surface 必须同时有 official consumer、headless fixture、unload/swap、replay/late-result、width scan、bundle composition 和 real-profile evidence。Subpath export 必须同步 package `exports`、`files` 和 `tsdown.config.ts`。完整 cutover 状态见 [blue-runtime-cutover-ledger.md](./blue-runtime-cutover-ledger.md)。
+whole-tree bundle 测试必须证明原生 command/projection/tool service 可达、
+current Agent identity 精确、四个 UI service 可注册、Fiber unload 会清理、
+core reload 后 registry 仍可重挂 renderer。宽度敏感组件继续接受各包
+`width-scan` 检查。

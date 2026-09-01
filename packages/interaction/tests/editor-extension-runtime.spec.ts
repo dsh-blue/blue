@@ -8,44 +8,29 @@
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   BlueEditorCompletionItem,
-  BlueEditorCompletionRequestV2,
+  BlueEditorCompletionRequest,
   BlueEditorExtensionContribution,
   BlueEditorSubmitRequest,
   BlueEditorSubmitValue,
-  BlueResult,
   BlueUiEvent,
 } from '@dsh-blue/blue-api'
 import type { BlueAutocompleteItem, BlueAutocompleteProvider, BlueEditorSubmitAttempt } from '@dsh-blue/blue-core'
 import { describe, expect, it, vi } from 'vitest'
 import { EditorExtensionRuntime } from '../src/editor-extension-runtime.ts'
 import {
-  clearEditorExtensions,
   registerEditorAutocompleteSource,
-  setEditorExtensions,
-  type EditorExtensionBinding,
 } from '../src/editor-instance.ts'
 import { FakeBlueEditor, fakeBlueContext, KEY } from './fakes.ts'
 
-function success<Value>(value: Value): BlueResult<Value> { return { ok: true, value } }
+function success<Value>(value: Value): Value { return value }
 
-function binding(entries: readonly BlueEditorExtensionContribution[], revision = 1): EditorExtensionBinding {
-  return {
-    revision,
-    entries,
-    async complete(entry, request, signal, operationRevision) {
-      const context = { surfaceId: entry.id, signal, revision: operationRevision }
-      if (entry.completeV2 !== undefined) return entry.completeV2(request, context)
-      if (request.trigger === '#' || entry.complete === undefined) return success([])
-      return entry.complete({ query: request.query, trigger: request.trigger }, context)
-    },
-    async transform(entry, request, signal, operationRevision) {
-      if (entry.transformSubmit === undefined) return success({ text: request.text })
-      return entry.transformSubmit(request, { surfaceId: entry.id, signal, revision: operationRevision })
-    },
-    async dispatch(entry, event, signal, operationRevision) {
-      if (entry.onEvent === undefined) return success(undefined)
-      return entry.onEvent(event, { surfaceId: entry.id, signal, revision: operationRevision })
-    },
+function registerExtensions(
+  ctx: ReturnType<typeof fakeBlueContext>['ctx'],
+  entries: readonly BlueEditorExtensionContribution[],
+): () => void {
+  const registrations = entries.map(entry => ctx.blueEditorExtensions.register(entry))
+  return () => {
+    for (const registration of registrations) registration.dispose()
   }
 }
 
@@ -54,12 +39,12 @@ function runtimeFixture(entries: readonly BlueEditorExtensionContribution[] = []
   readonly editor: FakeBlueEditor
   readonly runtime: EditorExtensionRuntime
   readonly notices: string[]
-  readonly replace: (next: readonly BlueEditorExtensionContribution[], revision?: number) => EditorExtensionBinding
+  readonly replace: (next: readonly BlueEditorExtensionContribution[], revision?: number) => void
 } {
   const { ctx } = fakeBlueContext()
   const editor = new FakeBlueEditor()
   const notices: string[] = []
-  if (entries.length > 0) setEditorExtensions(ctx, binding(entries))
+  let unregister = registerExtensions(ctx, entries)
   const runtime = new EditorExtensionRuntime({
     ctx,
     editor,
@@ -71,10 +56,9 @@ function runtimeFixture(entries: readonly BlueEditorExtensionContribution[] = []
     editor,
     runtime,
     notices,
-    replace(next, revision = 2) {
-      const value = binding(next, revision)
-      setEditorExtensions(ctx, value)
-      return value
+    replace(next) {
+      unregister()
+      unregister = registerExtensions(ctx, next)
     },
   }
 }
@@ -106,10 +90,10 @@ function imageRefForCoverage(id: string): ImageAttachmentRef {
 
 describe('editor extension completion multiplexer', () => {
   it('combines the Blue source with /, @, #, and manual extension requests', async () => {
-    const requests: BlueEditorCompletionRequestV2[] = []
+    const requests: BlueEditorCompletionRequest[] = []
     const extension: BlueEditorExtensionContribution = {
       id: 'acme.complete',
-      completeV2: async request => {
+      complete: async request => {
         requests.push(request)
         return success([{ id: `extension-${request.trigger}`, label: `Extension ${request.query}`, insertText: `insert-${request.trigger}`, detail: 'plugin' }])
       },
@@ -124,8 +108,7 @@ describe('editor extension completion multiplexer', () => {
       shouldTriggerFileCompletion: () => true,
     }
     const unregister = registerEditorAutocompleteSource(ctx, 'base', base)
-    const installed = binding([extension])
-    setEditorExtensions(ctx, installed)
+    const unregisterExtensions = registerExtensions(ctx, [extension])
 
     const provider = editor.autocompleteProvider!
     expect(provider.triggerCharacters).toEqual(['@', '$', '/', '#'])
@@ -156,12 +139,12 @@ describe('editor extension completion multiplexer', () => {
     expect(provider.applyCompletion(['x'], 0, 1, baseItem, 'x')).toEqual({ lines: ['base:x'], cursorLine: 0, cursorCol: 4 })
     expect(baseApply).toHaveBeenCalledOnce()
 
-    clearEditorExtensions(ctx, installed)
+    unregisterExtensions()
     unregister()
     runtime.dispose()
   })
 
-  it('keeps the Beta compatibility callback exhaustive by never dispatching hash requests', async () => {
+  it('dispatches every completion trigger through the one direct callback', async () => {
     const complete = vi.fn(async request => success([{
       id: 'legacy',
       label: `Legacy ${request.trigger}`,
@@ -174,19 +157,21 @@ describe('editor extension completion multiplexer', () => {
 
     const slash = await suggestions(editor.autocompleteProvider!, '/legacy')
     expect(slash?.items.map(item => item.label)).toEqual(['Legacy /'])
-    await expect(suggestions(editor.autocompleteProvider!, '#legacy')).resolves.toBeNull()
-    expect(complete).toHaveBeenCalledOnce()
+    const hash = await suggestions(editor.autocompleteProvider!, '#legacy')
+    expect(hash?.items.map(item => item.label)).toEqual(['Legacy #'])
+    expect(complete).toHaveBeenCalledTimes(2)
     expect(complete.mock.calls[0]?.[0]).toEqual({ trigger: '/', query: 'legacy' })
+    expect(complete.mock.calls[1]?.[0]).toEqual({ trigger: '#', query: 'legacy' })
     runtime.dispose()
   })
 
   it('rejects late completion after refresh or unload without publishing a notice', async () => {
-    const gates = [Promise.withResolvers<BlueResult<readonly BlueEditorCompletionItem[]>>(), Promise.withResolvers<BlueResult<readonly BlueEditorCompletionItem[]>>()]
+    const gates = [Promise.withResolvers<readonly BlueEditorCompletionItem[]>(), Promise.withResolvers<readonly BlueEditorCompletionItem[]>()]
     const signals: AbortSignal[] = []
     let call = 0
     const extension: BlueEditorExtensionContribution = {
       id: 'acme.slow-complete',
-      completeV2: (_request, context) => {
+      complete: (_request, context) => {
         signals.push(context.signal)
         return gates[call++]!.promise
       },
@@ -205,18 +190,18 @@ describe('editor extension completion multiplexer', () => {
     await vi.waitFor(() => expect(signals).toHaveLength(2))
     runtime.dispose()
     expect(signals[1]?.aborted).toBe(true)
-    gates[1]!.resolve({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'too late' })
+    gates[1]!.resolve([])
     await expect(second).resolves.toBeNull()
     expect(notices).toEqual([])
   })
 
   it('aborts the current completion on session invalidation and lets a new request complete', async () => {
-    const gate = Promise.withResolvers<BlueResult<readonly BlueEditorCompletionItem[]>>()
+    const gate = Promise.withResolvers<readonly BlueEditorCompletionItem[]>()
     const signals: AbortSignal[] = []
     let calls = 0
     const extension: BlueEditorExtensionContribution = {
       id: 'acme.session-complete',
-      completeV2: (_request, context) => {
+      complete: (_request, context) => {
         signals.push(context.signal)
         calls += 1
         return calls === 1
@@ -239,17 +224,16 @@ describe('editor extension completion multiplexer', () => {
   })
 
   it.each([
-    ['invalid BlueResult', null, 'completion result must be a BlueResult'],
+    ['non-array result', null, 'at most 200 items'],
     ['duplicate ids', success([
       { id: 'same', label: 'One', insertText: 'one' },
       { id: 'same', label: 'Two', insertText: 'two' },
     ]), 'invalid or duplicate id'],
     ['too many items', success(Array.from({ length: 201 }, (_, index) => ({ id: `item-${String(index)}`, label: 'Item', insertText: 'item' }))), 'at most 200 items'],
-    ['rejected callback', { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'completion denied' }, 'completion denied'],
   ])('contains %s without leaking suggestions or a rejection', async (_label, callbackResult, expectedNotice) => {
     const { editor, runtime, notices } = runtimeFixture([{
       id: 'acme.invalid-completion',
-      completeV2: async () => callbackResult as BlueResult<readonly BlueEditorCompletionItem[]>,
+      complete: async () => callbackResult as readonly BlueEditorCompletionItem[],
     }])
     await expect(suggestions(editor.autocompleteProvider!, '/bad')).resolves.toBeNull()
     expect(notices.some(notice => notice.includes(expectedNotice))).toBe(true)
@@ -266,48 +250,61 @@ describe('editor extension completion multiplexer', () => {
     ['long label', success([{ id: 'x', label: 'x'.repeat(2_001), insertText: 'x' }]), 'invalid label'],
     ['invalid insertText', success([{ id: 'x', label: 'x', insertText: 3 }]), 'invalid insertText'],
     ['long insertText', success([{ id: 'x', label: 'x', insertText: 'x'.repeat(2_001) }]), 'invalid insertText'],
-    ['accessor detail', success([Object.defineProperty({ id: 'x', label: 'x', insertText: 'x' }, 'detail', { get: () => 'detail' })]), 'invalid detail'],
+    ['accessor detail', success([Object.defineProperty({ id: 'x', label: 'x', insertText: 'x' }, 'detail', { get: () => 'detail' })]), 'detail must be an own data property'],
     ['invalid detail', success([{ id: 'x', label: 'x', insertText: 'x', detail: 3 }]), 'invalid detail'],
     ['long detail', success([{ id: 'x', label: 'x', insertText: 'x', detail: 'x'.repeat(2_001) }]), 'invalid detail'],
-    ['missing result value', { ok: true }, 'value must be an own data property'],
-    ['raw thrown value', new Proxy({}, { getOwnPropertyDescriptor: () => { throw 'raw completion trap' } }), 'completion result was rejected'],
+    ['non-array object', { value: [] }, 'at most 200 items'],
   ])('contains hostile completion shape: %s', async (_label, result, expectedNotice) => {
     const { editor, runtime, notices } = runtimeFixture([{
       id: 'acme.hostile-completion',
-      completeV2: async () => result as BlueResult<readonly BlueEditorCompletionItem[]>,
+      complete: async () => result as readonly BlueEditorCompletionItem[],
     }])
     await expect(suggestions(editor.autocompleteProvider!, '/hostile')).resolves.toBeNull()
     expect(notices.some(notice => notice.includes(expectedNotice))).toBe(true)
     runtime.dispose()
   })
 
-  it.each([
-    [{ ok: false }, 'completion failed'],
-    [{ ok: false, message: '' }, 'completion failed'],
-    [{ ok: false, message: 4 }, 'completion failed'],
-    [new Proxy({ ok: false }, {
-      getOwnPropertyDescriptor(target, key) {
-        if (key === 'message') throw new Error('message trap')
-        return Reflect.getOwnPropertyDescriptor(target, key)
-      },
-    }), 'completion failed'],
-  ])('bounds malformed completion failure messages', async (result, expectedNotice) => {
-    const { editor, runtime, notices } = runtimeFixture([{
-      id: 'acme.failure-message',
-      completeV2: async () => result as BlueResult<readonly BlueEditorCompletionItem[]>,
-    }])
-    await expect(suggestions(editor.autocompleteProvider!, '/fail')).resolves.toBeNull()
-    expect(notices).toContain(expectedNotice)
-    runtime.dispose()
-  })
-
   it('contains a rejected completion promise', async () => {
     const { editor, runtime, notices } = runtimeFixture([{
       id: 'acme.rejected-completion',
-      completeV2: async () => { throw new Error('rejected completion promise') },
+      complete: async () => { throw new Error('rejected completion promise') },
     }])
     await expect(suggestions(editor.autocompleteProvider!, '#x')).resolves.toBeNull()
     expect(notices).toContain('rejected completion promise')
+    runtime.dispose()
+  })
+
+  it('bounds hostile and empty rejected-completion messages', async () => {
+    const hostile = new Proxy({}, {
+      getOwnPropertyDescriptor: () => { throw new Error('message trap') },
+    })
+    const first = runtimeFixture([{
+      id: 'acme.hostile-rejection',
+      complete: async () => { throw hostile },
+    }])
+    await expect(suggestions(first.editor.autocompleteProvider!, '/hostile')).resolves.toBeNull()
+    expect(first.notices).toContain('editor extension completion failed')
+    first.runtime.dispose()
+
+    const second = runtimeFixture([{
+      id: 'acme.empty-rejection',
+      complete: async () => { throw new Error('') },
+    }])
+    await expect(suggestions(second.editor.autocompleteProvider!, '/empty')).resolves.toBeNull()
+    expect(second.notices).toContain('editor extension completion failed')
+    second.runtime.dispose()
+  })
+
+  it('contains a raw completion-admission trap', async () => {
+    const item = new Proxy({}, {
+      getOwnPropertyDescriptor: () => { throw 'raw completion trap' },
+    })
+    const { editor, runtime, notices } = runtimeFixture([{
+      id: 'acme.raw-admission',
+      complete: async () => [item] as never,
+    }])
+    await expect(suggestions(editor.autocompleteProvider!, '/trap')).resolves.toBeNull()
+    expect(notices).toContain('completion result was rejected')
     runtime.dispose()
   })
 
@@ -345,7 +342,7 @@ describe('editor extension completion multiplexer', () => {
     const baseItems = Array.from({ length: 150 }, (_, index): BlueAutocompleteItem => ({ value: `base-${String(index)}`, label: 'Base' }))
     const { ctx, editor, runtime } = runtimeFixture([{
       id: 'acme.completion-cap',
-      completeV2: async () => success(extensionItems),
+      complete: async () => success(extensionItems),
     }])
     const unregister = registerEditorAutocompleteSource(ctx, 'base-cap', {
       getSuggestions: async () => ({ items: baseItems, prefix: '' }),
@@ -386,10 +383,10 @@ describe('editor extension completion multiplexer', () => {
 
   it('times out a hung extension while retaining settled base suggestions', async () => {
     vi.useFakeTimers()
-    const hung = new Promise<BlueResult<readonly BlueEditorCompletionItem[]>>(() => {})
+    const hung = new Promise<readonly BlueEditorCompletionItem[]>(() => {})
     const { ctx, editor, runtime, notices } = runtimeFixture([{
       id: 'acme.hung-completion',
-      completeV2: () => hung,
+      complete: () => hung,
     }])
     const baseItem: BlueAutocompleteItem = { value: '/base', label: 'Base' }
     const unregister = registerEditorAutocompleteSource(ctx, 'base-timeout', {
@@ -411,7 +408,7 @@ describe('editor extension completion multiplexer', () => {
 
 describe('editor extension submit barrier', () => {
   it('keeps the buffer until ordered async transforms settle, then commits once', async () => {
-    const gate = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+    const gate = Promise.withResolvers<BlueEditorSubmitValue>()
     const requests: BlueEditorSubmitRequest[] = []
     const entries: BlueEditorExtensionContribution[] = [
       {
@@ -424,6 +421,7 @@ describe('editor extension submit barrier', () => {
       },
       {
         id: 'acme.second',
+        priority: 20,
         transformSubmit: request => {
           requests.push(request)
           return success({ text: `second:${request.text}` })
@@ -446,8 +444,9 @@ describe('editor extension submit barrier', () => {
   })
 
   it.each([
-    ['rejection', async () => ({ ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: 'blocked' }), 'blocked'],
-    ['throw', async () => { throw new Error('exploded') }, 'exploded'],
+    ['rejection', async () => { throw new Error('blocked') }, 'blocked'],
+    ['raw rejection', async () => { throw 'exploded' }, 'editor extension submit transform failed'],
+    ['non-string rejection message', async () => { throw { message: 7 } }, 'editor extension submit transform failed'],
     ['empty output', async () => success({ text: '   ' }), 'submit transform produced an empty prompt'],
   ])('cancels and preserves the editor on %s', async (_label, transform, expectedNotice) => {
     const { editor, runtime, notices } = runtimeFixture([{ id: 'acme.reject', transformSubmit: transform }])
@@ -462,11 +461,10 @@ describe('editor extension submit barrier', () => {
   })
 
   it.each([
-    ['null value', async () => success(null as never), 'submit transform value must be an object'],
+    ['null value', async () => success(null as never), 'submit transform must return an object'],
     ['missing text', async () => success({} as never), 'text must be an own data property'],
     ['accessor text', async () => success(Object.defineProperty({}, 'text', { get: () => 'x' }) as never), 'text must be an own data property'],
-    ['rejected without message', async () => ({ ok: false as const, code: 'BLUE_ACTION_REJECTED' as const } as never), 'submit transform failed'],
-    ['rejected with blank message', async () => ({ ok: false as const, code: 'BLUE_ACTION_REJECTED' as const, message: '' }), 'submit transform failed'],
+    ['object without text', async () => ({ code: 'rejected' } as never), 'text must be an own data property'],
     ['raw thrown value', async () => new Proxy({}, { getOwnPropertyDescriptor: () => { throw 'raw submit trap' } }) as never, 'submit transform was rejected'],
   ])('contains hostile submit shape: %s', async (_label, transform, expectedNotice) => {
     const { editor, runtime, notices } = runtimeFixture([{ id: 'acme.hostile-submit', transformSubmit: transform }])
@@ -495,8 +493,7 @@ describe('editor extension submit barrier', () => {
       notice: () => {},
       shouldTransformSubmit: () => false,
     })
-    const declinedBinding = binding([{ id: 'acme.declined', transformSubmit: request => success({ text: request.text }) }])
-    setEditorExtensions(declinedBlue.ctx, declinedBinding)
+    registerExtensions(declinedBlue.ctx, [{ id: 'acme.declined', transformSubmit: request => success({ text: request.text }) }])
     const declinedCommit = vi.fn(() => true)
     privateSubmit(declinedRuntime, {
       text: 'declined', signal: new AbortController().signal, revision: 2,
@@ -505,9 +502,8 @@ describe('editor extension submit barrier', () => {
     expect(declinedCommit).toHaveBeenCalledOnce()
     declinedRuntime.dispose()
 
-    const mutableEntries: BlueEditorExtensionContribution[] = [{ id: 'acme.mutable', transformSubmit: request => success({ text: request.text }) }]
-    const empty = runtimeFixture(mutableEntries)
-    mutableEntries.splice(0)
+    const empty = runtimeFixture([{ id: 'acme.mutable', transformSubmit: request => success({ text: request.text }) }])
+    empty.replace([])
     const emptyCommit = vi.fn(() => true)
     privateSubmit(empty.runtime, {
       text: 'empty generation', signal: new AbortController().signal, revision: 3,
@@ -593,7 +589,7 @@ describe('editor extension submit barrier', () => {
   })
 
   it.each([
-    ['invalid BlueResult', async () => null as never, 'submit transform must return a BlueResult'],
+    ['null value', async () => null as never, 'submit transform must return an object'],
     ['invalid value', async () => success({ text: 7 as never }), 'submit transform text exceeds'],
     ['overlong text', async () => success({ text: 'x'.repeat(20_001) }), 'submit transform text exceeds'],
   ])('contains malicious %s and keeps the draft', async (_label, transform, expectedNotice) => {
@@ -609,7 +605,7 @@ describe('editor extension submit barrier', () => {
   })
 
   it('aborts a stale transform when the buffer changes and ignores its late result', async () => {
-    const gate = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+    const gate = Promise.withResolvers<BlueEditorSubmitValue>()
     let signal: AbortSignal | undefined
     const { editor, runtime, notices } = runtimeFixture([{
       id: 'acme.stale',
@@ -634,7 +630,7 @@ describe('editor extension submit barrier', () => {
   })
 
   it('aborts pending work on extension refresh and accepts a new transaction', async () => {
-    const gate = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+    const gate = Promise.withResolvers<BlueEditorSubmitValue>()
     let oldSignal: AbortSignal | undefined
     const { editor, runtime, replace } = runtimeFixture([{
       id: 'acme.old',
@@ -662,7 +658,7 @@ describe('editor extension submit barrier', () => {
   })
 
   it('cancels the pending attempt on session invalidation, preserves the draft, and submits again', async () => {
-    const first = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+    const first = Promise.withResolvers<BlueEditorSubmitValue>()
     const signals: AbortSignal[] = []
     let calls = 0
     const { editor, runtime } = runtimeFixture([{
@@ -808,7 +804,7 @@ describe('editor extension submit barrier', () => {
   })
 
   it('cancels a pending transform when the runtime disposes', async () => {
-    const gate = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+    const gate = Promise.withResolvers<BlueEditorSubmitValue>()
     let signal: AbortSignal | undefined
     const { editor, runtime, notices } = runtimeFixture([{
       id: 'acme.dispose-transform',
@@ -837,7 +833,7 @@ describe('editor extension submit barrier', () => {
 
   it('times out a hung transform, cancels the attempt, and preserves the draft', async () => {
     vi.useFakeTimers()
-    const hung = new Promise<BlueResult<BlueEditorSubmitValue>>(() => {})
+    const hung = new Promise<BlueEditorSubmitValue>(() => {})
     const { editor, runtime, notices } = runtimeFixture([{
       id: 'acme.hung-transform',
       transformSubmit: () => hung,
@@ -933,22 +929,15 @@ describe('editor extension shell and actions', () => {
     runtime.dispose()
   })
 
-  it('contains unknown actions, handler failures, and hostile action results', async () => {
-    const results: unknown[] = [
-      success(undefined),
-      null,
-      { ok: false, code: 'BLUE_ACTION_REJECTED', message: '' },
-      new Proxy({}, { getOwnPropertyDescriptor: () => { throw 'raw event trap' } }),
-    ]
+  it('contains unknown actions and rejected handlers', async () => {
     const calls: BlueUiEvent[] = []
     const entries: readonly BlueEditorExtensionContribution[] = [{
       id: 'acme.action-results',
       actions: [{ id: 'run', label: 'Run' }],
       onEvent: async event => {
         calls.push(event)
-        const result = results.shift()
-        if (result === undefined) throw new Error('rejected action callback')
-        return result as BlueResult
+        if (calls.length === 3) throw new Error('rejected action callback')
+        if (calls.length === 4) throw 'raw action rejection'
       },
     }, {
       id: 'acme.no-handler',
@@ -961,9 +950,7 @@ describe('editor extension shell and actions', () => {
     for (let index = 0; index < 5; index += 1) privateDispatch(runtime, { kind: 'activate', controlId: 'extension-0-0' })
     await vi.waitFor(() => expect(calls).toHaveLength(5))
     expect(notices).toEqual(expect.arrayContaining([
-      'editor action must return a BlueResult',
-      'editor action failed',
-      'editor action result was rejected',
+      'editor extension action failed',
       'rejected action callback',
     ]))
 
@@ -977,14 +964,14 @@ describe('editor extension shell and actions', () => {
     const { ctx } = fakeBlueContext()
     const editor = new FakeBlueEditor()
     let calls = 0
-    setEditorExtensions(ctx, binding([{
+    registerExtensions(ctx, [{
       id: 'acme.throwing-notice',
       actions: [{ id: 'run', label: 'Run' }],
       onEvent: async () => {
         calls += 1
         return calls === 1 ? Promise.reject(new Error('first rejection')) : success(undefined)
       },
-    }]))
+    }])
     const runtime = new EditorExtensionRuntime({
       ctx,
       editor,
@@ -998,7 +985,7 @@ describe('editor extension shell and actions', () => {
   })
 
   it('serializes repeated actions per extension and drops queued work after unload', async () => {
-    const first = Promise.withResolvers<BlueResult>()
+    const first = Promise.withResolvers<void>()
     const calls: string[] = []
     const signals: AbortSignal[] = []
     let count = 0
@@ -1022,7 +1009,7 @@ describe('editor extension shell and actions', () => {
     first.resolve(success(undefined))
     await vi.waitFor(() => expect(calls).toEqual(['run', 'run']))
 
-    const late = Promise.withResolvers<BlueResult>()
+    const late = Promise.withResolvers<void>()
     const retiring: BlueEditorExtensionContribution = {
       ...entry,
       onEvent: (_event, context) => {
@@ -1039,26 +1026,25 @@ describe('editor extension shell and actions', () => {
     await vi.waitFor(() => expect(calls.at(-1)).toBe('late'))
     replace([], 4)
     expect(signals.at(-1)?.aborted).toBe(true)
-    late.resolve({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'too late' })
+    late.resolve()
     await new Promise(resolve => setImmediate(resolve))
     expect(calls.filter(call => call === 'late')).toHaveLength(1)
     runtime.dispose()
   })
 
   it('fences queued action dispatch across session invalidation and starts the new lifecycle immediately', async () => {
-    const hung = Promise.withResolvers<BlueResult>()
+    const hung = Promise.withResolvers<void>()
+    const dispatch = vi.fn()
+      .mockImplementationOnce(() => hung.promise)
+      .mockResolvedValue(undefined)
     const entry: BlueEditorExtensionContribution = {
       id: 'acme.session-action',
       actions: [{ id: 'run', label: 'Run', intent: 'primary' }],
-      onEvent: () => success(undefined),
+      onEvent: dispatch,
     }
-    const installed = binding([entry])
-    const dispatch = vi.fn()
-      .mockImplementationOnce((_entry, _event, _signal, _revision) => hung.promise)
-      .mockResolvedValue(success(undefined))
     const { ctx } = fakeBlueContext()
     const editor = new FakeBlueEditor()
-    setEditorExtensions(ctx, { ...installed, dispatch })
+    registerExtensions(ctx, [entry])
     const runtime = new EditorExtensionRuntime({
       ctx,
       editor,
@@ -1073,26 +1059,25 @@ describe('editor extension shell and actions', () => {
     runtime.invalidateSession()
     privateDispatch(runtime, { kind: 'activate', controlId: 'extension-0-0' })
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2))
-    expect(dispatch.mock.calls[1]?.[1]).toEqual({ kind: 'activate', controlId: 'run' })
+    expect(dispatch.mock.calls[1]?.[0]).toEqual({ kind: 'activate', controlId: 'run' })
 
-    hung.resolve(success(undefined))
+    hung.resolve()
     await new Promise(resolve => setImmediate(resolve))
     expect(dispatch).toHaveBeenCalledTimes(2)
     runtime.dispose()
   })
 
   it('never dispatches a queued action after runtime disposal', async () => {
-    const hung = Promise.withResolvers<BlueResult>()
+    const hung = Promise.withResolvers<void>()
+    const dispatch = vi.fn().mockReturnValue(hung.promise)
     const entry: BlueEditorExtensionContribution = {
       id: 'acme.dispose-action',
       actions: [{ id: 'run', label: 'Run', intent: 'primary' }],
-      onEvent: () => success(undefined),
+      onEvent: dispatch,
     }
-    const installed = binding([entry])
-    const dispatch = vi.fn().mockReturnValue(hung.promise)
     const { ctx } = fakeBlueContext()
     const editor = new FakeBlueEditor()
-    setEditorExtensions(ctx, { ...installed, dispatch })
+    registerExtensions(ctx, [entry])
     const runtime = new EditorExtensionRuntime({
       ctx,
       editor,
@@ -1105,14 +1090,14 @@ describe('editor extension shell and actions', () => {
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
 
     runtime.dispose()
-    hung.resolve(success(undefined))
+    hung.resolve()
     await new Promise(resolve => setImmediate(resolve))
     expect(dispatch).toHaveBeenCalledOnce()
   })
 
   it('lets the same id run in a new generation while the old action remains hung', async () => {
     vi.useFakeTimers()
-    const old = Promise.withResolvers<BlueResult>()
+    const old = Promise.withResolvers<void>()
     let oldSignal: AbortSignal | undefined
     const calls: string[] = []
     const { runtime, notices, replace } = runtimeFixture([{
@@ -1144,7 +1129,7 @@ describe('editor extension shell and actions', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(calls).toEqual(['old', 'new'])
 
-      old.resolve({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'late old failure' })
+      old.resolve()
       await vi.advanceTimersByTimeAsync(0)
       expect(notices).not.toContain('late old failure')
     } finally {
@@ -1155,7 +1140,7 @@ describe('editor extension shell and actions', () => {
 
   it('releases the per-extension FIFO when a hung action times out', async () => {
     vi.useFakeTimers()
-    const hung = new Promise<BlueResult>(() => {})
+    const hung = new Promise<void>(() => {})
     let calls = 0
     const { runtime, notices } = runtimeFixture([{
       id: 'acme.action-timeout',

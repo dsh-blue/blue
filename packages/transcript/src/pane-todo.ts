@@ -27,31 +27,21 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueInlineSpan, BlueUiNode } from '@dsh-blue/blue-api'
-import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
-import type { BlueBottomPaneNode } from './dock-model.ts'
 import type { SessionFactsService } from './session-facts.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-pane-todo'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueKeymap', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
+export const inject = ['bluePanes', 'blueKeymap', 'blueSessionFacts']
 
 /** The global action toggling the todo panel's expansion (Ctrl-T). */
 export const ACTION_TOGGLE_TODO = 'blue.todo.toggle'
 
 /** The folded view's row cap: longer lists fold to the kimi selection. */
 const MAX_VISIBLE = 5
-
-/** Below this viewport width the pane renders nothing rather than overflow. */
-const TODO_MIN_WIDTH = 4
-
-const BOLD_OPEN = '\x1b[1m'
-const BOLD_CLOSE = '\x1b[22m'
-const STRIKE_OPEN = '\x1b[9m'
-const STRIKE_CLOSE = '\x1b[29m'
 
 /** The folded view's answer: the rows that show and what the footer counts. */
 export interface VisibleTodos {
@@ -175,16 +165,6 @@ function todoSpans(todo: TodoItem): readonly BlueInlineSpan[] {
   }
 }
 
-/** Accepted status row retained until canonical spans can express strike. */
-function renderRow(todo: TodoItem, colors: BlueSemanticColors, components: BlueComponents, width: number): string {
-  const content = components.truncateToWidth(todo.content, Math.max(0, width - 4))
-  switch (todo.status) {
-    case 'completed': return `  ${colors.success('✓')} ${colors.muted(`${STRIKE_OPEN}${content}${STRIKE_CLOSE}`)}`
-    case 'in_progress': return `  ${colors.primary(`${BOLD_OPEN}●${BOLD_CLOSE}`)} ${content}`
-    case 'pending': return `  ${colors.textMuted('○')} ${content}`
-  }
-}
-
 /** The pane's render state, mutated by the subscriptions in `apply`. */
 interface TodoState {
   /** The latest whole-list snapshot; empty until the first `todo/write`. */
@@ -227,36 +207,6 @@ function todoNode(state: TodoState): BlueUiNode {
   return { kind: 'stack', direction: 'column', gap: 0, children }
 }
 
-/** Accepted todo chrome retained behind the pane-specific renderer adapter. */
-class TodoPaneComponent {
-  constructor(
-    private readonly colors: BlueSemanticColors,
-    private readonly components: BlueComponents,
-    private readonly state: TodoState,
-  ) {}
-
-  render(width: number): string[] {
-    if (this.state.dialog || this.state.todos.length === 0 || width < TODO_MIN_WIDTH) return []
-    const lines = [
-      this.colors.border('─'.repeat(width)),
-      this.colors.primary(`${BOLD_OPEN}  Todo${BOLD_CLOSE}`),
-    ]
-    if (this.state.expanded) {
-      for (const todo of this.state.todos) lines.push(renderRow(todo, this.colors, this.components, width))
-      if (this.state.todos.length > MAX_VISIBLE) {
-        lines.push(this.colors.muted(this.components.truncateToWidth(`  all ${this.state.todos.length} items · ctrl+t to collapse`, width)))
-      }
-    } else {
-      const { rows, hidden, hiddenCounts } = selectVisibleTodos(this.state.todos)
-      for (const todo of rows) lines.push(renderRow(todo, this.colors, this.components, width))
-      if (hidden > 0) {
-        lines.push(this.colors.muted(this.components.truncateToWidth(`  … +${hidden} more (${formatHiddenCounts(hiddenCounts)}) · ctrl+t to expand`, width)))
-      }
-    }
-    return lines.map(line => this.components.truncateToWidth(line, width))
-  }
-}
-
 /**
  * Mount the todo pane over the current projection-backed facts. A current
  * session identity change clears the previous list and expansion before the
@@ -270,10 +220,16 @@ class TodoPaneComponent {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
   const state: TodoState = { todos: [], expanded: false, dialog: false }
   let rendered = signature(state)
+  const pane = ctx.bluePanes.register({
+    id: 'blue.pane.todo',
+    title: 'Todo',
+    placement: 'bottom',
+    priority: 30,
+    narrow: 'bottom',
+    render: () => state.dialog || state.todos.length === 0 ? null : todoNode(state),
+  })
 
   /**
    * Install a new whole-list snapshot. A list whose every entry completed
@@ -290,25 +246,25 @@ export function apply(ctx: Context): void {
     const next = signature(state)
     if (next === rendered) return
     rendered = next
-    ctx.blueBottomPanes.refresh('blue.dock.todo')
+    pane.refresh()
   }
 
   const facts = ctx.get('blueSessionFacts') as SessionFactsService | undefined
-  let sessionId = facts?.currentSession?.id
-  const offSession = facts?.subscribeSession((session) => {
-    if (session?.id === sessionId) return
-    sessionId = session?.id
+  let sessionId = facts?.currentAgent?.id
+  const offAgent = facts?.subscribeAgent((agent) => {
+    if (agent?.id === sessionId) return
+    sessionId = agent?.id
     state.expanded = false
     update([])
   })
   const offFacts = facts?.subscribe((next: ConversationFacts) => update(next.todos))
-  ctx.effect(() => () => offSession?.())
+  ctx.effect(() => () => offAgent?.())
   ctx.effect(() => () => offFacts?.())
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     if (state.dialog === occupied) return
     state.dialog = occupied
     rendered = signature(state)
-    ctx.blueBottomPanes.refresh('blue.dock.todo')
+    pane.refresh()
   })
 
   // Effect-bound so unloading this fiber unregisters the action.
@@ -319,15 +275,9 @@ export function apply(ctx: Context): void {
     handler: () => {
       state.expanded = !state.expanded
       rendered = signature(state)
-      ctx.blueBottomPanes.refresh('blue.dock.todo', true)
+      pane.refresh()
     },
   }]))
 
-  const model = (): BlueBottomPaneNode => ({
-    id: 'blue.dock.todo', priority: 30,
-    node: todoNode(state),
-    collapsed: state.dialog || state.todos.length === 0,
-  })
-  const pane = new TodoPaneComponent(colors, components, state)
-  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))
+  ctx.effect(() => () => pane.dispose())
 }

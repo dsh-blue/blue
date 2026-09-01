@@ -1,80 +1,123 @@
-/**
- * Session-facts bridge lifecycle and projection-source guards.
- *
+/** Native current-Agent and session-projection coverage for SessionFactsService.
  * @module @dsh-blue/blue-transcript/tests/session-facts
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { initialConversationFacts } from '../../conversation/src/facts.ts'
 import { projectChildSessionFacts, SessionFactsService } from '../src/session-facts.ts'
 
+class ProjectionFake {
+  private readonly values = new Map<Session, Record<string, unknown>>()
+  private readonly listeners = new Set<(session: Session, key: string, value: unknown, seq: number) => void>()
+
+  set(session: Session, values: Record<string, unknown>): void { this.values.set(session, values) }
+
+  snapshot(session: Session, keys?: readonly string[]): { readonly asOfSeq: number, readonly values: Record<string, unknown> } {
+    const source = this.values.get(session) ?? {}
+    return {
+      asOfSeq: 1,
+      values: keys === undefined ? { ...source } : Object.fromEntries(keys.map(key => [key, source[key]])),
+    }
+  }
+
+  onChanged(listener: (session: Session, key: string, value: unknown, seq: number) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  emit(session: Session, key: string, value: unknown, seq = 2): void {
+    this.values.set(session, { ...this.values.get(session), [key]: value })
+    for (const listener of this.listeners) listener(session, key, value, seq)
+  }
+
+  get listenerCount(): number { return this.listeners.size }
+}
+
+function session(id: string, header: Record<string, unknown> = {}): Session {
+  return { id, header } as unknown as Session
+}
+
+function agent(value: Session): Agent {
+  return { id: value.id, session: value } as unknown as Agent
+}
+
 describe('SessionFactsService', () => {
-  it('binds renderer-neutral sessions, replays facts and children, publishes changes, and disposes', () => {
-    const facts = { ...initialConversationFacts(), model: 'm' }
-    let listener: ((key: string, value: unknown, seq: number) => void) | undefined
-    let childListener: ((child: { id: string, key: string, value: unknown, asOfSeq: number }) => void) | undefined
-    let sessionListener: ((session: { id: string, cwd: string, status: 'idle', mode: 'normal' } | null) => void) | undefined
-    let values: Record<string, unknown> = { blueConversationFacts: facts, title: 'first' }
-    const projections = {
-      current: (key: string) => ({ asOfSeq: 1, value: values[key] }),
-      subscribe: (next: typeof listener) => { listener = next; return () => { listener = undefined } },
-      children: () => [
-        { id: 'child-1', asOfSeq: 1, value: { ...facts, promptText: 'child' } },
-        { id: 'malformed', asOfSeq: 1, value: { phase: 'bad' } },
-      ],
-      subscribeChildren: (next: typeof childListener) => { childListener = next; return () => { childListener = undefined } },
-    }
-    const reader = {
-      current: () => null,
-      subscribe: (next: typeof sessionListener) => {
-        sessionListener = next
-        next?.(null)
-        let disposed = false
-        return { get disposed() { return disposed }, dispose() { disposed = true; sessionListener = undefined } }
-      },
-    }
+  it('replays and follows native projections for the exact Agent and its direct children', () => {
     const ctx = new Context()
-    ctx.reflect.provide('blueSessionProjections', projections)
-    ctx.reflect.provide('blueSessionReader', reader)
+    const parentSession = session('parent')
+    const childSession = session('child', { origin: 'subagent', parentSession: 'parent' })
+    const invalidChild = session('invalid-child', { origin: 'subagent', parentSession: 'parent' })
+    const unrelated = session('other-child', { origin: 'subagent', parentSession: 'other' })
+    const current = agent(parentSession)
+    const projections = new ProjectionFake()
+    const parentFacts = { ...initialConversationFacts(), model: 'm' }
+    const childFacts = { ...initialConversationFacts(), promptText: 'delegate', active: true, phase: 'tool' as const }
+    projections.set(parentSession, { blueConversationFacts: parentFacts, title: 'first' })
+    projections.set(childSession, { blueConversationFacts: childFacts })
+    projections.set(invalidChild, { blueConversationFacts: { phase: 'invalid' } })
+    let selected: Agent | null = current
+    const agentListeners = new Set<(value: Agent | null, revision: number) => void>()
+    ctx.reflect.provide('sessionProjections', projections)
+    ctx.reflect.provide('sessions', { list: () => [parentSession, childSession, invalidChild, unrelated] })
+    ctx.reflect.provide('blueCurrentAgent', {
+      current: () => selected,
+      revision: () => 0,
+      subscribe(listener: (value: Agent | null, revision: number) => void) {
+        agentListeners.add(listener)
+        listener(selected, 0)
+        return () => { agentListeners.delete(listener) }
+      },
+    })
+
     const service = new SessionFactsService(ctx)
-    const seen: string[] = []
+    const models: Array<string | undefined> = []
     const titles: Array<string | undefined> = []
-    const sessions: Array<string | undefined> = []
+    const agents: Array<Agent | null> = []
     const children: string[][] = []
-    const off = service.subscribe(next => { if (next.model !== undefined) seen.push(next.model) })
+    service.subscribe(facts => models.push(facts.model))
     const offTitle = service.subscribeTitle(title => titles.push(title))
-    const offSession = service.subscribeSession(session => sessions.push(session?.id))
-    const offChildren = service.subscribeChildren(next => children.push(next.map(child => child.id)))
-    sessionListener?.({ id: 's', cwd: '/tmp', status: 'idle', mode: 'normal' })
-    service.attach({ id: 's', cwd: '/tmp', status: 'idle', mode: 'normal' })
-    expect(service.current).toEqual(facts)
-    expect(service.currentSession?.cwd).toBe('/tmp')
-    listener?.('other', facts, 1)
-    listener?.('blueConversationFacts', { phase: 'bad' }, 2)
-    listener?.('blueConversationFacts', { ...facts, model: 'next' }, 3)
-    listener?.('title', 'second', 4)
-    listener?.('title', null, 5)
-    listener?.('title', 42, 6)
-    childListener?.({ id: 'child-2', key: 'other', value: facts, asOfSeq: 2 })
-    childListener?.({ id: 'child-2', key: 'blueConversationFacts', value: { phase: 'bad' }, asOfSeq: 3 })
-    childListener?.({ id: 'child-2', key: 'blueConversationFacts', value: facts, asOfSeq: 4 })
-    expect(seen).toEqual(['m', 'next'])
-    expect(titles).toEqual([undefined, 'first', 'second', undefined])
-    expect(sessions).toEqual([undefined, 's', 's'])
-    expect(children.at(-1)).toEqual(['child-1', 'child-2'])
-    off()
-    offTitle()
-    offSession()
-    offChildren()
-    values = {}
-    service.attach(null)
+    service.subscribeAgent(value => agents.push(value))
+    const offChildren = service.subscribeChildren(value => children.push(value.map(row => row.id)))
+
+    expect(service.current).toEqual(parentFacts)
+    expect(service.currentTitle).toBe('first')
+    expect(service.currentAgent).toBe(current)
+    expect(children.at(-1)).toEqual(['child'])
+
+    projections.emit(unrelated, 'blueConversationFacts', { ...parentFacts, model: 'ignored' })
+    projections.emit(parentSession, 'other', parentFacts)
+    projections.emit(parentSession, 'blueConversationFacts', { phase: 'bad' })
+    projections.emit(parentSession, 'blueConversationFacts', { ...parentFacts, model: 'next' })
+    projections.emit(parentSession, 'title', 'second')
+    projections.emit(parentSession, 'title', null)
+    projections.emit(childSession, 'blueConversationFacts', { ...childFacts, model: 'child-model' })
+    expect(models).toEqual(['m', 'next'])
+    expect(titles).toEqual(['first', 'second', undefined])
+    expect(children.at(-1)).toEqual(['child'])
+
+    const untitledSession = session('untitled')
+    const untitled = agent(untitledSession)
+    projections.set(untitledSession, { blueConversationFacts: parentFacts, title: null })
+    selected = untitled
+    for (const listener of agentListeners) listener(untitled, 1)
+    expect(service.currentTitle).toBeUndefined()
+
+    selected = null
+    for (const listener of agentListeners) listener(null, 1)
     expect(service.current).toEqual(initialConversationFacts())
     expect(service.currentTitle).toBeUndefined()
+    expect(service.currentAgent).toBeNull()
+    expect(agents).toEqual([current, untitled, null])
+    expect(children.at(-1)).toEqual([])
+
+    offTitle()
+    offChildren()
     service.dispose()
-    expect(listener).toBeUndefined()
-    expect(childListener).toBeUndefined()
-    expect(sessionListener).toBeUndefined()
+    expect(projections.listenerCount).toBe(0)
+    expect(agentListeners.size).toBe(0)
   })
 
   it('projects every child activity and optional metadata shape', () => {
@@ -94,21 +137,5 @@ describe('SessionFactsService', () => {
     expect(projectChildSessionFacts('done', base)).toEqual({
       id: 'done', phase: 'completed', tokens: 0, toolCount: 0,
     })
-  })
-
-  it('starts from the current reader snapshot and degrades without projections', () => {
-    const ctx = new Context()
-    ctx.reflect.provide('blueSessionReader', {
-      current: () => ({ id: 'agent', cwd: '/tmp', status: 'idle', mode: 'normal' }),
-      subscribe: (listener: (session: { id: string, cwd: string, status: 'idle', mode: 'normal' }) => void) => {
-        listener({ id: 'agent', cwd: '/tmp', status: 'idle', mode: 'normal' })
-        return { disposed: false, dispose() {} }
-      },
-    })
-    const service = new SessionFactsService(ctx)
-    expect(service.currentSession).toMatchObject({ id: 'agent', cwd: '/tmp' })
-    service.attach({ id: 'missing', cwd: '/tmp', status: 'idle', mode: 'normal' })
-    expect(service.current).toEqual(initialConversationFacts())
-    service.dispose()
   })
 })

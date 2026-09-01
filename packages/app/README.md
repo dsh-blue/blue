@@ -2,29 +2,17 @@
 
 English | [中文](README.zh.md)
 
-Blue's command-line startup provider and Agent driver for the interactive `dsh --profile blue` surface.
+Blue's startup and current-Agent coordinator. It resolves or creates Agents
+through native dsh services and exposes `ctx.blueCurrentAgent`:
 
-The `./startup` entry (`blue-startup`) declares an optional `[task]` positional and `--resume <id>`, then publishes the parsed values through `blueStartup`. Help and parse failures never start the app action.
+```ts
+const agent = ctx.blueCurrentAgent.current()
+const stop = ctx.blueCurrentAgent.subscribe((next, revision) => {
+  // next is the exact live Agent selected by Blue, or null
+})
+```
 
-The main entry (`blue-app`) creates or resumes the Harness Agent, but keeps the Agent and Session inside the package. Official Blue consumers inside the bundle's private runtime realm receive four renderer-neutral services:
-
-- `blueSessionReader` publishes cached, deeply frozen current-session snapshots with monotonic revisions and a required switch epoch.
-- `blueSessionProjections` reads and subscribes to official current-session projection values with the same epoch plus a consistent sequence cut, including direct child-session values, without exposing a Session handle.
-- `blueSessionActions` owns richer interaction operations such as model and mode changes, command execution, queue projection, rewind candidates, presets, skills, tools, session details, and disposable side sessions. Interrupt requests also stop live continuable descendants of the current Agent.
-- `blueToolPresentations` resolves official agent-scoped tool presenter views without exposing the active Agent.
-
-Create, resume, fork, rewind, and new-session requests are serialized through one switch queue. A switch creates or resumes the replacement first, disposes the previous Agent, installs the new internal binding, and only then publishes the next reader snapshot. Failures leave the current session intact and report to stderr. A startup task is submitted as the first ordinary user message.
-
-Model selection uses three tiers: an in-session choice, the latest durable request header, then the process default. The selected route is exposed as an immutable action result; the mutable Harness selection reference never crosses the app boundary. Optional preset composition is restored from the session record on create and resume.
-
-The package also owns safe open-turn retraction and BTW side sessions. A side-session handle exposes only an opaque projection identity, plain-text follow-up, admitted `running`/`idle` status, and disposal.
-
-The `./plugin-host-session-bridge` entry attaches both app-owned read sources to `bluePluginHost` through the composition-private control for its Fiber lifetime. Public plugins receive the field-scoped `session.read` facade and exact-key `session.projections.read` facade; the API host owns JSON detachment, size limits, epoch/sequence fencing, owner reload, and consumer unload. Generic `session.act` is removed, and the unscoped projection source plus `blueSessionActions` never cross that boundary. Domain writes use their owning Harness service or a dedicated feature action.
-
-## Model Experience
-
-The app adds no prompt prefix. It submits user input as ordinary user messages; prompts and tools belong to the composed Harness profile.
-
-## Launcher and Coverage
-
-Blue ships a dedicated launcher: the standalone `blue` binary from `@dsh-blue/blue-cli`, which pins a nested, tested dsh host and calibrates the `blue` profile on first use. Booting through the generic `dsh --profile blue` launcher resolves the same immutable bundle. The bundle's whole-tree e2e and real-process smoke suites cover the assembled profile.
+The package also owns session navigation request events, request lifecycle,
+retraction, title cadence, and the process exit epitaph. Commands,
+projections, tools, settings, and all other domain behavior remain on native
+dsh services.

@@ -26,12 +26,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueUiNode } from '@dsh-blue/blue-api'
-import type { BlueComponents, BlueSemanticColors } from '@dsh-blue/blue-core'
 // Empty type import carries the app-owned opaque binding event merge.
 import type {} from '@dsh-blue/blue-app'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import type { SessionFactsService } from './session-facts.ts'
-import type { BlueBottomPaneNode } from './dock-model.ts'
 import { formatTokens } from './status-context.ts'
 import { buildTipRotation } from './status-tips.ts'
 import { STATUS_TIPS } from './tips-content.ts'
@@ -53,7 +51,7 @@ import {
 export const name = 'blue-pane-activity'
 
 /** Services required before the pane can mount. */
-export const inject = ['blueScreen', 'blueTheme', 'blueComponents', 'blueSessionFacts', 'blueBottomPanes']
+export const inject = ['bluePanes', 'blueSessionFacts']
 
 /** The joiner between the frame and the teaching tip (kimi format). */
 const TIP_LEAD = ' · Tip: '
@@ -133,7 +131,6 @@ function flowCounter(flow: TurnFlow): string {
 /** Build the one-row canonical activity node for the current state. */
 function activityNode(state: ActivityState, t: BlueTranslate): BlueUiNode {
   if (state.mode === 'idle') return { kind: 'spacer' }
-  if (state.mode === 'hidden' || state.mode === 'thinking') return { kind: 'text', content: '' }
   const moon = state.mode === 'waiting' || state.mode === 'tool'
   const frame = moon
     ? MOON_SPINNER_FRAMES[state.frame % MOON_SPINNER_FRAMES.length]!
@@ -149,44 +146,11 @@ function activityNode(state: ActivityState, t: BlueTranslate): BlueUiNode {
   }
 }
 
-/** Accepted one-row activity presentation retained behind a narrow adapter. */
-class ActivityPaneComponent {
-  constructor(
-    private readonly colors: BlueSemanticColors,
-    private readonly components: BlueComponents,
-    private readonly state: ActivityState,
-    private readonly t: BlueTranslate,
-  ) {}
-
-  private paintWave(frame: string): string {
-    const gradient = this.colors.logoGradient
-    if (gradient.length === 0) return this.colors.primary(frame)
-    return gradient[this.state.frame % gradient.length]!(frame)
-  }
-
-  render(width: number): string[] {
-    // The registry evaluates `collapsed` immediately before invoking this
-    // adapter, so hidden/thinking modes cannot enter the renderer.
-    const mode = this.state.mode as Exclude<ActivityPaneMode, 'hidden' | 'thinking'>
-    if (mode === 'idle') return ['']
-    if (mode === 'composing') {
-      const frame = BRAILLE_SPINNER_FRAMES[this.state.frame % BRAILLE_SPINNER_FRAMES.length]!
-      const base = `${this.colors.primary(frame)}${this.t(WORKING_LABEL)}`
-      const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
-      const withFlow = base + flow
-      const row = withFlow + this.colors.muted(`${this.t(TIP_LEAD)}${this.t(this.state.tip)}`)
-      if (this.components.visibleWidth(row) <= width) return [row]
-      if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
-      return this.components.visibleWidth(base) <= width ? [base] : []
-    }
-    const frame = this.paintWave(MOON_SPINNER_FRAMES[this.state.frame % MOON_SPINNER_FRAMES.length]!)
-    const flow = this.state.flow === '' ? '' : this.colors.muted(` ${this.state.flow}`)
-    const full = frame + flow + this.colors.muted(`${this.t(TIP_LEAD)}${this.t(this.state.tip)}`)
-    if (this.components.visibleWidth(full) <= width) return [full]
-    const withFlow = frame + flow
-    if (this.components.visibleWidth(withFlow) <= width) return [withFlow]
-    return this.components.visibleWidth(frame) <= width ? [frame] : []
-  }
+/** Resolve the pane mode from editor occupancy, projection activity, and Agent status. */
+function activityMode(state: ActivityState, facts: ConversationFacts, statusActive: boolean): ActivityPaneMode {
+  if (state.dialog) return 'hidden'
+  if (facts.active) return facts.phase
+  return statusActive ? 'waiting' : 'idle'
 }
 
 /**
@@ -203,9 +167,6 @@ class ActivityPaneComponent {
 export function apply(ctx: Context): void {
   mountTranscriptLocale(ctx, 'transcript.activity', ACTIVITY_LOCALE)
   const t = transcriptTranslator(ctx, 'transcript.activity')
-  const colors = ctx.blueTheme.colors
-  const screen = ctx.blueScreen
-  const components = ctx.blueComponents
   const state: ActivityState = {
     mode: 'idle', frame: 0, tip: '', flow: '', dialog: false,
   }
@@ -216,12 +177,22 @@ export function apply(ctx: Context): void {
   let facts: ConversationFacts = factsService?.current ?? {
     phase: 'idle', active: false, turn: 0, flowDownChars: 0, todos: [], contextTokens: 0, agentCalls: [],
   }
-  let statusActive = factsService?.currentSession?.status === 'running'
+  let statusActive = factsService?.currentAgent?.status === 'running'
   let timer: ReturnType<typeof setInterval> | undefined
   let timerMs = 0
   let tipKind: TipKind | undefined
   const rotation = buildTipRotation(STATUS_TIPS)
   let tipIndex = 0
+  const pane = ctx.bluePanes.register({
+    id: 'blue.pane.activity',
+    placement: 'bottom',
+    priority: 10,
+    size: { preferred: 1, max: 1 },
+    narrow: 'bottom',
+    render: () => state.mode === 'hidden' || state.mode === 'thinking'
+      ? null
+      : activityNode(state, t),
+  })
 
   const stopTimer = (): void => {
     if (timer === undefined) return
@@ -236,17 +207,13 @@ export function apply(ctx: Context): void {
     timerMs = ms
     timer = activityTimers.setInterval(() => {
       state.frame += 1
-      screen.requestRender()
+      pane.refresh()
     }, ms)
   }
 
   /** Reconcile the row (mode, tip, timer) with the pane's three facts. */
   const sync = (): void => {
-    const mode: ActivityPaneMode = state.dialog
-      ? 'hidden'
-      : facts.active || statusActive
-        ? facts.active ? facts.phase : 'waiting'
-        : 'idle'
+    const mode = activityMode(state, facts, statusActive)
     const kind: TipKind | undefined = mode === 'composing'
       ? 'composing'
       : mode === 'waiting' || mode === 'tool' ? 'moon' : undefined
@@ -273,9 +240,7 @@ export function apply(ctx: Context): void {
     const changed = mode !== state.mode || tipChanged || nextFlow !== state.flow
     state.mode = mode
     state.flow = nextFlow
-    if (changed) {
-      ctx.blueBottomPanes.refresh('blue.dock.activity')
-    }
+    if (changed) pane.refresh()
   }
 
   const offFacts = factsService?.subscribe(next => {
@@ -283,28 +248,24 @@ export function apply(ctx: Context): void {
     if (!next.active && next.turn > 0) statusActive = false
     sync()
   })
-  const offSession = factsService?.subscribeSession((session) => {
-    statusActive = session?.status === 'running'
+  const offAgent = factsService?.subscribeAgent((agent) => {
+    statusActive = agent?.status === 'running'
     sync()
   })
   ctx.effect(() => () => offFacts?.())
-  ctx.effect(() => () => offSession?.())
+  ctx.effect(() => () => offAgent?.())
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     state.dialog = occupied
     sync()
   })
 
-  const model = (): BlueBottomPaneNode => ({
-    id: 'blue.dock.activity', priority: 10, preferredRows: 1,
-    node: activityNode(state, t),
-    collapsed: state.mode === 'hidden' || state.mode === 'thinking',
-  })
-  const pane = new ActivityPaneComponent(colors, components, state, t)
-  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => pane.render(width)))
   const offLocale = observeTranscriptLocale(ctx, () => {
-    ctx.blueBottomPanes.refresh('blue.dock.activity', true)
+    pane.refresh()
   })
   ctx.effect(() => offLocale)
   // Effect-bound so unloading this fiber stops the animation.
-  ctx.effect(() => () => stopTimer())
+  ctx.effect(() => () => {
+    stopTimer()
+    pane.dispose()
+  })
 }

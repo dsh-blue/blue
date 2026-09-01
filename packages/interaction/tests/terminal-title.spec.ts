@@ -62,7 +62,7 @@ async function boot(options: { agent?: Agent | null, service?: object | null } =
   ctx.provide('testSession', session)
   let projectionListener: ((session: unknown, key: string, value: unknown, seq: number) => void) | undefined
   const titleProjection = options.service !== null
-  ctx.reflect.provide('sessionProjections', {
+  ctx.set('sessionProjections', {
     snapshot: (target: FakeSession) => ({
       values: titleProjection
         ? { title: fakeTitleService().get(target)?.title ?? null }
@@ -72,11 +72,12 @@ async function boot(options: { agent?: Agent | null, service?: object | null } =
       projectionListener = listener
       return () => { projectionListener = undefined }
     },
-  })
+  } as never)
   ctx.on('session/event', (target, event) => {
     if (!titleProjection || event.type !== 'session/title') return
     projectionListener?.(target, 'title', event.data.title, event.seq ?? 0)
   })
+  ctx.provide('sessions', { list: () => [] } as never)
   new SessionFactsService(ctx)
   await ctx.plugin(terminalTitle)
   return { ctx, screen, session }

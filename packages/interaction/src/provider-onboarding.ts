@@ -23,8 +23,8 @@ const DEEPSEEK_KEY = 'DEEPSEEK_API_KEY'
 
 /** Stable Cordis plugin name. */
 export const name = 'blue-provider-onboarding'
-/** App-owned readonly session boundary required before the one-shot check. */
-export const inject = ['blueSessionReader']
+/** App-owned current-Agent selection required before the one-shot check. */
+export const inject = ['blueCurrentAgent']
 
 interface Credentials {
   describe(ref: object): Promise<{ configured: boolean }>
@@ -131,7 +131,7 @@ export function apply(ctx: Context): void {
     await ctx.get('loader')?.await()
     if (unloaded || attempted || checking) return
     const credentials = ctx.get('credentials') as Credentials | undefined
-    if (ctx.blueSessionReader.current() === null || credentials === undefined) return
+    if (ctx.blueCurrentAgent.current() === null || credentials === undefined) return
     checking = true
     try {
       const configured = await hasConfiguredCredential(ctx, credentials)
@@ -143,10 +143,10 @@ export function apply(ctx: Context): void {
     }
   }
 
-  const registration = ctx.blueSessionReader.subscribe(() => {
+  const registration = ctx.blueCurrentAgent.subscribe(() => {
     queueMicrotask(() => { void check() })
   })
-  ctx.effect(() => () => registration.dispose())
+  ctx.effect(() => registration)
   queueMicrotask(() => { void check() })
 }
 

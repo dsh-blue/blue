@@ -6,7 +6,17 @@
  * @module @dsh-blue/blue-core/ui-compiler
  */
 
-import type { BlueChartNode, BlueDocumentNode, BlueEditorShellNode, BlueErrorCode, BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
+import type {
+  BlueChartNode,
+  BlueDocumentNode,
+  BlueFormField,
+  BlueStatusNode,
+  BlueTone,
+  BlueUiEvent,
+  BlueUiNode,
+  BlueViewportCondition,
+  BlueView,
+} from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, Key, matchesKey, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame, type LayoutBox, type LayoutRect } from '@earendil-works/pi-tui/dist/layout.js'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
@@ -30,6 +40,7 @@ import {
 } from './ui-patterns.ts'
 import { sliceByColumn, visibleWidth } from './width.ts'
 import { validateBlueEditorShellNode, validateBlueStatusNode, validateBlueUiNode } from './ui-validator.ts'
+import type { BlueEditorShellNode, BlueUiErrorCode } from './ui-contracts.ts'
 
 const FOCUS_SENTINEL = '\uf8ff'
 const ERROR_MAX_ROWS = 3
@@ -175,7 +186,7 @@ export interface BlueCompiledStatus {
 /** Compile failure with a safe renderer-owned error surface. */
 export interface BlueUiCompileFailure {
   readonly ok: false
-  readonly code: BlueErrorCode
+  readonly code: BlueUiErrorCode
   readonly message: string
   readonly errorComponent: BlueComponent
 }
@@ -189,7 +200,7 @@ export type BlueEditorShellCompileResult = { readonly ok: true, readonly value: 
 /** Status compile failure with a passive, height-bounded error component. */
 export interface BlueStatusCompileFailure {
   readonly ok: false
-  readonly code: BlueErrorCode
+  readonly code: BlueUiErrorCode
   readonly message: string
   readonly errorComponent: BlueStatusComponent
 }

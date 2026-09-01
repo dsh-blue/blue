@@ -1,34 +1,39 @@
-/**
- * End-to-end overlay/event/focus contract for the public plugin surface bridge.
- *
- * @module @dsh-blue/blue-core/tests/plugin-surface-bridge-overlay
+/** Direct overlay registry renderer, focus, and event lifecycle tests.
+ * @module @dsh-blue/blue-core/tests/surface-renderer-overlay
  */
 
 import { Context } from '@deepseek-ai/cordis'
 import { stripTerminalSequences, type Component } from '@earendil-works/pi-tui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  BluePluginHostService,
-  type BluePluginApi,
-  type BluePublicOverlayHandle,
-  type BlueResult,
-  type BlueUiEvent,
-  type BlueUiEventContext,
-  type BlueUiNode,
-  type BlueUserGesture,
-} from '../../api/src/index.ts'
-import { attachBluePluginHostCapabilities, createBluePluginControl, runBlueUserGesture, snapshotBluePluginHost } from '../../api/src/host.ts'
+import { apply as applyApi } from '../../api/src/index.ts'
+import type { BlueOverlayHandle, BlueOverlayRequest, BlueUiEventContext, BlueUiNode } from '../../api/src/contracts.ts'
 import { ui } from '../../ui/src/index.ts'
-import { mountPluginSurfaceBridge } from '../src/plugin-surface-bridge.ts'
+import { mountBlueSurfaceRenderer } from '../src/surface-renderer.ts'
 import { startBlueTerminal, type BlueTerminalRuntime } from '../src/terminal.ts'
 import type { BlueComponents, BlueFocusable, BlueKeyAction, BlueSemanticColors } from '../src/types.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 import { createFakeEditor } from './fake-editor.ts'
 import { FakeTerminal } from './fake-terminal.ts'
 
-interface EffectOwner {
-  effect(callback: () => void | (() => void)): void
-  dispose(): void
+class Scope {
+  private readonly cleanups: Array<() => void> = []
+
+  effect(callback: () => void | (() => void)): () => void {
+    const cleanup = callback()
+    if (typeof cleanup !== 'function') return () => {}
+    let live = true
+    const dispose = (): void => {
+      if (!live) return
+      live = false
+      cleanup()
+    }
+    this.cleanups.push(dispose)
+    return dispose
+  }
+
+  dispose(): void {
+    for (const cleanup of this.cleanups.splice(0).reverse()) cleanup()
+  }
 }
 
 interface OverlayStackEntry {
@@ -48,33 +53,6 @@ interface TuiInternals {
   readonly overlayStack: OverlayStackEntry[]
 }
 
-interface Fixture {
-  readonly host: BluePluginHostService
-  readonly owner: EffectOwner
-  readonly consumer: EffectOwner
-  readonly api: BluePluginApi
-  readonly terminal: FakeTerminal
-  readonly runtime: BlueTerminalRuntime
-  readonly stack: () => OverlayStackEntry[]
-  openCapturing(request: Parameters<NonNullable<BluePluginApi['overlays']>['open']>[0]): Promise<BlueResult<BluePublicOverlayHandle>>
-  openApi(id: string): { readonly api: BluePluginApi, readonly consumer: EffectOwner }
-  dispose(): Promise<void>
-}
-
-function effectOwner(extra: Record<string, unknown> = {}): EffectOwner & Record<string, unknown> {
-  const cleanups: Array<() => void> = []
-  return {
-    ...extra,
-    effect(callback: () => void | (() => void)): void {
-      const cleanup = callback()
-      if (typeof cleanup === 'function') cleanups.push(cleanup)
-    },
-    dispose(): void {
-      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
-    },
-  }
-}
-
 const colors = new Proxy({}, {
   get: () => (text: string) => text,
 }) as BlueSemanticColors
@@ -86,7 +64,59 @@ const components = {
   createEditor: createFakeEditor,
 } as BlueComponents
 
-async function flush(turns = 6): Promise<void> {
+interface Fixture {
+  readonly root: Context
+  readonly owner: Scope
+  readonly terminal: FakeTerminal
+  readonly runtime: BlueTerminalRuntime
+  readonly stack: () => OverlayStackEntry[]
+  mount(): Scope
+  open(request: BlueOverlayRequest): BlueOverlayHandle
+  dispose(): Promise<void>
+}
+
+async function fixture(columns = 80, rows = 24, compilerComponents: BlueComponents = components, translateHint?: (key: string) => string): Promise<Fixture> {
+  const root = new Context()
+  await root.plugin({ name: 'test-blue-api', apply: applyApi })
+  const terminal = new FakeTerminal(columns, rows)
+  const runtime = await startBlueTerminal(terminal, () => Promise.resolve(undefined))
+  const owners: Scope[] = []
+  const mount = (): Scope => {
+    const owner = new Scope()
+    Object.assign(owner, {
+      bluePanes: root.bluePanes,
+      blueOverlays: root.blueOverlays,
+      blueComponents: compilerComponents,
+      blueTheme: { colors },
+      blueKeymap: {
+        register(_actions: BlueKeyAction[]) { return () => {} },
+        matches: () => false,
+        dispatch: () => false,
+      },
+    })
+    mountBlueSurfaceRenderer(owner as never, runtime, translateHint)
+    owners.push(owner)
+    return owner
+  }
+  const owner = mount()
+  const stack = () => (runtime.tui as unknown as TuiInternals).overlayStack
+  return {
+    root,
+    owner,
+    terminal,
+    runtime,
+    stack,
+    mount,
+    open: request => root.blueOverlays.open(request),
+    async dispose() {
+      for (const mounted of owners.splice(0).reverse()) mounted.dispose()
+      await runtime.stop()
+      await root.fiber.dispose()
+    },
+  }
+}
+
+async function flush(turns = 8): Promise<void> {
   for (let index = 0; index < turns; index += 1) await Promise.resolve()
 }
 
@@ -98,61 +128,17 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   throw new Error('condition did not settle')
 }
 
-async function fixture(columns = 80, rows = 24, compilerComponents: BlueComponents = components, translateHint?: (key: string) => string): Promise<Fixture> {
-  const root = new Context()
-  const host = new BluePluginHostService(root)
-  const terminal = new FakeTerminal(columns, rows)
-  const runtime = await startBlueTerminal(terminal, () => Promise.resolve(undefined))
-  const keyActions: BlueKeyAction[] = []
-  const owner = effectOwner({
-    bluePluginControl: createBluePluginControl(host),
-    blueComponents: compilerComponents,
-    blueTheme: { colors },
-    blueKeymap: {
-      register(actions: BlueKeyAction[]) {
-        keyActions.push(...actions)
-        return () => { for (const action of actions) keyActions.splice(keyActions.indexOf(action), 1) }
-      },
-      matches: () => false,
-      dispatch: () => false,
-    },
-  })
-  mountPluginSurfaceBridge(owner as never, runtime, translateHint)
-
-  const openApi = (id: string) => {
-    const consumer = effectOwner()
-    const opened = host.open(consumer, { id, api: '^1.0.0-beta.1', capabilities: ['overlays'] })
-    if (!opened.ok) throw new Error(opened.message)
-    return { api: opened.value, consumer }
-  }
-  const primary = openApi('@acme/overlay-tests')
-  const stack = () => (runtime.tui as unknown as TuiInternals).overlayStack
-
-  return {
-    host,
-    owner,
-    consumer: primary.consumer,
-    api: primary.api,
-    terminal,
-    runtime,
-    stack,
-    openCapturing: request => runBlueUserGesture(host, owner, gesture => primary.api.overlays!.open(request, { userGesture: gesture })),
-    openApi,
-    async dispose() {
-      primary.consumer.dispose()
-      owner.dispose()
-      await runtime.stop()
-      await root.fiber.dispose()
-    },
-  }
+function deferred<T>(): { readonly promise: Promise<T>, resolve(value?: T): void, reject(error: unknown): void } {
+  const result = Promise.withResolvers<T>()
+  return { promise: result.promise, resolve: result.resolve as (value?: T) => void, reject: result.reject }
 }
 
 function actionNode(id = 'go', confirm?: string): BlueUiNode {
   return ui.actions({ id: 'actions', items: [{ id, label: id, ...(confirm === undefined ? {} : { confirm }) }] })
 }
 
-function inputNode(id = 'value'): BlueUiNode {
-  return ui.form({ id: 'form', fields: [{ kind: 'input', id, label: id, value: '' }] })
+function inputNode(id = 'value', value = ''): BlueUiNode {
+  return ui.form({ id: 'form', fields: [{ kind: 'input', id, label: id, value }] })
 }
 
 async function settleInput(component: Component, input: string): Promise<void> {
@@ -160,123 +146,91 @@ async function settleInput(component: Component, input: string): Promise<void> {
   await flush()
 }
 
-afterEach(() => {
-  vi.useRealTimers()
-})
+afterEach(() => { vi.useRealTimers() })
 
-describe('plugin surface bridge overlays', () => {
-  it('closes opened overlays when the renderer owner enters a gap', async () => {
+describe('direct overlay surface renderer', () => {
+  it('replays still-open overlays across renderer gaps', async () => {
     const f = await fixture()
     try {
-      const opened = f.api.overlays!.open({ id: 'owner-gap-overlay', render: () => ui.text('gap') })
-      expect(opened.ok).toBe(true)
+      const handle = f.open({ id: 'renderer-gap', render: () => ui.text('persistent') })
       await flush()
       expect(f.stack()).toHaveLength(1)
       f.owner.dispose()
       expect(f.stack()).toHaveLength(0)
-      expect(snapshotBluePluginHost(f.host).overlays).toEqual([])
-      expect(opened.ok && opened.value.closed).toBe(true)
+      expect(handle.closed).toBe(false)
+      expect(f.root.blueOverlays.list().map(entry => entry.id)).toEqual(['renderer-gap'])
+      f.mount()
+      await flush()
+      expect(f.stack()[0]!.component.render(40)).toEqual(['persistent'])
+      handle.close()
+      await flush()
+      expect(f.stack()).toEqual([])
     } finally {
       await f.dispose()
     }
   })
 
-  it('closes an overlay still pending its first renderer reconciliation on owner unload', async () => {
+  it('opens passive and capturing overlays directly without admission tokens', async () => {
     const f = await fixture()
     try {
-      const opened = f.api.overlays!.open({ id: 'pending-owner-gap-overlay', render: () => ui.text('pending') })
-      expect(opened.ok).toBe(true)
-      expect(f.stack()).toHaveLength(0)
-      f.owner.dispose()
+      const passive = f.open({ id: 'passive', render: () => ui.text('passive') })
+      const interactivePassive = f.open({ id: 'passive-controls', render: () => actionNode() })
+      const modal = f.open({ id: 'modal', capturing: true, render: () => actionNode() })
+      const nullPassive = f.open({ id: 'null-passive', render: () => null })
+      const nullModal = f.open({ id: 'null-modal', capturing: true, render: () => null })
+      const invalidPassive = f.open({ id: 'invalid-passive', render: () => ({ kind: 'unknown' }) as never })
       await flush()
-      expect(f.stack()).toHaveLength(0)
-      expect(snapshotBluePluginHost(f.host).overlays).toEqual([])
-      expect(opened.ok && opened.value.closed).toBe(true)
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('admits passive content, rejects all potential passive controls, and admits capturing controls only with a gesture', async () => {
-    const f = await fixture()
-    try {
-      const passive = f.api.overlays!.open({ id: 'passive', render: () => ui.text('passive') })
-      expect(passive).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()).toHaveLength(1)
+      expect(f.stack()).toHaveLength(6)
       expect(f.stack()[0]!.options?.nonCapturing).toBe(true)
-
-      const responsive = f.api.overlays!.open({
-        id: 'hidden-control',
-        render: () => ui.stack.column([
-          ui.child(actionNode(), { when: { minWidth: 10_000 } }),
-        ]),
-      })
-      expect(responsive).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[1]!.component.render(56).join(' ')).toContain('non-capturing overlays cannot contain interactive controls')
-
-      expect(f.api.overlays!.open({ id: 'forbidden-modal', capturing: true, render: () => actionNode() })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-      await expect(f.openCapturing({ id: 'modal', capturing: true, render: () => actionNode() })).resolves.toMatchObject({ ok: true })
-      await flush()
+      expect(f.stack()[1]!.component.render(60).join(' ')).toContain('non-capturing overlays cannot contain interactive controls')
+      expect(f.stack()[2]!.options?.nonCapturing).toBe(false)
+      expect(f.stack()[3]!.component.render(60).join(' ')).toContain('overlay render returned no node')
+      expect(f.stack()[4]!.component.render(60).join(' ')).toContain('overlay render returned no node')
+      expect(f.stack()[5]!.component.render(60).join(' ')).toContain('Blue UI')
       expect(f.runtime.hasCapturingOverlay()).toBe(true)
+      passive.close()
+      interactivePassive.close()
+      modal.close()
+      nullPassive.close()
+      nullModal.close()
+      invalidPassive.close()
     } finally {
       await f.dispose()
     }
   })
 
-  it('implements passive dismissal, two-step confirmation Escape, and non-dismissible Escape', async () => {
+  it('implements default dismissal, confirmation Escape, and fixed overlays', async () => {
     const f = await fixture()
     try {
-      const passive = await f.openCapturing({ id: 'passive-modal', capturing: true, render: () => ui.text('message') })
-      expect(passive.ok).toBe(true)
+      const plain = f.open({ id: 'plain', capturing: true, render: () => ui.text('message') })
+      await flush()
+      plain.refresh()
       await flush()
       await settleInput(f.stack()[0]!.component, '\x1b')
-      expect(passive.ok && passive.value.closed).toBe(true)
+      expect(plain.closed).toBe(true)
 
-      const confirmed = await f.openCapturing({ id: 'confirmed', capturing: true, render: () => actionNode('delete', 'Confirm delete') })
-      expect(confirmed.ok).toBe(true)
+      const confirmed = f.open({ id: 'confirmed', capturing: true, render: () => actionNode('delete', 'Confirm delete') })
       await flush()
       const component = f.stack()[0]!.component
-      expect(component.render(80).at(-1)).toBe('  Enter run · Esc close')
       await settleInput(component, '\r')
-      expect(component.render(80).at(-1)).toBe('  Enter confirm · Esc cancel')
+      expect(component.render(80).at(-1)).toContain('Enter confirm')
       await settleInput(component, '\x1b')
-      expect(confirmed.ok && confirmed.value.closed).toBe(false)
+      expect(confirmed.closed).toBe(false)
       await settleInput(component, '\x1b')
-      expect(confirmed.ok && confirmed.value.closed).toBe(true)
+      expect(confirmed.closed).toBe(true)
 
-      const fixed = await f.openCapturing({ id: 'fixed', capturing: true, dismissible: false, render: () => actionNode('fixed') })
-      expect(fixed.ok).toBe(true)
+      const fixed = f.open({ id: 'fixed', capturing: true, dismissible: false, render: () => actionNode() })
       await flush()
       expect(f.stack()[0]!.component.render(80).at(-1)).toBe('  Enter run')
       await settleInput(f.stack()[0]!.component, '\x1b')
-      expect(fixed.ok && fixed.value.closed).toBe(false)
-      expect(fixed.ok && fixed.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      await settleInput(f.stack()[0]!.component, '\x1b')
-      expect(fixed.ok && fixed.value.closed).toBe(false)
+      expect(fixed.closed).toBe(false)
+      fixed.close()
     } finally {
       await f.dispose()
     }
   })
 
-  it('translates contextual hints on initial open and refresh', async () => {
-    const f = await fixture(80, 24, components, key => `translated:${key}`)
-    try {
-      const opened = await f.openCapturing({ id: 'translated', capturing: true, render: () => actionNode() })
-      expect(opened.ok).toBe(true)
-      await flush()
-      expect(f.stack()[0]!.component.render(80).at(-1)).toBe('  Enter translated:run · Esc translated:close')
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[0]!.component.render(80).at(-1)).toBe('  Enter translated:run · Esc translated:close')
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('maps every public anchor and contains null renders with explicit numeric geometry', async () => {
+  it('maps anchors and computes responsive geometry from the live terminal', async () => {
     const f = await fixture(80, 24)
     try {
       const anchors = [
@@ -286,42 +240,15 @@ describe('plugin surface bridge overlays', () => {
         ['right', 'right-center'],
       ] as const
       for (const [anchor, expected] of anchors) {
-        const opened = f.api.overlays!.open({ id: `anchor-${anchor}`, anchor, render: () => ui.text(anchor) })
-        expect(opened.ok).toBe(true)
+        const handle = f.open({ id: `anchor-${anchor}`, anchor, render: () => ui.text(anchor) })
         await flush()
         expect(f.stack()[0]!.options?.anchor).toBe(expected)
-        if (opened.ok) opened.value.close()
+        handle.close()
         await flush()
       }
 
-      const nullRender = f.api.overlays!.open({ id: 'null-render', render: () => null as never })
-      expect(nullRender.ok).toBe(true)
-      await flush()
-      expect(f.stack()[0]!.component.render(56).join(' ')).toContain('overlay render returned no node')
-      if (nullRender.ok) nullRender.value.close()
-      await flush()
-
-      const hostileKind = 'x'.repeat(20_001)
-      const doubleFailure = f.api.overlays!.open({ id: 'double-failure', render: () => ({ kind: hostileKind }) as never })
-      expect(doubleFailure.ok).toBe(true)
-      await flush()
-      const errorRows = f.stack()[0]!.component.render(40)
-      expect(errorRows.join(' ')).toContain('Blue UI rejected')
-      expect(errorRows.every(row => visibleWidth(row) <= 40)).toBe(true)
-      if (doubleFailure.ok) doubleFailure.value.close()
-      await flush()
-
-      const revoked = Proxy.revocable({}, {})
-      const hostileRender = f.api.overlays!.open({ id: 'hostile-render', render: () => { throw revoked.proxy } })
-      expect(hostileRender.ok).toBe(true)
-      revoked.revoke()
-      await flush()
-      expect(f.stack()[0]!.component.render(40).join(' ')).toContain('Plugin overlay failed: render failed')
-      if (hostileRender.ok) hostileRender.value.close()
-      await flush()
-
-      const numeric = f.api.overlays!.open({
-        id: 'numeric-geometry',
+      const numeric = f.open({
+        id: 'numeric',
         width: 40,
         minWidth: 20,
         maxHeight: 10,
@@ -329,79 +256,50 @@ describe('plugin surface bridge overlays', () => {
           ui.child(ui.text('numeric'), { when: { minWidth: 40, maxWidth: 40, minHeight: 10, maxHeight: 10 } }),
         ]),
       })
-      expect(numeric.ok).toBe(true)
       await flush()
-      const entry = f.stack()[0]!
-      expect(entry.options).toMatchObject({ width: 40, minWidth: 20, maxHeight: 10, anchor: 'center' })
-      expect(entry.component.render(40)).toEqual(['numeric'])
-      expect(numeric.ok && numeric.value.refresh()).toMatchObject({ ok: true })
+      expect(f.stack()[0]!.options).toMatchObject({ width: 40, minWidth: 20, maxHeight: 10, anchor: 'center' })
+      expect(f.stack()[0]!.component.render(40)).toEqual(['numeric'])
+      f.terminal.resize(120, 30)
+      numeric.refresh()
       await flush()
-      expect(f.stack()[0]!.component).toBe(entry.component)
-
-      expect(numeric.ok && numeric.value.refresh()).toMatchObject({ ok: true })
-      await Promise.resolve()
-      await Promise.resolve()
-      f.owner.dispose()
-      await flush()
-      expect(f.stack()).toHaveLength(0)
+      expect(f.stack()[0]!.component.render(40)).toEqual(['numeric'])
     } finally {
       await f.dispose()
     }
   })
 
-  it('renders request titles through canonical overlay chrome across content failures', async () => {
-    const f = await fixture()
+  it('renders translated hints and bounded titled failure frames', async () => {
+    const f = await fixture(80, 10, components, key => `translated:${key}`)
     try {
-      const titled = f.api.overlays!.open({ id: 'titled', title: 'Plugin details', render: () => ui.text('body') })
-      expect(titled.ok).toBe(true)
+      const translated = f.open({ id: 'translated', capturing: true, title: 'Actions', render: () => actionNode() })
       await flush()
-      const wideRows = f.stack()[0]!.component.render(40)
-      expect(wideRows[0]).toMatch(/^╭ Plugin details ─+╮$/u)
-      expect(wideRows[1]).toMatch(/^│ body +│$/u)
-      expect(wideRows[2]).toMatch(/^╰─+╯$/u)
-      expect(wideRows.join('\n').match(/╭/gu)).toHaveLength(1)
-      expect(f.stack()[0]!.component.render(8)).toEqual(['╭ Plu ─╮', '│ body │', '╰──────╯'])
-      expect(titled.ok && titled.value.refresh()).toMatchObject({ ok: true })
+      translated.refresh()
       await flush()
-      expect(f.stack()[0]!.component.render(40).join('\n')).toContain('╭ Plugin details')
-      if (titled.ok) titled.value.close()
+      const translatedRows = f.stack()[0]!.component.render(60)
+      expect(translatedRows[0]).toMatch(/^╭ Actions/u)
+      expect(translatedRows.at(-2)).toContain('translated:run')
+      translated.close()
       await flush()
 
-      const empty = f.api.overlays!.open({ id: 'titled-empty', title: 'Empty result', render: () => null as never })
-      expect(empty.ok).toBe(true)
+      f.open({ id: 'failed', title: 'Failed result', render: () => { throw new Error('title render failed') } })
       await flush()
-      const emptyRows = f.stack()[0]!.component.render(80).join('\n')
-      expect(emptyRows).toContain('╭ Empty result')
-      expect(emptyRows).toContain('overlay render returned no node')
-      if (empty.ok) empty.value.close()
+      const failedRows = f.stack()[0]!.component.render(30)
+      expect(failedRows[0]).toMatch(/^╭ Failed result/u)
+      expect(failedRows.join(' ')).toContain('title render failed')
+      expect(failedRows.every(row => visibleWidth(row) <= 30)).toBe(true)
+      f.root.blueOverlays.close('failed')
       await flush()
 
-      const failed = f.api.overlays!.open({ id: 'titled-failed', title: 'Failed result', render: () => { throw new Error('title render failed') } })
-      expect(failed.ok).toBe(true)
-      await flush()
-      const failedRows = f.stack()[0]!.component.render(80).join('\n')
-      expect(failedRows).toContain('╭ Failed result')
-      expect(failedRows).toContain('title render failed')
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('keeps a closed frame when long plugin content reaches the overlay height budget', async () => {
-    const f = await fixture(40, 10)
-    try {
-      const opened = f.api.overlays!.open({
-        id: 'bounded-frame',
+      f.open({
+        id: 'bounded',
         title: 'Bounded',
         maxHeight: 5,
         render: () => ui.scroll(ui.stack.column(Array.from({ length: 10 }, (_, index) => ui.text(`line-${String(index)}`))), { scrollbar: true }),
       })
-      expect(opened.ok).toBe(true)
       await flush()
-
       const rows = f.stack()[0]!.component.render(20)
       expect(rows).toHaveLength(5)
-      expect(rows[0]).toMatch(/^╭ Bounded ─+╮$/u)
+      expect(rows[0]).toMatch(/^╭ Bounded/u)
       expect(rows.at(-1)).toBe('╰──────────────────╯')
       expect(rows.slice(1, -1).map(stripTerminalSequences).every(row => /^│.*│$/u.test(row))).toBe(true)
     } finally {
@@ -409,52 +307,44 @@ describe('plugin surface bridge overlays', () => {
     }
   })
 
-  it('keeps a titled frame and focus stable through refresh, then restores focus on consumer unload', async () => {
+  it('keeps shell and focus identity while external refresh resets local drafts', async () => {
     const f = await fixture()
     try {
       const base: BlueFocusable = { focused: false, render: () => ['base'], invalidate: () => {} }
       f.runtime.addChild(base)
       f.runtime.setFocus(base)
-      const opened = await f.openCapturing({
-        id: 'framed-lifecycle',
-        title: 'Lifecycle',
-        capturing: true,
-        render: () => actionNode(),
-      })
-      expect(opened.ok).toBe(true)
+      const handle = f.open({ id: 'form', title: 'Profile', capturing: true, render: () => inputNode('name', 'A') })
       await flush()
       const component = f.stack()[0]!.component
+      component.invalidate()
       expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(component)
-      expect((component as BlueFocusable).focused).toBe(true)
-      expect(component.render(20)[0]).toMatch(/^╭ Lifecycle ─+╮$/u)
-
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      await settleInput(component, 'B')
+      expect(component.render(80).join('\n')).toContain('name: AB')
+      handle.refresh()
       await flush()
       expect(f.stack()[0]!.component).toBe(component)
       expect((component as BlueFocusable).focused).toBe(true)
-
-      f.consumer.dispose()
+      expect(component.render(80).join('\n')).toContain('name: A')
+      expect(component.render(80).join('\n')).not.toContain('name: AB')
+      handle.close()
       await flush()
-      expect(f.stack()).toHaveLength(0)
       expect(base.focused).toBe(true)
-      component.invalidate?.()
-      component.handleInput?.('\r')
-      ;(component as BlueFocusable).focused = true
       expect(component.render(80)).toEqual([])
-      expect((component as BlueFocusable).focused).toBe(false)
+      component.invalidate()
+      component.handleInput?.('\r')
     } finally {
       await f.dispose()
     }
   })
 
-  it('keeps semantic form focus and editor draft across successful overlay recompilation', async () => {
+  it('preserves semantic form focus across successful internal recompilation', async () => {
     const f = await fixture()
     try {
       let value = 'A'
       let reordered = false
       let renders = 0
-      const opened = await f.openCapturing({
-        id: 'continuous-form',
+      f.open({
+        id: 'continuous',
         capturing: true,
         render: () => {
           renders += 1
@@ -464,19 +354,15 @@ describe('plugin surface bridge overlays', () => {
             : ui.stack.column([form, ui.text('tail')])
         },
         onEvent: event => {
-          if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
+          if (event.kind === 'value-change') value = String(event.value)
           reordered = true
-          return { ok: true, value: undefined }
         },
       })
-      expect(opened.ok).toBe(true)
       await flush()
       const component = f.stack()[0]!.component
       await settleInput(component, 'B')
       expect(value).toBe('AB')
       expect(renders).toBe(2)
-      expect(f.stack()[0]!.component).toBe(component)
-
       await settleInput(component, 'C')
       expect(value).toBe('ABC')
       expect(component.render(80).join('\n')).toContain('Name: ABC')
@@ -485,625 +371,230 @@ describe('plugin surface bridge overlays', () => {
     }
   })
 
-  it('keeps the capturing runtime dormant across null and thrown overlay fallbacks', async () => {
-    const editors: ReturnType<typeof createFakeEditor>[] = []
-    const localComponents = {
-      ...components,
-      createEditor: () => {
-        const editor = createFakeEditor()
-        editors.push(editor)
-        return editor
-      },
-    } as BlueComponents
-    const f = await fixture(80, 24, localComponents)
-    try {
-      const events: BlueUiEvent[] = []
-      let value = 'AB'
-      let mode: 'valid' | 'actions' | 'null' | 'throw' = 'valid'
-      const opened = await f.openCapturing({
-        id: 'recoverable-overlay',
-        capturing: true,
-        render: () => {
-          if (mode === 'null') return null as never
-          if (mode === 'throw') throw new Error('temporary overlay failure')
-          if (mode === 'actions') return actionNode()
-          return ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value }] })
-        },
-        onEvent: event => {
-          events.push(event)
-          if (event.kind === 'value-change' && event.controlId === 'name') value = String(event.value)
-          return { ok: true, value: undefined }
-        },
-      })
-      expect(opened.ok).toBe(true)
-      await flush()
-      const component = f.stack()[0]!.component
-      component.render(80)
-      await settleInput(component, 'X')
-      expect(value).toBe('ABX')
-      expect(editors).toHaveLength(1)
-
-      mode = 'actions'
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect((component as BlueFocusable).focused).toBe(true)
-      expect(editors[0]!.focused).toBe(false)
-
-      mode = 'valid'
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(editors).toHaveLength(1)
-      component.render(80)
-      const fallbackChange = editors[0]!.onChange!
-      const fallbackSubmit = editors[0]!.onSubmit!
-
-      mode = 'null'
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[0]!.component).toBe(component)
-      expect(component.render(80).join('\n')).toContain('overlay render returned no node')
-      expect(editors[0]!.focused).toBe(false)
-      expect(editors[0]!.onChange).toBeUndefined()
-      await settleInput(component, 'ignored')
-      fallbackChange('ignored')
-      fallbackSubmit('ignored')
-      expect(events).toHaveLength(1)
-
-      mode = 'valid'
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      await settleInput(component, 'Y')
-      expect(value).toBe('ABXY')
-      expect(editors).toHaveLength(1)
-
-      mode = 'throw'
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(component.render(80).join('\n')).toContain('temporary overlay failure')
-      await settleInput(component, 'ignored')
-      expect(events).toHaveLength(2)
-
-      mode = 'valid'
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(component.render(80).join('\n')).toContain('Name: ABXY')
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('recovers one passive overlay after rejecting an interactive projection', async () => {
-    const f = await fixture()
-    try {
-      let interactive = false
-      const opened = f.api.overlays!.open({
-        id: 'passive-recovery',
-        render: () => interactive ? actionNode() : ui.text('passive projection'),
-      })
-      expect(opened.ok).toBe(true)
-      await flush()
-      const component = f.stack()[0]!.component
-      expect(component.render(80)).toEqual(['passive projection'])
-
-      interactive = true
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[0]!.component).toBe(component)
-      expect(component.render(80).join(' ')).toContain('non-capturing overlays cannot contain interactive controls')
-
-      interactive = false
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[0]!.component).toBe(component)
-      expect(component.render(80)).toEqual(['passive projection'])
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('keeps the overlay shell but resets local draft on an external refresh', async () => {
-    const f = await fixture()
-    try {
-      const opened = await f.openCapturing({
-        id: 'external-form-refresh',
-        capturing: true,
-        render: () => ui.form({ id: 'profile', fields: [{ kind: 'input', id: 'name', label: 'Name', value: 'A' }] }),
-      })
-      expect(opened.ok).toBe(true)
-      await flush()
-      const component = f.stack()[0]!.component
-      await settleInput(component, 'B')
-      expect(component.render(80).join('\n')).toContain('Name: AB')
-
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[0]!.component).toBe(component)
-      expect(component.render(80).join('\n')).toContain('Name: A')
-      expect(component.render(80).join('\n')).not.toContain('Name: AB')
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('drains a newer host snapshot opened reentrantly during initial render', async () => {
-    const f = await fixture()
-    try {
-      let nested: BlueResult<BluePublicOverlayHandle> | undefined
-      const outer = f.api.overlays!.open({
-        id: 'reentrant-outer',
-        render: () => {
-          nested ??= f.api.overlays!.open({ id: 'reentrant-inner', render: () => ui.text('inner') })
-          return ui.text('outer')
-        },
-      })
-      expect(outer.ok).toBe(true)
-      await flush()
-      expect(nested).toMatchObject({ ok: true })
-      expect(f.stack().map(entry => entry.component.render(56))).toEqual([['outer'], ['inner']])
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('keeps stack identity and focus stable across refresh and retains normal failures', async () => {
-    const f = await fixture()
-    try {
-      let renders = 0
-      let result: BlueResult = { ok: true, value: undefined }
-      const opened = await f.openCapturing({
-        id: 'stable',
-        capturing: true,
-        render: () => { renders += 1; return actionNode() },
-        onEvent: () => result,
-      })
-      expect(opened.ok).toBe(true)
-      await flush()
-      const before = f.stack()[0]!.component
-      expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(before)
-
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await flush()
-      expect(f.stack()[0]!.component).toBe(before)
-      expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(before)
-      expect((before as BlueFocusable).focused).toBe(true)
-      expect(() => before.invalidate()).not.toThrow()
-
-      result = { ok: false, code: 'BLUE_ACTION_REJECTED', message: 'no' }
-      await settleInput(before, '\r')
-      expect(opened.ok && opened.value.closed).toBe(false)
-      expect(renders).toBe(2)
-      result = { ok: true, value: undefined }
-      await settleInput(before, '\x1b')
-      expect(opened.ok && opened.value.closed).toBe(true)
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('closes on a handler throw and on the 30-second timeout while restoring focus', async () => {
+  it('closes on handler throw and timeout while restoring focus', async () => {
     vi.useFakeTimers()
     const f = await fixture()
     try {
       const base: BlueFocusable = { focused: false, render: () => ['base'], invalidate: () => {} }
       f.runtime.addChild(base)
       f.runtime.setFocus(base)
-      const thrown = await f.openCapturing({ id: 'throw', capturing: true, render: () => actionNode(), onEvent: () => { throw new Error('boom') } })
-      expect(thrown.ok).toBe(true)
+      const thrown = f.open({ id: 'throw', capturing: true, render: () => actionNode(), onEvent: () => { throw new Error('boom') } })
       await flush()
-      const thrownComponent = f.stack()[0]!.component
-      thrownComponent.handleInput?.('\r')
+      f.stack()[0]!.component.handleInput?.('\r')
       await flush()
-      expect(thrown.ok && thrown.value.closed).toBe(true)
+      expect(thrown.closed).toBe(true)
       expect(base.focused).toBe(true)
-      thrownComponent.handleInput?.('\r')
-      await flush()
-      expect(f.stack()).toHaveLength(0)
 
-      let retained: BlueUserGesture | undefined
-      const timeout = await f.openCapturing({
+      let signal: AbortSignal | undefined
+      const timeout = f.open({
         id: 'timeout',
         capturing: true,
         render: () => actionNode(),
         onEvent: (_event, context) => {
-          retained = context.userGesture
-          return new Promise<BlueResult>(() => {})
+          signal = context.signal
+          return new Promise<void>(() => {})
         },
       })
-      expect(timeout.ok).toBe(true)
       await flush()
       f.stack()[0]!.component.handleInput?.('\r')
       await flush()
-      expect(retained).toBeDefined()
       await vi.advanceTimersByTimeAsync(30_000)
       await flush()
-      expect(timeout.ok && timeout.value.closed).toBe(true)
+      expect(signal?.aborted).toBe(true)
+      expect(timeout.closed).toBe(true)
       expect(base.focused).toBe(true)
-      expect(f.api.overlays!.open({ id: 'late-token', capturing: true, render: () => ui.text('late') }, { userGesture: retained })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
     } finally {
       await f.dispose()
     }
   })
 
-  it('does not replay overlays or let stale-generation settlement close a same-id replacement', async () => {
-    vi.useFakeTimers()
-    const timeoutFixture = await fixture()
-    try {
-      const timedOut = await timeoutFixture.openCapturing({
-        id: 'stale-timeout',
-        capturing: true,
-        render: () => actionNode(),
-        onEvent: () => new Promise<BlueResult>(() => {}),
-      })
-      expect(timedOut.ok).toBe(true)
-      await flush()
-      timeoutFixture.stack()[0]!.component.handleInput?.('\r')
-      await flush()
-      const nextOwner = effectOwner()
-      attachBluePluginHostCapabilities(timeoutFixture.host, nextOwner, ['overlays'])
-      expect(timedOut.ok && timedOut.value.closed).toBe(true)
-      const timeoutReplacement = timeoutFixture.api.overlays!.open({ id: 'stale-timeout', render: () => ui.text('replacement') })
-      expect(timeoutReplacement.ok).toBe(true)
-      await vi.advanceTimersByTimeAsync(30_000)
-      await flush()
-      expect(timeoutReplacement.ok && timeoutReplacement.value.closed).toBe(false)
-      expect(snapshotBluePluginHost(timeoutFixture.host).overlays.map(entry => entry.id)).toEqual(['stale-timeout'])
-      if (timeoutReplacement.ok) timeoutReplacement.value.close()
-      nextOwner.dispose()
-    } finally {
-      await timeoutFixture.dispose()
-    }
-
-    const rejectedFixture = await fixture()
-    try {
-      let reject!: (error: Error) => void
-      const rejected = await rejectedFixture.openCapturing({
-        id: 'stale-rejection',
-        capturing: true,
-        render: () => actionNode(),
-        onEvent: () => new Promise<BlueResult>((_resolve, reject_) => { reject = reject_ }),
-      })
-      expect(rejected.ok).toBe(true)
-      await flush()
-      rejectedFixture.stack()[0]!.component.handleInput?.('\r')
-      await flush()
-      const nextOwner = effectOwner()
-      attachBluePluginHostCapabilities(rejectedFixture.host, nextOwner, ['overlays'])
-      expect(rejected.ok && rejected.value.closed).toBe(true)
-      const rejectedReplacement = rejectedFixture.api.overlays!.open({ id: 'stale-rejection', render: () => ui.text('replacement') })
-      expect(rejectedReplacement.ok).toBe(true)
-      reject(new Error('late failure'))
-      await flush()
-      expect(rejectedReplacement.ok && rejectedReplacement.value.closed).toBe(false)
-      expect(snapshotBluePluginHost(rejectedFixture.host).overlays.map(entry => entry.id)).toEqual(['stale-rejection'])
-      if (rejectedReplacement.ok) rejectedReplacement.value.close()
-      nextOwner.dispose()
-    } finally {
-      await rejectedFixture.dispose()
-    }
-  })
-
-  it('keeps event gestures alive only during settlement and serializes FIFO events', async () => {
+  it('serializes FIFO events and aborts latest-wins values by control', async () => {
     const f = await fixture()
     try {
-      const other = f.openApi('@acme/nested-events')
       const order: string[] = []
-      const releases: Array<() => void> = []
-      let retained: BlueUserGesture | undefined
-      const opened = await f.openCapturing({
+      const fifoReleases: Array<ReturnType<typeof deferred<void>>> = []
+      const fifo = f.open({
         id: 'fifo',
         capturing: true,
         render: () => ui.actions({ id: 'actions', items: [{ id: 'one', label: 'one' }, { id: 'two', label: 'two' }] }),
-        onEvent: async (event, context) => {
-          if (event.kind !== 'activate') return { ok: true, value: undefined }
-          retained = context.userGesture
+        onEvent: async event => {
+          if (event.kind !== 'activate') return
           order.push(`start:${event.controlId}`)
-          if (event.controlId === 'one') {
-            const nested = other.api.overlays!.open({ id: 'nested', capturing: true, render: () => ui.text('nested') }, { userGesture: context.userGesture })
-            expect(nested).toMatchObject({ ok: true })
-            if (nested.ok) nested.value.close()
-          }
-          await new Promise<void>(resolve => releases.push(resolve))
+          const release = deferred<void>()
+          fifoReleases.push(release)
+          await release.promise
           order.push(`end:${event.controlId}`)
-          return { ok: true, value: undefined }
         },
       })
-      expect(opened.ok).toBe(true)
       await flush()
-      const component = f.stack()[0]!.component
-      component.handleInput?.('\r')
-      component.handleInput?.('\x1b[C')
-      component.handleInput?.('\r')
+      const fifoComponent = f.stack()[0]!.component
+      fifoComponent.handleInput?.('\r')
+      fifoComponent.handleInput?.('\x1b[C')
+      fifoComponent.handleInput?.('\r')
       await flush()
       expect(order).toEqual(['start:one'])
-      releases.shift()!()
+      fifoReleases[0]!.resolve()
       await waitUntil(() => order.length === 3)
       expect(order).toEqual(['start:one', 'end:one', 'start:two'])
-      releases.shift()!()
+      fifoReleases[1]!.resolve()
       await waitUntil(() => order.length === 4)
-      expect(order).toEqual(['start:one', 'end:one', 'start:two', 'end:two'])
+      fifo.close()
       await flush()
-      expect(f.api.overlays!.open({ id: 'settled-token', capturing: true, render: () => ui.text('late') }, { userGesture: retained })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-      other.consumer.dispose()
-    } finally {
-      await f.dispose()
-    }
-  })
 
-  it('aborts latest-wins events by control and coalesces successful refreshes', async () => {
-    const f = await fixture()
-    try {
-      const signals: AbortSignal[] = []
-      const releases: Array<(result: BlueResult) => void> = []
+      const contexts: BlueUiEventContext[] = []
+      const releases: Array<ReturnType<typeof deferred<void>>> = []
       let renders = 0
-      const opened = await f.openCapturing({
+      const latest = f.open({
         id: 'latest',
         capturing: true,
         render: () => { renders += 1; return inputNode() },
-        onEvent: (_event, context) => new Promise<BlueResult>(resolve => {
-          signals.push(context.signal)
-          releases.push(resolve)
-        }),
+        onEvent: (_event, context) => {
+          contexts.push(context)
+          const result = deferred<void>()
+          releases.push(result)
+          return result.promise
+        },
       })
-      expect(opened.ok).toBe(true)
       await flush()
-      const component = f.stack()[0]!.component
-      component.handleInput?.('a')
+      const latestComponent = f.stack()[0]!.component
+      latestComponent.handleInput?.('a')
       await flush()
-      component.handleInput?.('b')
-      await flush()
-      expect(signals).toHaveLength(2)
-      expect(signals[0]!.aborted).toBe(true)
-      expect(signals[1]!.aborted).toBe(false)
-      releases[0]!({ ok: true, value: undefined })
-      releases[1]!({ ok: true, value: undefined })
-      await flush()
-      expect(renders).toBe(2)
-
-      if (opened.ok) opened.value.close()
-      await flush()
-
-      let coalescedRenders = 0
-      const secondApi = f.openApi('@acme/coalesce')
-      const coalesced = await runBlueUserGesture(f.host, f.owner, gesture => secondApi.api.overlays!.open({
-          id: 'coalesced',
-          capturing: true,
-          render: () => {
-            coalescedRenders += 1
-            return ui.form({ id: 'form', fields: [
-              { kind: 'input', id: 'left', label: 'left', value: '' },
-              { kind: 'input', id: 'right', label: 'right', value: '' },
-            ] })
-          },
-          onEvent: () => ({ ok: true, value: undefined }),
-        }, { userGesture: gesture }))
-      expect(coalesced.ok).toBe(true)
-      await flush()
-      const coalescedComponent = f.stack().at(-1)!.component
-      coalescedComponent.handleInput?.('x')
-      coalescedComponent.handleInput?.('\t')
-      coalescedComponent.handleInput?.('\x1b[B')
-      coalescedComponent.handleInput?.('y')
-      await flush()
-      expect(coalescedRenders).toBe(2)
-      secondApi.consumer.dispose()
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('fences pending completion after external refresh and consumer unload', async () => {
-    const f = await fixture()
-    try {
-      const observer = f.openApi('@acme/fence-observer')
-      const contexts: BlueUiEventContext[] = []
-      const releases: Array<(result: BlueResult) => void> = []
-      let renders = 0
-      const opened = await f.openCapturing({
-        id: 'fenced',
-        capturing: true,
-        render: () => { renders += 1; return actionNode() },
-        onEvent: (_event, context) => new Promise<BlueResult>(resolve => { contexts.push(context); releases.push(resolve) }),
-      })
-      expect(opened.ok).toBe(true)
-      await flush()
-      f.stack()[0]!.component.handleInput?.('\r')
-      f.stack()[0]!.component.handleInput?.('\r')
-      await flush()
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
+      latestComponent.handleInput?.('b')
       await flush()
       expect(contexts[0]!.signal.aborted).toBe(true)
-      expect(observer.api.overlays!.open({ id: 'external-token', capturing: true, render: () => ui.text('late') }, { userGesture: contexts[0]!.userGesture })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-      expect(renders).toBe(2)
-      releases[0]!({ ok: true, value: undefined })
+      expect(contexts[1]!.signal.aborted).toBe(false)
+      releases[0]!.resolve()
+      releases[1]!.resolve()
       await flush()
       expect(renders).toBe(2)
-
-      f.stack()[0]!.component.handleInput?.('\r')
-      f.stack()[0]!.component.handleInput?.('\r')
-      await flush()
-      f.consumer.dispose()
-      await flush()
-      expect(contexts[1]!.signal.aborted).toBe(true)
-      expect(observer.api.overlays!.open({ id: 'unload-token', capturing: true, render: () => ui.text('late') }, { userGesture: contexts[1]!.userGesture })).toMatchObject({ ok: false, code: 'BLUE_ACTION_REJECTED' })
-      releases[1]!({ ok: true, value: undefined })
-      await flush()
-      expect(f.stack()).toHaveLength(0)
-      observer.consumer.dispose()
+      latest.close()
     } finally {
       await f.dispose()
     }
   })
 
-  it('cancels a queued overlay refresh when its consumer unloads before render', async () => {
+  it('coalesces independent latest-wins overlay events into one internal render', async () => {
     const f = await fixture()
     try {
-      const survivorOwner = f.openApi('@acme/queued-survivor')
       let renders = 0
-      const opened = f.api.overlays!.open({
-        id: 'queued-unload',
-        render: () => { renders += 1; return ui.text(`render-${String(renders)}`) },
-      })
-      expect(opened.ok).toBe(true)
-      const survivor = survivorOwner.api.overlays!.open({ id: 'survivor', render: () => ui.text('survivor') })
-      expect(survivor.ok).toBe(true)
-      await flush()
-      expect(renders).toBe(1)
-      expect(f.stack()).toHaveLength(2)
-
-      expect(opened.ok && opened.value.refresh()).toMatchObject({ ok: true })
-      await Promise.resolve()
-      await Promise.resolve()
-      f.consumer.dispose()
-      await flush()
-
-      expect(renders).toBe(1)
-      expect(f.stack()).toHaveLength(1)
-      expect(f.stack()[0]!.component.render(56)).toEqual(['survivor'])
-      if (survivor.ok) survivor.value.close()
-      await flush()
-      expect(f.stack()).toHaveLength(0)
-      survivorOwner.consumer.dispose()
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('replaces a rapidly reused overlay id without retaining old work or geometry', async () => {
-    const f = await fixture()
-    try {
-      const replacementOwner = f.openApi('@acme/overlay-replacement')
-      let oldRenders = 0
-      let newRenders = 0
-      let oldEvents = 0
-      let newEvents = 0
-      const old = await f.openCapturing({
-        id: 'reused',
+      const release = deferred<void>()
+      f.open({
+        id: 'coalesced',
         capturing: true,
-        width: 30,
-        anchor: 'left',
-        render: () => { oldRenders += 1; return actionNode('old') },
-        onEvent: () => { oldEvents += 1; return { ok: true, value: undefined } },
+        render: () => {
+          renders += 1
+          return ui.stack.column([
+            ui.tabs({ id: 'views', activeId: 'summary', items: [
+              { id: 'summary', label: 'Summary' },
+              { id: 'details', label: 'Details' },
+            ] }),
+            ui.form({ id: 'profile', fields: [{ kind: 'toggle', id: 'enabled', label: 'Enabled', value: false }] }),
+          ])
+        },
+        onEvent: () => release.promise,
       })
-      expect(old.ok).toBe(true)
       await flush()
-      expect(oldRenders).toBe(1)
-      const oldComponent = f.stack()[0]!.component
-
-      expect(old.ok && old.value.refresh()).toMatchObject({ ok: true })
-      await Promise.resolve()
-      await Promise.resolve()
-      f.consumer.dispose()
-      const replacement = await runBlueUserGesture(f.host, f.owner, gesture => replacementOwner.api.overlays!.open({
-          id: 'reused',
-          capturing: true,
-          width: 60,
-          anchor: 'right',
-          render: () => { newRenders += 1; return actionNode('new') },
-          onEvent: () => { newEvents += 1; return { ok: true, value: undefined } },
-        }, { userGesture: gesture }))
-      expect(replacement.ok).toBe(true)
+      const component = f.stack()[0]!.component
+      component.handleInput?.('\x1b[C')
+      component.handleInput?.('\t')
+      component.handleInput?.('\r')
       await flush()
-
-      expect(oldRenders).toBe(1)
-      expect(newRenders).toBe(1)
-      expect(old.ok && old.value.closed).toBe(true)
-      expect(f.stack()).toHaveLength(1)
-      const entry = f.stack()[0]!
-      expect(entry.component).not.toBe(oldComponent)
-      expect(entry.options).toMatchObject({ width: 60, anchor: 'right-center' })
-      oldComponent.handleInput?.('\r')
+      expect(renders).toBe(1)
+      release.resolve()
       await flush()
-      await settleInput(entry.component, '\r')
-      expect(oldEvents).toBe(0)
-      expect(newEvents).toBe(1)
-      expect(newRenders).toBe(2)
-      replacementOwner.consumer.dispose()
+      expect(renders).toBe(2)
     } finally {
       await f.dispose()
     }
   })
 
-  it('preserves mixed global stack order and restores valid focus across capturing close and unload', async () => {
+  it('keeps or drops a queued overlay render against the pending registry snapshot', async () => {
     const f = await fixture()
     try {
-      const base: BlueFocusable = { focused: false, render: () => ['base'], invalidate: () => {} }
-      f.runtime.addChild(base)
-      f.runtime.setFocus(base)
-      const second = f.openApi('@acme/second-stack')
-      const passiveBelow = f.api.overlays!.open({ id: 'passive-below', render: () => ui.text('below') })
-      const first = await f.openCapturing({ id: 'outer', capturing: true, render: () => actionNode('outer') })
-      const nested = await runBlueUserGesture(f.host, f.owner, gesture => second.api.overlays!.open({ id: 'inner', capturing: true, render: () => actionNode('inner') }, { userGesture: gesture }))
-      const passiveAbove = second.api.overlays!.open({ id: 'passive-above', render: () => ui.text('above') })
-      expect(passiveBelow.ok && first.ok && nested.ok && passiveAbove.ok).toBe(true)
-      await flush()
-      expect(f.stack()).toHaveLength(4)
-      const [belowComponent, outerComponent, innerComponent, aboveComponent] = f.stack().map(entry => entry.component)
-      expect(f.stack().map(entry => entry.options?.nonCapturing === true)).toEqual([true, false, false, true])
-      expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(innerComponent)
-
-      if (nested.ok) nested.value.close()
-      await flush()
-      expect(f.stack().map(entry => entry.component)).toEqual([belowComponent, outerComponent, aboveComponent])
-      expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(outerComponent)
-
-      f.consumer.dispose()
-      await flush()
-      expect(f.stack().map(entry => entry.component)).toEqual([aboveComponent])
-      expect(base.focused).toBe(true)
-      expect((f.runtime.tui as unknown as TuiInternals).getFocusedComponent()).toBe(base)
-      expect(outerComponent).not.toBe(innerComponent)
-      if (passiveAbove.ok) passiveAbove.value.close()
-      await flush()
-      expect(f.stack()).toHaveLength(0)
-      second.consumer.dispose()
-    } finally {
-      await f.dispose()
-    }
-  })
-
-  it('keeps default geometry and compiler viewport aligned across resize', async () => {
-    const f = await fixture(80, 20)
-    try {
-      const opened = f.api.overlays!.open({
-        id: 'viewport',
-        render: () => ui.stack.column([
-          ui.child(ui.text('narrow'), { when: { maxWidth: 56, maxHeight: 16 } }),
-          ui.child(ui.text('wide'), { when: { minWidth: 57 } }),
-          ui.child(ui.text('tall'), { when: { minHeight: 17 } }),
-        ]),
+      let renders = 0
+      const handle = f.open({
+        id: 'pending',
+        capturing: true,
+        render: () => { renders += 1; return actionNode() },
       })
-      expect(opened.ok).toBe(true)
       await flush()
-      const stackEntry = f.stack()[0]!
-      const component = stackEntry.component
-      expect(stackEntry.options?.width).toBe(56)
-      expect(stackEntry.options?.maxHeight).toBe('80%')
-      expect(component.render(56)).toEqual(['narrow'])
+      const component = f.stack()[0]!.component
 
-      f.terminal.resize(200, 50)
-      expect(stackEntry.options?.width).toBe(100)
-      expect(component.render(100)).toEqual(['wide', 'tall'])
-      f.terminal.resize(80, 20)
-      expect(stackEntry.options?.width).toBe(56)
-      expect(component.render(56)).toEqual(['narrow'])
+      const retainedTasks: VoidFunction[] = []
+      const retainedQueue = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation(task => { retainedTasks.push(task) })
+      component.handleInput?.('\r')
+      await flush()
+      component.handleInput?.('\r')
+      await flush()
+      f.open({ id: 'sibling', render: () => ui.text('sibling') })
+      expect(retainedTasks.length).toBeGreaterThanOrEqual(2)
+      while (retainedTasks.length > 0) retainedTasks.shift()!()
+      retainedQueue.mockRestore()
+      await flush()
+      expect(renders).toBe(2)
+
+      const droppedTasks: VoidFunction[] = []
+      const droppedQueue = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation(task => { droppedTasks.push(task) })
+      component.handleInput?.('\r')
+      await flush()
+      handle.close()
+      expect(droppedTasks.length).toBeGreaterThanOrEqual(2)
+      while (droppedTasks.length > 0) droppedTasks.shift()!()
+      droppedQueue.mockRestore()
+      await flush()
+      expect(renders).toBe(2)
+    } finally {
+      vi.restoreAllMocks()
+      await f.dispose()
+    }
+  })
+
+  it('fences late settlement after close and same-id replacement', async () => {
+    const f = await fixture()
+    try {
+      const pending = deferred<void>()
+      let oldSignal: AbortSignal | undefined
+      const old = f.open({
+        id: 'replace',
+        capturing: true,
+        render: () => actionNode(),
+        onEvent: (_event, context) => {
+          oldSignal = context.signal
+          return pending.promise
+        },
+      })
+      await flush()
+      f.stack()[0]!.component.handleInput?.('\r')
+      await flush()
+      old.close()
+      const replacement = f.open({ id: 'replace', render: () => ui.text('replacement') })
+      await flush()
+      expect(oldSignal?.aborted).toBe(true)
+      pending.reject(new Error('late failure'))
+      await flush()
+      expect(replacement.closed).toBe(false)
+      expect(f.root.blueOverlays.list().map(entry => entry.id)).toEqual(['replace'])
+      expect(f.stack()[0]!.component.render(40)).toEqual(['replacement'])
     } finally {
       await f.dispose()
     }
   })
 
-  it('recomputes explicit minimum width from live terminal columns', async () => {
-    const f = await fixture(40, 20)
+  it('drains reentrant opens and preserves registry stack order', async () => {
+    const f = await fixture()
     try {
-      const opened = f.api.overlays!.open({ id: 'live-minimum', width: '50%', minWidth: 80, render: () => ui.text('live') })
-      expect(opened.ok).toBe(true)
+      let nested: BlueOverlayHandle | undefined
+      f.open({
+        id: 'outer',
+        render: () => {
+          nested ??= f.open({ id: 'inner', render: () => ui.text('inner') })
+          return ui.text('outer')
+        },
+      })
       await flush()
-      const options = f.stack()[0]!.options!
-      expect(options.minWidth).toBe(40)
-      expect(options.width).toBe(20)
-
-      f.terminal.resize(200, 20)
-      expect(options.minWidth).toBe(80)
-      expect(options.width).toBe(100)
+      expect(nested).toBeDefined()
+      expect(f.root.blueOverlays.list().map(entry => entry.id)).toEqual(['outer', 'inner'])
+      expect(f.stack().map(entry => entry.component.render(40))).toEqual([['outer'], ['inner']])
     } finally {
       await f.dispose()
     }

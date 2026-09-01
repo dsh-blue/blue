@@ -1,5 +1,5 @@
 /**
- * Build the twelve publishable tarballs once and verify their consumer-facing
+ * Build the publishable tarballs once and verify their consumer-facing
  * contract. The resulting .artifacts/pack/index.json is also the release
  * workflow's immutable publish input.
  *
@@ -118,7 +118,6 @@ function verifyExternalUiKit(apiTarball, uiTarball) {
 import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 export const metric = defineBlueComponent({
   id: '@blue-pack-fixture/metric',
-  api: '^1.0.0-beta.1',
   render: ({ label, value }) => ui.stack.row([
     ui.text(label),
     ui.progress({ value, max: 100 }),
@@ -178,54 +177,6 @@ void node
   }
 }
 
-function verifyPluginKit(apiTarball, uiTarball, frontendTarball, coreTarball, kitTarball) {
-  if ([apiTarball, uiTarball, frontendTarball, coreTarball, kitTarball].includes(undefined)) {
-    fail('plugin author kit fixture requires packed API, UI, frontend, core, and plugin-kit tarballs')
-    return
-  }
-  const fixtureRoot = mkdtempSync(join(tmpdir(), 'blue-plugin-kit-pack-'))
-  try {
-    writeFileSync(join(fixtureRoot, 'package.json'), `${JSON.stringify({
-      private: true,
-      type: 'module',
-      dependencies: {
-        '@dsh-blue/blue-api': `file:${apiTarball}`,
-        '@dsh-blue/blue-ui': `file:${uiTarball}`,
-        '@dsh-blue/blue-frontend': `file:${frontendTarball}`,
-        '@dsh-blue/blue-core': `file:${coreTarball}`,
-        '@dsh-blue/blue-plugin-kit': `file:${kitTarball}`,
-      },
-    }, null, 2)}\n`)
-    execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: fixtureRoot, stdio: 'ignore' })
-    const bin = join(fixtureRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'blue-plugin.cmd' : 'blue-plugin')
-    const catalog = JSON.parse(execFileSync(bin, ['catalog', '--json'], { cwd: fixtureRoot, encoding: 'utf8' }))
-    if (catalog.productVersion !== readManifest('packages/plugin-kit').version || catalog.capabilities?.length !== 7) {
-      throw new Error('installed bin returned a stale machine catalog')
-    }
-    const pluginRoot = join(fixtureRoot, 'tutorial')
-    execFileSync(bin, ['create', pluginRoot, '--name', '@blue-pack-fixture/tutorial'], { cwd: fixtureRoot, stdio: 'ignore' })
-    const validation = JSON.parse(execFileSync(bin, ['validate', pluginRoot], { cwd: fixtureRoot, encoding: 'utf8' }))
-    if (validation.valid !== true || validation.package !== '@blue-pack-fixture/tutorial') {
-      throw new Error('installed bin did not create and validate its package')
-    }
-    const conformance = JSON.parse(execFileSync(bin, ['conformance', pluginRoot], {
-      cwd: fixtureRoot,
-      encoding: 'utf8',
-      timeout: 240_000,
-    }))
-    if (conformance.valid !== true || conformance.installed !== true || conformance.peerResolution !== 'normal' ||
-        conformance.skipped?.length !== 0 || conformance.failures?.length !== 0 ||
-        !isDeepStrictEqual(conformance.declared, conformance.executed)) {
-      throw new Error(`installed bin conformance failed: ${JSON.stringify(conformance)}`)
-    }
-    console.log('plugin author kit: packed install, catalog, create, validate, and conformance passed')
-  } catch (error) {
-    fail(`plugin author kit fixture failed: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    rmSync(fixtureRoot, { recursive: true, force: true })
-  }
-}
-
 for (const relativeDir of PACKAGE_DIRS) {
   const sourceManifest = readManifest(relativeDir)
   const output = execFileSync('pnpm', ['--filter', sourceManifest.name, 'pack', '--json', '--pack-destination', outDir], {
@@ -271,13 +222,6 @@ for (const relativeDir of PACKAGE_DIRS) {
 }
 
 verifyExternalUiKit(tarballs.get('@dsh-blue/blue-api'), tarballs.get('@dsh-blue/blue-ui'))
-verifyPluginKit(
-  tarballs.get('@dsh-blue/blue-api'),
-  tarballs.get('@dsh-blue/blue-ui'),
-  tarballs.get('@dsh-blue/blue-frontend'),
-  tarballs.get('@dsh-blue/blue-core'),
-  tarballs.get('@dsh-blue/blue-plugin-kit'),
-)
 
 if (libraryFiles > 210) fail(`library lib output has ${libraryFiles} files; budget is 210`)
 // The P5 plus canonical focused-surface baseline retains about 3% release

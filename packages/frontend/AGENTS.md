@@ -1,13 +1,20 @@
 # `@dsh-blue/blue-frontend`
 
-Experimental F1 runtime containing renderer-neutral readonly interaction models and the provider host. It must not import pi-tui, React, DOM, ANSI, terminal width, or the legacy Blue UI packages. The host remains alive while providers are swapped and serializes the full `capture -> abort -> dispose -> activate -> restore` lifecycle; activation failure selects the plain provider. Provider resources and late callbacks are scoped by generation and must be disposable.
+This package owns renderer-neutral frontend data plus locale, theme, and
+notification services. It must not import pi-tui, React/DOM, ANSI, terminal
+width, raw keys, Agent, Session, or renderer objects.
 
-`ThemeModelService` is the narrow semantic theme registry. It stores immutable token data, exposes activation and subscription, and has no renderer color functions. Renderer adapters may register a model and dispose it with their Fiber.
+Models are immutable semantic facts. Transcript and tool presentation models
+use canonical `BlueUiNode` values and structured actions. No parallel view
+vocabulary or provider lifecycle belongs here.
 
-`BlueLocaleService` is the frontend-tree-scoped renderer-neutral locale registry. It supports English (`en`) and Simplified Chinese (`zh`), immutable revision snapshots, namespace-owned catalogs, interpolation, and dynamic translators that follow preference changes. It contains no settings dependency or renderer object; missing catalogs and an absent runtime fall back to interpolated English source keys. Catalog registrations and listeners are disposable, and separate Cordis trees never share preference state.
+`BlueLocaleService` owns one frontend tree's English/Simplified Chinese
+catalogs, preference revision, interpolation, and subscriptions.
+`ThemeModelService` stores immutable semantic color tokens.
+`NotificationModelService` stores renderer-neutral notices with dedupe keys.
+Registrations and listeners are Fiber-disposable and no product mutable state
+may be a module singleton.
 
-The command/list vocabulary remains renderer-neutral: list items may carry primary/secondary structured actions, optional grouped filtering, and readonly action variants, while editor models may publish `set`, `submit`, and `abort` actions. `PanelModel` was removed in W4a-B after official interaction and context consumers moved to canonical public `BlueUiNode` documents. Generic `StatusModel` and `DockModel` were removed in W4a-C: canonical `BlueStatusNode`/`BlueUiNode` are the typed source contracts, and footer/bottom placement metadata belongs to the renderer owner's package-private composition services. The seven-kind legacy frontend `View` union is also physically absent: `ProviderModel.nodes`, tool presentation `call`/`result`, and generic transcript entries all carry canonical `BlueUiNode` values. Provider models retain only provider identity, capabilities, and canonical nodes so the host can preserve its lifecycle without owning a second UI vocabulary. No model contains a Promise, terminal width, focus handle, renderer key binding, Agent, Session, ANSI, or renderer object.
-
-The transcript vocabulary is semantic rather than terminal-shaped: user, assistant, thinking, tool, read-group, search-group, error, interruption, and durable image-reference entries carry ids and readonly facts. A tool entry may embed the renderer-neutral `ToolPresentationModel`; its optional `call` and `result` are canonical nodes and it never carries a dsh-tools presenter callback. A `transcript-read-group` entry folds a run of consecutive read calls (a read without a file carries a salient-argument `label` instead of a path), and a `transcript-search-group` entry folds a run of consecutive search calls (per-call pattern facts: match files with bounded previews, or a capped path page with its true total): each `ReadCallModel` records per-call facts (path, requested and actual line windows, totals, state, bounded preview lines) and no content beyond that preview bound — by-file grouping is a renderer concern, so the facts stay orthogonal to any tree shape. Generic/plain transcript contributions use `BlueUiNode` directly. Renderer plugins own component caching, Markdown, image byte loading, colors, width, and focus.
-
-Adversarial coverage in `tests/adversarial.spec.ts` exercises concurrent provider swaps and verifies that the last requested provider remains active after an activation race. `tests/architecture-boundary.spec.ts` scans all headless source files for renderer/terminal imports and checks the public export surface.
+Do not restore provider hosts, provider candidates, swap/rollback state,
+renderer adapters, or dsh service wrappers. Public model changes require
+architecture-boundary tests and `pnpm run verify:full`.

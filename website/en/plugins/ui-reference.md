@@ -45,7 +45,7 @@ Session, or mutable renderer objects in a node.
   `default | muted | accent | success | warning | danger`.
 - `emphasis` is `normal | strong`; omission means normal text.
 
-The defaults below describe the current Blue TUI in `0.1.2-alpha.1`. The wire
+The defaults below describe the current Blue TUI in `0.2.0-alpha.1`. The wire
 contract promises field semantics, not exact border glyphs, color values, or
 key bindings.
 
@@ -283,8 +283,8 @@ ui.document({
 })
 ```
 
-`document` is available in ordinary panes and capturing overlays. It is not a
-status, notification, editor-shell, or `sections.body` node.
+`document` is available in ordinary panes and passive or capturing overlays.
+It is not a status, notification, editor-extension, or `sections.body` node.
 
 ### `chart`
 
@@ -334,8 +334,9 @@ ui.chart({
 Values must be finite; `null` marks missing data. Series ids and heatmap level
 values are unique, bar values match the category count, and heatmap dimensions
 match their row/column labels. Each chart accepts at most 20 series, and one
-tree accepts at most 4,000 chart cells. Plugins using `document` or `chart`
-require API `^1.0.0-beta.2`.
+tree accepts at most 4,000 chart cells. Like `document`, `chart` is available
+in ordinary panes and passive or capturing overlays, not in narrower status,
+notification, editor-extension, or `BlueView` trees.
 
 ## Layout nodes
 
@@ -1033,7 +1034,7 @@ individual node:
 onEvent: (
   event: BlueUiEvent,
   context: BlueUiEventContext,
-) => BlueResult | Promise<BlueResult>
+) => void | Promise<void>
 ```
 
 | Event | Source | Payload |
@@ -1045,8 +1046,8 @@ onEvent: (
 | `tab-change` | Tabs | `controlId`, `tabId` |
 | `dismiss` | A dismissible surface such as overlay Escape | No control id |
 
-`context` carries the current `surfaceId`, `revision`, `AbortSignal`, and an
-optional one-shot `userGesture`. `value-change`, `selection-change`, and
+`context` carries the current `surfaceId`, `revision`, and `AbortSignal`.
+`value-change`, `selection-change`, and
 `tab-change` are latest-wins per control id. `activate`, `submit`, and
 `dismiss` are FIFO per surface. Blue automatically rerenders after handler
 success. Failure, abort, timeout, an old generation, or a result after unload

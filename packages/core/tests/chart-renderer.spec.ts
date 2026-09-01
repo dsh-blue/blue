@@ -1,7 +1,7 @@
 /** Canonical chart adapter behavior over simple-ascii-chart. */
 import { describe, expect, it } from 'vitest'
 import { ui } from '../../ui/src/index.ts'
-import { renderChartRows } from '../src/chart-renderer.ts'
+import { formatChartNumber, renderChartRows } from '../src/chart-renderer.ts'
 import type { BlueComponents, BlueSemanticColors } from '../src/types.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
 
@@ -29,6 +29,12 @@ const charts = [
 ] as const
 
 describe('renderChartRows', () => {
+  it('formats compact decimal summaries without changing scientific exponents', () => {
+    expect(formatChartNumber(1.23456)).toBe('1.235')
+    expect(formatChartNumber(1.23456e-100)).toBe('1.235e-100')
+    expect(formatChartNumber(1_000)).toBe('1000')
+  })
+
   it('renders every v1 chart kind through the vendor adapter', () => {
     for (const chart of charts) {
       const rows = renderChartRows(chart, 80, components, colors)

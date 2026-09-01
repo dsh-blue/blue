@@ -60,7 +60,7 @@ const RC3_NAMES = ['@dsh-blue/blue-api', ...RC2_NAMES]
 
 /** Version roles used by the update scenarios across release bumps. */
 const CURRENT_VERSION = BLUE_VERSION
-const TARGET_VERSION = '0.1.2-rc.1'
+const TARGET_VERSION = '0.2.0-alpha.2'
 
 /** A spawn success. */
 function ok(): SpawnOutcome {

@@ -8,7 +8,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { BlueSessionSnapshot } from '@dsh-blue/blue-api'
+import { BlueStatusService } from '@dsh-blue/blue-api'
 import type {
   BlueComponent,
   BlueOverlayHandle,
@@ -18,7 +18,6 @@ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldConversationFacts, initialConversationFacts, type ConversationFacts } from '../../conversation/src/facts.ts'
 import { projectChildSessionFacts, type ChildSessionFacts } from '../src/session-facts.ts'
 import { compileBlueStatusNode } from '../../core/src/ui-compiler.ts'
-import { BlueStatusEntryService } from '../src/status-model.ts'
 import { fakeBlueComponents } from './helpers.ts'
 
 /** Identity colors so rendered assertions see structure, not escape codes. */
@@ -99,16 +98,27 @@ export interface FakeAgent {
   session: FakeSession
 }
 
+interface FakeSessionSnapshot {
+  readonly revision: number
+  readonly sessionEpoch: number
+  readonly id: string
+  readonly cwd: string
+  readonly status: 'idle' | 'running'
+  readonly mode: 'normal'
+  readonly model?: { readonly id: string, readonly provider?: string }
+}
+
 /** Projection-shaped facts feed used by source-plane status/pane fixtures. */
 export class FakeFactsService {
   private agent: FakeAgent | null = null
   private binding: FakeSession | undefined
-  private session: BlueSessionSnapshot | null = null
+  private session: FakeSessionSnapshot | null = null
   private value: ConversationFacts = initialConversationFacts()
   private title: string | undefined
   private readonly listeners = new Set<(facts: ConversationFacts) => void>()
   private readonly titleListeners = new Set<(title: string | undefined) => void>()
-  private readonly sessionListeners = new Set<(session: BlueSessionSnapshot | null) => void>()
+  private readonly sessionListeners = new Set<(session: FakeSessionSnapshot | null) => void>()
+  private readonly agentListeners = new Set<(agent: FakeAgent | null) => void>()
   private readonly childStates = new Map<string, { parentId: string, facts: ConversationFacts }>()
   private readonly childListeners = new Set<(facts: readonly ChildSessionFacts[]) => void>()
 
@@ -157,7 +167,9 @@ export class FakeFactsService {
 
   get currentTitle(): string | undefined { return this.title }
 
-  get currentSession(): BlueSessionSnapshot | null { return this.session }
+  get currentSession(): FakeSessionSnapshot | null { return this.session }
+
+  get currentAgent(): FakeAgent | null { return this.agent }
 
   subscribe(listener: (facts: ConversationFacts) => void): () => void {
     this.listeners.add(listener)
@@ -171,10 +183,16 @@ export class FakeFactsService {
     return () => this.titleListeners.delete(listener)
   }
 
-  subscribeSession(listener: (session: BlueSessionSnapshot | null) => void): () => void {
+  subscribeSession(listener: (session: FakeSessionSnapshot | null) => void): () => void {
     this.sessionListeners.add(listener)
     listener(this.session)
     return () => this.sessionListeners.delete(listener)
+  }
+
+  subscribeAgent(listener: (agent: FakeAgent | null) => void): () => void {
+    this.agentListeners.add(listener)
+    listener(this.agent)
+    return () => this.agentListeners.delete(listener)
   }
 
   subscribeChildren(listener: (facts: readonly ChildSessionFacts[]) => void): () => void {
@@ -185,6 +203,7 @@ export class FakeFactsService {
 
   private attach(agent: FakeAgent | null): void {
     this.agent = agent
+    for (const listener of this.agentListeners) listener(agent)
     this.binding = agent?.session
     this.session = this.snapshot(agent)
     this.publishSession()
@@ -200,7 +219,7 @@ export class FakeFactsService {
     this.publishTitle()
   }
 
-  private snapshot(agent: FakeAgent | null): BlueSessionSnapshot | null {
+  private snapshot(agent: FakeAgent | null): FakeSessionSnapshot | null {
     if (agent === null) return null
     const session = agent.session as FakeSession & { readonly id?: unknown }
     const options = agent.options ?? {}
@@ -293,7 +312,7 @@ export interface StatusPluginHarness {
   ctx: Context
   screen: StatusFakeScreen
   entry: StatusEntryView
-  models: BlueStatusEntryService
+  models: BlueStatusService
   dispose(): Promise<void>
 }
 
@@ -318,7 +337,8 @@ export async function bootStatusPlugin(
   const ctx = new Context()
   const screen = new StatusFakeScreen()
   const colors = { ...COLORS, ...options.colors }
-  const statusModels = new BlueStatusEntryService(ctx, screen)
+  const statusModels = new BlueStatusService(ctx)
+  statusModels.subscribe(() => screen.requestRender())
   const components = fakeBlueComponents()
   const facts = new FakeFactsService(ctx, current, options.titleProjection ?? true)
   const serviceNames: Record<string, unknown> = {
@@ -326,7 +346,6 @@ export async function bootStatusPlugin(
     blueScreen: screen,
     blueTheme: { colors },
     blueComponents: components,
-    blueSession: { current: current === null ? null : asAgent(current) },
     ...options.services,
   }
   for (const [serviceName, value] of Object.entries(serviceNames)) {

@@ -8,13 +8,11 @@ import type {} from '@dsh-blue/blue-api'
 import { ui } from '@dsh-blue/blue-ui'
 
 export const name = '@dsh-blue-example/bottom-log'
-export const inject = ['bluePluginHost']
+export const inject = ['bluePanes']
 
 /** Register a bounded passive log in the bottom surface lane. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.1', capabilities: ['panes'] })
-  if (!opened.ok) return
-  opened.value.panes!.register({
+  ctx.bluePanes.register({
     id: 'example.log.recent',
     title: 'Recent activity',
     placement: 'bottom',

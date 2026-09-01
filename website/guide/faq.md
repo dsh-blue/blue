@@ -2,7 +2,7 @@
 
 ## 为什么不直接 `npm install @dsh-blue/blue`？
 
-Blue 是装进 dsh profile 的插件包，不是独立应用——裸装只把包放进 node_modules，没有宿主与 profile 装配，跑不起来。正确路径：装 `blue` 壳包，或用 `dsh plugin --profile blue add`，见[快速上手](/guide/)。当前发布线是 `v0.1.2-alpha.1`；普通用户使用 `alpha` 通道，插件适配与 CI 应锁定 Blue `0.1.2-alpha.1` 与 Harness `0.1.2-alpha.2`。不支持 Harness RC。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
+Blue 是装进 dsh profile 的插件包，不是独立应用——裸装只把包放进 node_modules，没有宿主与 profile 装配，跑不起来。正确路径：装 `blue` 壳包，或用 `dsh plugin --profile blue add`，见[快速上手](/guide/)。当前发布线是 `v0.2.0-alpha.1`；普通用户使用 `alpha` 通道，插件与 CI 应锁定 Blue `0.2.0-alpha.1` 与 Harness `0.1.2-alpha.3`。不支持 Harness RC。贡献者的本地开发安装见开发手册的[贡献本仓库](/plugins/contributing)页。
 
 ## `@alpha` 装到的不是最新 alpha？
 

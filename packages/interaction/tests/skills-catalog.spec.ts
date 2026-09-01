@@ -118,15 +118,11 @@ describe('skills catalog settle', () => {
     expect(userInvocableSkills(ctx).map(entry => entry.name)).toEqual(['good-skill'])
   })
 
-  it('drops the catalog without an agent or without the skills service', async () => {
+  it('drops the catalog without an agent', async () => {
     const withService = await mount({ withAgent: false, skills: fakeSkills().service })
     __setCatalogForTest(withService.ctx, [skill('stale-skill')])
     await refresh(withService.ctx)
     expect(userInvocableSkills(withService.ctx)).toEqual([])
-    const withoutService = await mount({})
-    __setCatalogForTest(withoutService.ctx, [skill('stale-skill')])
-    await refresh(withoutService.ctx)
-    expect(userInvocableSkills(withoutService.ctx)).toEqual([])
   })
 
   it('shares one in-flight settle between same-epoch callers', async () => {
@@ -155,6 +151,17 @@ describe('skills catalog settle', () => {
     fake.release()
     await stale
     await vi.waitFor(() => { expect(userInvocableSkills(ctx).map(entry => entry.name)).toEqual(['new-session']) })
+  })
+
+  it('rejects a snapshot when the current Agent changes without an invalidation event', async () => {
+    const fake = hangingSkills(['stale-agent'])
+    const { ctx } = await mount({ skills: fake.service })
+    const pending = refresh(ctx)
+    const state = ctx.get('testSession') as { current: { session: unknown } }
+    state.current = { id: 'skills-catalog-silent-next', session: state.current.session, status: 'idle' }
+    fake.release()
+    await pending
+    expect(userInvocableSkills(ctx)).toEqual([])
   })
 })
 

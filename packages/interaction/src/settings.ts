@@ -8,7 +8,7 @@
  * service layers user overrides the thunk answers the composition defaults.
  *
  * The plugin also owns the persisted default theme: the initial apply is
- * gated on session attach — when `blueSessionReader.current()` is non-null the
+ * gated on Agent attach — when `blueCurrentAgent.current()` is non-null the
  * swap runs as soon as the resolved settings scope goes live (the section
  * installer's `onChange`, one inject-beat after apply), otherwise the
  * first reader notification arms it (the app publishes that snapshot only
@@ -33,7 +33,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // 'settings/updated' Events merge this plugin subscribes to.
 import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
-// Empty type import carries the app-owned reader Context merge.
+// Empty type import carries the app-owned current-Agent Context merge.
 import type {} from '@dsh-blue/blue-app'
 import { applyTheme } from './theme-switch.ts'
 
@@ -52,10 +52,6 @@ export interface BlueSettings {
   readonly updateChannel: string
   /** The default theme, applied at startup; `/theme` overrides per session. */
   readonly theme: 'dark' | 'light' | 'ocean' | 'paper' | 'auto'
-  /** User-selected status provider id; `blue.default` keeps the built-in footer. */
-  readonly statusProvider: string
-  /** User-selected editor provider id; `blue.default` keeps the built-in shell. */
-  readonly editorProvider: string
   /** Whether thinking blocks start collapsed. */
   readonly collapseThinking: boolean
   /** Whether tool output starts collapsed (ctrl+o toggles in the session). */
@@ -81,8 +77,6 @@ export const Config: z<BlueSettings> = z.object({
   updateCheck: z.boolean().default(true),
   updateChannel: z.string().default('alpha'),
   theme: z.union([z.const('dark'), z.const('light'), z.const('ocean'), z.const('paper'), z.const('auto')]).default('dark'),
-  statusProvider: z.string().default('blue.default'),
-  editorProvider: z.string().default('blue.default'),
   collapseThinking: z.boolean().default(true),
   collapseToolCalls: z.boolean().default(true),
   windowTurns: z.number().step(1).min(1).default(15),
@@ -99,8 +93,6 @@ export const DEFAULT_SETTINGS: BlueSettings = {
   updateCheck: true,
   updateChannel: 'alpha',
   theme: 'dark',
-  statusProvider: 'blue.default',
-  editorProvider: 'blue.default',
   collapseThinking: true,
   collapseToolCalls: true,
   windowTurns: 15,
@@ -115,7 +107,7 @@ export const DEFAULT_SETTINGS: BlueSettings = {
 /** Stable Cordis plugin name. */
 export const name = 'blue-settings'
 /** Runtime state and session boundary required by the settings owner. */
-export const inject = ['blueInteractionState', 'blueSessionReader']
+export const inject = ['blueInteractionState', 'blueCurrentAgent']
 
 /**
  * Read the current `blue` settings: schema defaults layered with the user
@@ -173,7 +165,7 @@ export function apply(ctx: Context): void {
   }
   // `settings/updated` commits landing before the first attach need no
   // follow: the attach-time sync reads the current value.
-  let attached = ctx.blueSessionReader.current() !== null
+  let attached = ctx.blueCurrentAgent.current() !== null
   // The initial sync must read the resolved scope, which goes live one
   // inject-beat after apply — settings.installSection fires onChange then,
   // and re-fires it on every blue commit through the scope watch, so
@@ -203,10 +195,10 @@ export function apply(ctx: Context): void {
   // swap can never race the loader's entry-activation assertion. An
   // already-attached session skips the wait: the onChange prime above
   // carries the initial sync.
-  const registration = ctx.blueSessionReader.subscribe((snapshot) => {
-    if (attached || snapshot === null) return
+  const registration = ctx.blueCurrentAgent.subscribe((agent) => {
+    if (attached || agent === null) return
     attached = true
     prime()
   })
-  ctx.effect(() => () => registration.dispose())
+  ctx.effect(() => registration)
 }

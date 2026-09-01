@@ -1,34 +1,33 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { BlueSessionCommand } from '@dsh-blue/blue-app'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { CommandDescriptor } from '@deepseek-ai/dsh-commands'
 import { BlueLocaleService } from '../../frontend/src/locale.ts'
 import { CommandModelService } from '../src/command-model.ts'
 import { INTERACTION_LOCALE } from '../src/locale.ts'
 
 function fixture(options: {
-  commands?: readonly BlueSessionCommand[]
+  commands?: readonly CommandDescriptor[]
   execute?: (line: string, signal: AbortSignal) => Promise<{ result: { kind: 'success' | 'error', text?: string } } | undefined>
   services?: boolean
 } = {}) {
   const ctx = new Context()
   let sessionChanged: (() => void) | undefined
   if (options.services !== false) {
-    ctx.provide('blueSessionReader', {
-      current: () => ({ id: 'agent', cwd: '/repo', status: 'idle', mode: 'normal' }),
-      subscribe: (listener: () => void) => {
-        sessionChanged = listener
-        listener()
-        let disposed = false
-        return {
-          get disposed() { return disposed },
-          dispose() { disposed = true },
-        }
+    const agent = { id: 'agent' } as unknown as Agent
+    ctx.provide('blueCurrentAgent', {
+      current: () => agent,
+      revision: () => 0,
+      subscribe: (listener: (agent: Agent, revision: number) => void) => {
+        sessionChanged = () => listener(agent, 1)
+        listener(agent, 0)
+        return () => { sessionChanged = undefined }
       },
-      request: async () => ({ ok: true, value: undefined }),
-    })
-    ctx.provide('blueSessionActions', {
-      commands: () => options.commands ?? [],
-      executeCommand: options.execute ?? (async () => undefined),
+    } as never)
+    ctx.provide('commands', {
+      list: () => options.commands ?? [],
+      execute: (_agent: Agent, line: string, _images: readonly unknown[], signal: AbortSignal) =>
+        (options.execute ?? (async () => undefined))(line, signal),
     } as never)
   }
   return { ctx, notify: () => sessionChanged?.() }
@@ -37,7 +36,7 @@ function fixture(options: {
 describe('CommandModelService', () => {
   it('projects app-owned descriptors and reacts to session/runtime changes', () => {
     const test = fixture({ commands: [
-      { name: 'status', description: 'Show status', inputHint: 'filter' },
+      { name: 'status', description: 'Show status', input: { hint: 'filter' } },
       { name: 'version', description: 'Version' },
       { name: 'plain' },
     ] })

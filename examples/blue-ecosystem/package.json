@@ -16,8 +16,6 @@
     "@dsh-blue-example/right-inspector": "workspace:*",
     "@dsh-blue-example/bottom-log": "workspace:*",
     "@dsh-blue-example/overlay": "workspace:*",
-    "@dsh-blue-example/status-provider": "workspace:*",
-    "@dsh-blue-example/editor-provider": "workspace:*",
     "@dsh-blue-example/ui-gallery": "workspace:*"
   },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.2", "@dsh-blue/blue": "workspace:*" },

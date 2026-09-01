@@ -231,7 +231,6 @@ describe('registerMcpCommands', () => {
     readonly scoped?: readonly ToolSchema[]
     readonly session?: boolean
     readonly dropLoader?: boolean
-    readonly rosterError?: unknown
   } = {}): Promise<{ ctx: Context, screen: FakeScreen, agent: Agent }> {
     const base = fakeBlueContext({ display: options.display })
     const { ctx } = base
@@ -242,17 +241,8 @@ describe('registerMcpCommands', () => {
     const agent = { id: session.id, session, status: 'idle', ctx: new Context() } as unknown as Agent
     if (options.session !== false) {
       ctx.provide('testSession', { current: agent })
-      // The roster fake routes the scoped read through a standing key, so
-      // the two views (global health / scoped visibility) genuinely diverge
-      // when a case passes an explicit scoped list.
-      ctx.provide('agentPresets', {
-        composedPreset: () => 'e2e',
-        standingKeyFor: () => options.rosterError === undefined
-          ? Promise.resolve({ standing: true })
-          : Promise.reject(options.rosterError),
-      } as never)
     }
-    ctx.provide('tools', {
+    ctx.set('tools', {
       schemas: (scope?: unknown) => scope === undefined
         ? options.global ?? []
         : options.scoped ?? options.global ?? [],
@@ -321,6 +311,8 @@ describe('registerMcpCommands', () => {
     expect(screen.overlays.filter(overlay => !overlay.hidden).at(-1)).toBe(serverPanel)
     serverPanel.component.handleInput(KEY.escape)
     expect(screen.overlays.filter(overlay => !overlay.hidden).at(-1)).toBe(picker)
+    picker.component.handleInput(KEY.escape)
+    expect(picker.hidden).toBe(true)
   })
 
   it('shows the restricted blocked row when the session view diverges', async () => {
@@ -348,6 +340,8 @@ describe('registerMcpCommands', () => {
     expect(rows.some(row => row.includes('no MCP servers are declared'))).toBe(true)
     expect(rows.some(row => row.includes('dsh-blue.dev'))).toBe(true)
     expect(rows.some(row => row.includes('1 mcp__ tool visible but undeclared'))).toBe(true)
+    empty.component.handleInput(KEY.escape)
+    expect(empty.hidden).toBe(true)
   })
 
   it('appends the no-session note row without a live agent', async () => {
@@ -368,15 +362,8 @@ describe('registerMcpCommands', () => {
       kind: 'error',
       text: expect.stringContaining('could not read the MCP catalog'),
     })
-    // A non-Error rejection still renders as its string form.
-    const crashed = await mount({ rosterError: 'plain roster failure' })
-    expect(await run(crashed.ctx, crashed.agent, '/mcp')).toMatchObject({
-      kind: 'error',
-      text: 'could not read the MCP catalog: could not resolve the preset composition: plain roster failure',
-    })
     const raw = await mount()
-    ;(raw.ctx.blueSessionActions as unknown as { toolCatalog: () => Promise<never> }).toolCatalog
-      = async () => { throw 'raw catalog failure' }
+    raw.ctx.set('tools', { schemas: () => { throw 'raw catalog failure' } } as never)
     expect(await run(raw.ctx, raw.agent, '/mcp')).toEqual({
       kind: 'error',
       text: 'could not read the MCP catalog: raw catalog failure',

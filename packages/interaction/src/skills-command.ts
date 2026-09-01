@@ -16,7 +16,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
-import type { BlueSessionSkill } from '@dsh-blue/blue-app'
+import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import type { InfoRow, InfoSection } from './info-panel.ts'
 import { InfoPanel } from './info-panel.ts'
 import { displayServices } from './display-services.ts'
@@ -52,8 +52,8 @@ function sectionHeading(source: string): string {
  * @param skills - the user-invocable summaries to list.
  * @returns the sections in display order.
  */
-export function buildSkillsSections(skills: readonly BlueSessionSkill[]): InfoSection[] {
-  const byHeading = new Map<string, BlueSessionSkill[]>()
+export function buildSkillsSections(skills: readonly SkillSummary[]): InfoSection[] {
+  const byHeading = new Map<string, SkillSummary[]>()
   for (const skill of skills) {
     const heading = sectionHeading(skill.source)
     const bucket = byHeading.get(heading)
@@ -70,7 +70,7 @@ export function buildSkillsSections(skills: readonly BlueSessionSkill[]): InfoSe
 }
 
 /** The rows of one skill: name (with the user-only marker), description, whenToUse. */
-function skillRows(skill: BlueSessionSkill): InfoRow[] {
+function skillRows(skill: SkillSummary): InfoRow[] {
   return [
     {
       label: skill.name,
@@ -93,7 +93,7 @@ export function registerSkillsCommand(ctx: Context): () => void {
     name: 'skills',
     description: 'List available skills (the # prompt invokes one)',
     handler: async (): Promise<CommandResult> => {
-      if (ctx.blueSessionReader.current() === null) {
+      if (ctx.blueCurrentAgent.current() === null) {
         return { kind: 'error', text: 'no active session' }
       }
       // Refresh before listing: the panel and the `#` dropdown share the

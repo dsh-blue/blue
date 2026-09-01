@@ -4,12 +4,12 @@
  * @module @dsh-blue-example/ui-gallery
  */
 import type { Context } from '@deepseek-ai/cordis'
-// Pull in Context.bluePluginHost without introducing a runtime API import.
+// Pull in the direct Blue pane service Context merge.
 import type {} from '@dsh-blue/blue-api'
 import { ui } from '@dsh-blue/blue-ui'
 
 export const name = '@dsh-blue-example/ui-gallery'
-export const inject = ['bluePluginHost']
+export const inject = ['bluePanes']
 
 /** Content demos: text, rich text, fields, code, diff, and sections. */
 function contentGroup() {
@@ -182,9 +182,7 @@ function renderGallery() {
 
 /** Register the gallery pane; a right lane that degrades to bottom when narrow. */
 export function apply(ctx: Context): void {
-  const opened = ctx.bluePluginHost.open(ctx, { id: name, api: '^1.0.0-beta.2', capabilities: ['panes'] })
-  if (!opened.ok) return
-  opened.value.panes!.register({
+  ctx.bluePanes.register({
     id: 'example.ui-gallery.showcase',
     title: 'UI Gallery',
     placement: 'right',

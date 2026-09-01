@@ -1,37 +1,22 @@
 flowchart TB
-    subgraph bundle["cordis.patch.yml - 34 Blue-owned rows · 34 条 Blue 自有行"]
-        subgraph host["host support 宿主支撑 - 3 rows"]
-            presets["subagent model settings · agent-presets<br/>upstream shipped + blue-cordis"]
-            creative["blue-creative-host"]
-        end
-        subgraph privateRuntime["private runtime composition 私有运行时组合 - 1 group"]
-            subgraph product["product UI 产品 UI - 30 rows"]
-                subgraph baseline["baseline 基线 - 9 rows"]
-                    api["blue-api-host · blue-locale"]
-                    core["blue-core · blue-theme-dark"]
-                    chrome["blue-banner · blue-transcript · blue-status-basic"]
-                    conversation["blue-conversation · blue-transcript-official"]
-                end
-                subgraph enhancement["enhancement 增强 - 15 droppable rows"]
-                    editorPlus["blue-editor-plus"]
-                    att["blue-attachments · blue-paste-image"]
-                    statusEnh["blue-status-cwd · -git · -mode · -title · -context"]
-                    panes["blue-pane-activity · -queue · -todo · -btw · -agents"]
-                    viewBridge["blue-plugin-view-bridge"]
-                    statusOwner["blue-status-provider-owner"]
-                end
-                subgraph assembly["assembly 装配 - 6 rows"]
-                    interaction["blue-interaction · blue-plugin-interaction-bridge"]
-                    editorOwner["blue-editor-provider-owner"]
-                    startup["blue-startup · blue-app"]
-                    sessionBridge["blue-plugin-session-bridge"]
-                end
-            end
-        end
+    BASE["dsh-base"]
+    subgraph GRAPH["flat Cordis sibling graph · 31 inserted rows"]
+        SUPPORT["dsh support · 6 rows<br/>subagent settings · presets · host runner<br/>workspace · session controller · title"]
+        API["blue-api<br/>four direct UI registries"]
+        APP["blue-conversation · blue-startup · blue-app"]
+        VIEW["blue-frontend · blue-core · theme"]
+        PRODUCT["transcript · status · panes · editor · interaction"]
+        PLUGINS["external Cordis plugins"]
     end
-    validation["validation-only, not bundle rows\nblue-context · blue-remote · blue-openpencil · blue-lark"]
-    dshbase["dsh-base - agent plane composed behind presets"]
-    bundle -.-> dshbase
+    NATIVE["native dsh services"]
 
-    classDef optional stroke-dasharray: 4 4;
-    class editorPlus,att,statusEnh,panes,viewBridge,statusOwner,validation optional;
+    BASE --> NATIVE
+    NATIVE --> SUPPORT
+    NATIVE --> APP
+    NATIVE --> PRODUCT
+    NATIVE --> PLUGINS
+    API --> VIEW
+    API --> PRODUCT
+    API --> PLUGINS
+    APP --> PRODUCT
+    VIEW --> PRODUCT

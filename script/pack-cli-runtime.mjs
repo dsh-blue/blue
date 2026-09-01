@@ -16,7 +16,7 @@ import { ROOT } from './package-contract.mjs'
 
 const CLI_DIR = join(ROOT, 'packages', 'cli')
 const SEED_DIR = join(CLI_DIR, 'runtime')
-const HARNESS_LINE = '0.1.2-alpha.2'
+const HARNESS_LINE = '0.1.2-alpha.3'
 const TARGETS = [
   ['linux', 'x64'],
   ['linux', 'arm64'],

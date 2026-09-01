@@ -69,8 +69,9 @@ function checkedRows(
   return undefined
 }
 
-function numeric(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toPrecision(4).replace(/\.?0+$/u, '')
+/** Format a chart summary value without corrupting scientific exponents. */
+export function formatChartNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(4)))
 }
 
 function summary(node: Exclude<BlueChartNode, { readonly chart: 'sparkline' }>, width: number, components: BlueComponents, colors: BlueSemanticColors): string[] {
@@ -81,14 +82,14 @@ function summary(node: Exclude<BlueChartNode, { readonly chart: 'sparkline' }>, 
     case 'point':
       for (const [index, series] of node.series.entries()) {
         const values = series.points.flatMap(point => point.y === null ? [] : [point.y])
-        const detail = values.length === 0 ? 'no data' : `min ${numeric(Math.min(...values))}, max ${numeric(Math.max(...values))}, last ${numeric(values.at(-1)!)}`
+        const detail = values.length === 0 ? 'no data' : `min ${formatChartNumber(Math.min(...values))}, max ${formatChartNumber(Math.max(...values))}, last ${formatChartNumber(values.at(-1)!)}`
         result.push(paintPluginTone(colors, toneAt(series.tone, index))(components.truncateToWidth(`${series.label ?? series.id}: ${detail}`, width)))
       }
       break
     case 'bar':
       for (const [index, series] of node.series.entries()) {
         const values = series.values.flatMap(value => value === null ? [] : [value])
-        const detail = values.length === 0 ? 'no data' : `total ${numeric(values.reduce((sum, value) => sum + value, 0))}`
+        const detail = values.length === 0 ? 'no data' : `total ${formatChartNumber(values.reduce((sum, value) => sum + value, 0))}`
         result.push(paintPluginTone(colors, toneAt(series.tone, index))(components.truncateToWidth(`${series.label ?? series.id}: ${detail}`, width)))
       }
       break

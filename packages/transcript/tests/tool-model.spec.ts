@@ -69,6 +69,7 @@ describe('canonical tool presentation builder', () => {
     expect(toolCallNode({ card: 'generic', title: 'String', rawInput: 'literal' })).toMatchObject({ sections: [{ body: { content: 'literal' } }] })
     expect(toolCallNode({ card: 'terminal', title: 'pnpm test', description: 'Tests', cwd: '/repo' })).toMatchObject({ kind: 'sections', sections: [{ title: 'Tests' }, { title: 'Command', body: { kind: 'code' } }] })
     expect((toolCallNode({ card: 'terminal', title: 'pnpm test', description: 'Tests' }) as { sections: readonly unknown[] }).sections[0]).toMatchObject({ title: 'Tests', body: { content: '' } })
+    expect((toolCallNode({ card: 'terminal', title: 'pwd', cwd: '/repo' }) as { sections: readonly unknown[] }).sections[0]).toMatchObject({ title: 'cwd', body: { content: '/repo' } })
     expect(toolCallNode({ card: 'terminal', title: 'pwd' })).toMatchObject({ sections: [{ title: 'Command' }] })
     expect(toolCallNode({ card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: 'old', newText: 'new' }] })).toMatchObject({ sections: [{ title: 'a.ts · +1 −1', body: { kind: 'diff', before: 'old', after: 'new' } }] })
     expect(toolCallNode({ card: 'diff', title: 'Write', diffs: [] })).toMatchObject({ sections: [{ title: 'Write', body: { content: '(no changes)' } }] })
@@ -124,6 +125,7 @@ describe('canonical tool presentation builder', () => {
 
   it('derives diff chips through canonical nested nodes', () => {
     expect(toolResultChip(undefined)).toBeUndefined()
+    expect(toolResultChip(createToolPresentationModel({ id: 'empty', name: 'empty' }))).toBeUndefined()
     const read = createToolPresentationModel({ id: 'r', name: 'read', call: { card: 'generic', title: 'Read' }, result: { card: 'read', path: 'a', offset: 1, lines: [{ number: 1, text: 'x' }], totalLines: 1 } })
     expect(toolResultChip(read)).toBeUndefined()
     const write = createToolPresentationModel({ id: 'w', name: 'write', result: { card: 'diff', title: 'Write', diffs: [{ path: 'a.ts', oldText: 'one\nx\nthree', newText: 'one\ny\nz\nthree' }] } })

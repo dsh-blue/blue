@@ -1,7 +1,7 @@
 {
   "name": "@dsh-blue/blue-transcript",
   "description": "Blue terminal UI renderer for projection-backed transcript and canonical UI nodes",
-  "version": "0.1.2-alpha.1",
+  "version": "0.2.0-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -49,10 +49,6 @@
       "types": "./lib/types/status-context.d.ts",
       "default": "./lib/status-context.js"
     },
-    "./status-provider-owner": {
-      "types": "./lib/types/status-provider-owner.d.ts",
-      "default": "./lib/status-provider-owner.js"
-    },
     "./pane-activity": {
       "types": "./lib/types/pane-activity.d.ts",
       "default": "./lib/pane-activity.js"
@@ -64,10 +60,6 @@
     "./pane-btw": {
       "types": "./lib/types/pane-btw.d.ts",
       "default": "./lib/pane-btw.js"
-    },
-    "./plugin-host-bridge": {
-      "types": "./lib/types/plugin-host-bridge.d.ts",
-      "default": "./lib/plugin-host-bridge.js"
     },
     "./banner": {
       "types": "./lib/types/banner.d.ts",
@@ -97,18 +89,22 @@
     "@dsh-blue/blue-conversation": "workspace:*",
     "@dsh-blue/blue-frontend": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-agent": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent-default-model": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-attachment": "^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-attachment": "^0.1.2-alpha.3",
     "@dsh-blue/blue-app": "workspace:*",
     "@dsh-blue/blue-core": "workspace:*",
-    "@deepseek-ai/dsh-commands": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-llm": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-session": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-settings": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-tool-todo": "^0.1.2-alpha.2",
-    "@deepseek-ai/dsh-tools": "^0.1.2-alpha.2"
+    "@deepseek-ai/dsh-commands": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-llm": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-projection": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-title": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tool-todo": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "^0.1.2-alpha.3"
   },
   "devDependencies": {
     "@dsh-blue/blue-api": "workspace:*",
@@ -116,17 +112,21 @@
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3",
-    "@deepseek-ai/dsh-agent": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-agent-default-model": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-attachment": "0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-default-model": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-presets": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-attachment": "0.1.2-alpha.3",
     "@dsh-blue/blue-app": "workspace:*",
     "@dsh-blue/blue-core": "workspace:*",
-    "@deepseek-ai/dsh-commands": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-llm": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-session": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-settings": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-tool-todo": "0.1.2-alpha.2",
-    "@deepseek-ai/dsh-tools": "0.1.2-alpha.2"
+    "@deepseek-ai/dsh-commands": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-invariants": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-llm": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-projection": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-title": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tool-todo": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3"
   }
 }

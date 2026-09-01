@@ -8,4 +8,4 @@ dsh plugin --profile blue-dev add @dsh-blue-example/bottom-log
 ```
 
 It has no timer or background reader; a real plugin would update domain state
-outside `render()` and call its host-owned refresh handle.
+outside `render()` and call the pane registration's `refresh()`.

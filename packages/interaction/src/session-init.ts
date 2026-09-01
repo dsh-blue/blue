@@ -15,6 +15,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandResult } from '@deepseek-ai/dsh-commands'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 /**
  * The canned exploration prompt `/init` submits as a follow-up turn: the
@@ -46,15 +47,17 @@ export function registerInitCommand(ctx: Context): () => void {
     name: 'init',
     description: 'Analyze the codebase and write AGENTS.md',
     handler: (): CommandResult => {
-      const session = ctx.blueSessionReader.current()
-      if (session === null) {
+      const agent = ctx.blueCurrentAgent.current()
+      if (agent === null) {
         return { kind: 'error', text: 'no active session' }
       }
-      if (session.status !== 'idle') {
+      if (agent.status !== 'idle') {
         return { kind: 'error', text: 'cannot run /init while the agent is running' }
       }
-      const submitted = ctx.blueSessionActions.followup([{ type: 'text', text: INIT_PROMPT }])
-      if (!submitted.ok) return { kind: 'error', text: submitted.message }
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: INIT_PROMPT }],
+        source: { kind: 'user' },
+      }))
       return { kind: 'success', text: 'analyzing the codebase to write AGENTS.md' }
     },
   })

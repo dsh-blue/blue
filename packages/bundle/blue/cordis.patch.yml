@@ -1,137 +1,74 @@
-# The dsh-blue bundle patch: the Blue interactive terminal UI over dsh-base.
-# It mounts no Host, HTTP server, Web runtime, or browser plugin. An ordinary
-# provider plugin injects `cmdlineArgs`, parses the optional task positional
-# (`dsh --profile blue [task]` and `--resume <id>`) and this app's --help,
-# then the app driver creates or resumes an Agent through the core registry
-# and publishes renderer-neutral snapshots, actions, and projection values
-# through app-owned services for the transcript and interaction layers.
+# Blue is an ordinary Cordis composition over dsh-base. Plugins inherit dsh
+# services directly and opt into terminal UI through bluePanes, blueStatus,
+# blueOverlays, and blueEditorExtensions.
 
 - id: system-prompt
   config:
     persona: >-
       You are a coding agent. Your working directory is {{cwd}}.
 
-# The shared module-reload HMR row stays off; the launcher's watch-only
-# fallback still keeps the user patch layers live until the run exits.
 - id: hmr
   disabled: true
 
-# --- Thin-host migration (agent plane behind presets) ------------------------
-# The base bundle mounts the whole agent plane (tools, persona assembly,
-# plan mode, compaction, delegation) process-wide in the global scope layer.
-# Blue follows the web-app bundle's host-plane ownership ruling instead
-# (packages/bundle/web-app/cordis.patch.yml in the harness tree): the agent
-# plane moves behind agent presets, so a session's tool surface is the
-# composition its preset selects — `/preset` switches it honestly instead of
-# layering preset rows over the global defaults. Disabling rather than
-# deleting is the same deliberate choice the web-app makes: the base is
-# shared, and a row absent from a surface overlay would silently reappear
-# the day someone reorders the composition.
-#
-# Host plane stays: the registries themselves (tools, jobs, skill, goals,
-# subagents), the sandbox and approval stack, persistence, the model route,
-# the token meter, shell-env, `tool-subagent-report` (registers a continuable
-# setup on the subagent singleton, which is not scope-aware), and the
-# `system-prompt` persona row (the fallback for agents bound to no preset).
-# The fallback uses only `cwd`: spawned children can reach this row without
-# inheriting the preset's `model` prompt variable.
-#
-# Keep this list in lockstep with the web-app bundle's disable list: when the
-# base grows a new agent-plane row, both surfaces must rule on it.
+# Move the model-facing agent plane behind dsh agent presets, matching the
+# upstream Web composition. Host registries and controllers remain ordinary
+# root services shared by Blue and external Cordis plugins.
 - id: tool-bash
   disabled: true
-
 - id: tool-pwsh
   disabled: true
-
 - id: tool-jobs
   disabled: true
-
 - id: tool-fs
   disabled: true
-
 - id: tool-fs-search
   disabled: true
-
 - id: tool-str-replace-editor
   disabled: true
-
 - id: skill-filesystem
   disabled: true
-
 - id: tool-skill
   disabled: true
-
 - id: command-goal
   disabled: true
-
 - id: tool-goal
   disabled: true
-
 - id: plan-mode
   disabled: true
-
 - id: compaction-basic
   disabled: true
-
 - id: command-compact
   disabled: true
-
 - id: tool-result-pruner
   disabled: true
-
 - id: tool-subagent-control
   disabled: true
-
 - id: tool-subagent-list-agents
   disabled: true
-
 - id: tool-subagent
   disabled: true
-
 - id: tool-subagent-fork
   disabled: true
-
 - id: workflow-worker-thread
   disabled: true
-
 - id: tool-workflow
   disabled: true
-
 - id: tool-ralph
   disabled: true
-
 - id: agent-instructions
   disabled: true
-
 - id: tool-todo
   disabled: true
-
 - id: tool-web
   disabled: true
 
-# --- Session-title cadence (S30) ---------------------------------------------
-# The base ships the first-prompt title provider: one auxiliary-model title
-# per session, derived from the opening message, never revised. Blue runs
-# the Claude Code shape instead — the title tracks the conversation, so
-# every human message re-titles and a mis-derived title self-corrects on
-# the next one. The session-title service accepts one provider at most, so
-# the swap is a pair: this disable, plus the all-prompts sibling row below
-# carrying the same policy config as the base row it replaces.
 - id: session-title-llm
   disabled: true
 
 - insert:
-    # The shipped standard/cordis/PTC presets opt their delegation tools into
-    # host-owned model selection. Keep the provider in Host scope, matching the
-    # upstream web-app composition, so the preset rows can mount unchanged.
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
-    # The upstream roster owns the alpha.2 shipped root (`standard`, `minimal`,
-    # `ptc`, and `cordis`) and the user's writable root. Blue adds one immutable
-    # system root containing only `blue-cordis`; no upstream preset is copied,
-    # aliased, or shadowed by this bundle.
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
       config:
@@ -142,68 +79,17 @@
         includeShippedRoot: true
         includeUserRoot: true
 
-    # The dynamic-cordis host runner, host plane, mirroring the web-app's
-    # provider but wrapped in Blue's private creative realm. Dynamic child
-    # Fibers cannot resolve Blue renderer, command, session-projection, approval,
-    # or plan services from this realm; `bluePluginHost` deliberately stays
-    # inherited as the only Blue UI route. The runner itself still resolves
-    # the host `tools` and Agent ownership plane it requires. Without the
-    # nested runner the shipped `cordis` and `blue-cordis` presets fail their
-    # activation audit.
-    - id: blue-creative-host
-      name: cordis:group
-      group: true
-      isolate:
-        blueScreen: true
-        blueKeymap: true
-        blueTerminalInfo: true
-        blueComponents: true
-        blueTheme: true
-        blueThemeModels: true
-        blueNotifications: true
-        blueStartup: true
-        blueCommandModels: true
-        blueContextFeature: true
-        blueConversationProjection: true
-        blueBottomPanes: true
-        blueEditorHost: true
-        blueEditorModels: true
-        blueHarnessActionAdapter: true
-        blueHarnessModelAdapter: true
-        blueHarnessProjectionAdapter: true
-        blueHarnessQuestionAdapter: true
-        blueHarnessSessionAdapter: true
-        blueInteractionState: true
-        blueLocale: true
-        blueProjectionRegistry: true
-        blueRequests: true
-        blueRetractions: true
-        blueSessionActions: true
-        blueSessionBinding: true
-        blueSessionFacts: true
-        blueSessionProjections: true
-        blueSessionReader: true
-        bluePluginControl: true
-        blueSkillsCatalog: true
-        blueStatusEntries: true
-        blueToolModels: true
-        blueTranscriptModels: true
-        commands: true
-        attachments: true
-        sessionProjections: true
-        sessionQuery: true
-        sessionTitle: true
-        approval: true
-        permissionPresets: true
-        planMode: true
-      config:
-        - id: cordis-host-runner
-          name: '@deepseek-ai/dsh-cordis-host-runner'
+    # Dynamic Cordis plugins enter the same service graph as official Blue
+    # code. There is no private realm, service deny-list, or Blue host facade.
+    - id: cordis-host-runner
+      name: '@deepseek-ai/dsh-cordis-host-runner'
 
-    # The all-prompts half of the session-title cadence swap above: the
-    # same auxiliary-model title policy as the base's first-prompt row
-    # (words/bytes/token/timeout values copied verbatim), registering the
-    # provider that re-titles on every human message.
+    - id: workspace
+      name: '@deepseek-ai/dsh-workspace'
+
+    - id: session-controller
+      name: '@deepseek-ai/dsh-api-session-controller'
+
     - id: session-title-all-prompts-llm
       name: '@deepseek-ai/dsh-session-title-all-prompts-llm'
       config:
@@ -213,245 +99,72 @@
         maxOutputTokens: 64
         timeoutMs: 60000
 
-    # --- Baseline segment -----------------------------------------------------
-    # The plain baseline is this nine-row segment plus the four assembly rows
-    # at the bottom. It is the complete, self-sufficient Blue UI: the whole
-    # fifteen-row enhancement segment between them can be dropped and the
-    # bundle still boots and renders the projection-backed conversation.
+    # Direct Blue UI services. Plugin lifetime is ordinary Cordis Fiber lifetime.
+    - id: blue-api
+      name: '@dsh-blue/blue-api'
 
-    # Blue's official runtime shares a private Cordis realm for management
-    # authority and raw app backing services. The public `bluePluginHost`
-    # intentionally keeps the default label so ordinary plugin siblings can
-    # request their manifest-scoped facade without resolving owner authority.
-    - id: blue-runtime-private
-      name: cordis:group
-      group: true
-      isolate:
-        bluePluginControl: true
-        blueSessionActions: true
-        blueSessionProjections: true
-        blueSessionReader: true
+    - id: blue-frontend
+      name: '@dsh-blue/blue-frontend'
+
+    - id: blue-core
+      name: '@dsh-blue/blue-core'
+
+    - id: blue-theme-dark
+      name: '@dsh-blue/blue-core/theme-dark'
+
+    - id: blue-conversation
+      name: '@dsh-blue/blue-conversation'
+
+    - id: blue-startup
+      name: '@dsh-blue/blue-app/startup'
+
+    - id: blue-app
+      name: '@dsh-blue/blue-app'
       config:
-        # Blue core: the tree's only pi-tui adapter. Starts the terminal and
-        # registers the blueScreen/blueKeymap/blueTerminalInfo/blueComponents
-        # services.
-        # Beta API host: validates and scopes third-party contributions before
-        # any renderer-facing Blue package is activated.
-        - id: blue-api-host
-          name: '@dsh-blue/blue-api'
+        task: !!js ctx.blueStartup.task
+        resume: !!js ctx.blueStartup.resume
 
-        # Renderer-neutral locale service plus the official Harness
-        # locale.preference settings adapter. Package catalogs remain owned by
-        # the interaction/transcript rows that render their copy.
-        - id: blue-locale
-          name: '@dsh-blue/blue-harness-adapter/locale'
+    - id: blue-banner
+      name: '@dsh-blue/blue-transcript/banner'
 
-        - id: blue-core
-          name: '@dsh-blue/blue-core'
+    - id: blue-transcript
+      name: '@dsh-blue/blue-transcript'
 
-        # Blue theme (plain baseline segment): the built-in dark palette,
-        # providing the blueTheme service as its own fiber.
-        - id: blue-theme-dark
-          name: '@dsh-blue/blue-core/theme-dark'
+    - id: blue-transcript-official
+      name: '@dsh-blue/blue-transcript/official-model'
 
-        # Welcome banner: the kimi-style single-column box rendered once at boot
-        # as the first scroll-area child (logo-headed welcome lines, then the
-        # Directory/Model/Version rows; model · provider from agentDefaultModel,
-        # cwd).
-        # Sits before blue-transcript on purpose: both fibers resolve in the same
-        # blueComponents activation round, so the earlier row keeps the banner
-        # first in the scroll area across initial mounts and /theme reloads.
-        - id: blue-banner
-          name: '@dsh-blue/blue-transcript/banner'
+    - id: blue-status-basic
+      name: '@dsh-blue/blue-transcript/status-basic-model'
+    - id: blue-status-cwd
+      name: '@dsh-blue/blue-transcript/status-cwd'
+    - id: blue-status-git
+      name: '@dsh-blue/blue-transcript/status-git'
+    - id: blue-status-title
+      name: '@dsh-blue/blue-transcript/status-title'
+    - id: blue-status-context
+      name: '@dsh-blue/blue-transcript/status-context'
+    - id: blue-status-mode
+      name: '@dsh-blue/blue-interaction/mode-status'
 
-        # Transcript renderer adapter: mounts the semantic model registries and
-        # the two-row canonical status footer bottom-pinned above the input editor.
-        - id: blue-transcript
-          name: '@dsh-blue/blue-transcript'
+    - id: blue-pane-activity
+      name: '@dsh-blue/blue-transcript/pane-activity'
+    - id: blue-pane-queue
+      name: '@dsh-blue/blue-interaction/pane-queue'
+    - id: blue-pane-todo
+      name: '@dsh-blue/blue-transcript/pane-todo'
+    - id: blue-pane-btw
+      name: '@dsh-blue/blue-transcript/pane-btw'
+    - id: blue-pane-agents
+      name: '@dsh-blue/blue-transcript/pane-agents'
 
+    - id: blue-attachments
+      name: '@dsh-blue/blue-interaction/attachments'
+    - id: blue-paste-image
+      name: '@dsh-blue/blue-interaction/paste-image'
+      config:
+        backend: auto
+    - id: blue-editor-plus
+      name: '@dsh-blue/blue-interaction/editor-plus'
 
-        # Baseline footer entry: the model name alone at priority 0, in the
-        # full-strength text tier (the S15 kimi identity: the brightest thing in
-        # footer), registered as a canonical status node and consumed by
-        # the transcript footer bridge.
-        - id: blue-status-basic
-          name: '@dsh-blue/blue-transcript/status-basic-model'
-
-        # Frontend-runtime conversation is baseline, not an optional enhancement:
-        # the domain producer owns the official append-origin transcript and shared
-        # status/bottom-pane facts; the renderer consumer reads only whole projections.
-        - id: blue-conversation
-          name: '@dsh-blue/blue-conversation'
-
-        - id: blue-transcript-official
-          name: '@dsh-blue/blue-transcript/official-model'
-
-        # --- Enhancement segment --------------------------------------------------
-        # Optional layers over the plain baseline; the whole segment can be
-        # dropped without breaking it. Bottom panes mount through
-        # blueScreen.addBottomChild, so the dock's render order is the plugin
-        # mount order — and the loader mounts sibling rows CONCURRENTLY, so raw
-        # row order alone does not pin the dock. What orders it is the
-        # blueComponents activation round: the transcript, activity, todo, and
-        # btw plugins inject blueComponents, so their fibers activate when it
-        # appears, in row order; the queue pane carries a row-level
-        # `inject: [blueComponents, blueSessionReader, blueSessionActions]` pin to
-        # join the same round after the app-owned session boundary is available
-        # (activity → queue → todo → btw), and the interaction row's input
-        # plugin is created only inside interaction's apply, subscribing after
-        # every row fiber, so the editor mounts last.
-        # (Pinning on blueStatusEntries instead would make the interaction fiber a
-        # transitive blueTheme dependent and /theme would dispose its own
-        # handler's fiber mid-swap.)
-
-        # Editor plus: the '!' bash mode with shell echo, and slash-command /
-        # '@'-file autocomplete, layered over the shared input editor through the
-        # 'blue/input-editor-changed' event (so row order against blue-input does
-        # not matter).
-        - id: blue-editor-plus
-          name: '@dsh-blue/blue-interaction/editor-plus'
-
-        # Attachment store: the harness 'attachments' service (a filesystem
-        # image store under $DSH_BLUE_ATTACHMENT_DIR / $DSH_HOME / ~/.dsh).
-        # Mounts no screen child; row order is only pinned against paste-image,
-        # which injects the service and therefore activates after this row.
-        - id: blue-attachments
-          name: '@dsh-blue/blue-interaction/attachments'
-
-        # Image paste: the contextual Ctrl-V action that admits a clipboard
-        # image through the attachment store, inserts its '[image #N]' marker
-        # into the shared editor, and splits the markers into image content
-        # blocks on submit. Injects 'attachments' (above), so it always mounts
-        # after the store. Auto selects the session-native backend first; profile
-        # overlays may set wayland/x11 to forbid cross-protocol fallback.
-        - id: blue-paste-image
-          name: '@dsh-blue/blue-interaction/paste-image'
-          config:
-            backend: auto
-
-        # Working-directory footer entry: the abbreviated session cwd (priority
-        # 5, muted tier) — '~' under home, else the last three segments.
-        - id: blue-status-cwd
-          name: '@dsh-blue/blue-transcript/status-cwd'
-
-        # Git footer entry: the full badge 'branch [+a -d ↑u↓v]' (priority 10,
-        # muted tier) from a TTL-cached probe (branch 5s, status 15s, diff counts
-        # only while dirty); renders nothing outside a git repository.
-        - id: blue-status-git
-          name: '@dsh-blue/blue-transcript/status-git'
-
-        # Session-title footer entry: the folded session title (the upstream
-        # session-title service, all-prompts cadence above) right-aligned on the
-        # footer's first band (priority 30, muted tier — the slot the rotating
-        # tips occupied before retiring to the activity pane); renders nothing
-        # while the session is untitled.
-        - id: blue-status-title
-          name: '@dsh-blue/blue-transcript/status-title'
-
-        # Session-mode footer badge (S24a): 'plan' (accent, a queued entry
-        # shows the pending ellipsis) or 'yolo' (warning) while either is in
-        # force; normal renders nothing. Display-only fiber reading the app-owned
-        # mode snapshot; no Harness Agent or controller crosses into the renderer.
-        - id: blue-status-mode
-          name: '@dsh-blue/blue-interaction/mode-status'
-
-        # Context footer entry: the latest model step's context occupancy —
-        # 'context: N% (used/window)' when the adapter advertises a window, else
-        # the bare 'ctx N' (priority 20, text tier, right-aligned on the
-        # footer's second band).
-        - id: blue-status-context
-          name: '@dsh-blue/blue-transcript/status-context'
-
-        # Activity pane: the kimi mode machine over projected conversation facts
-        # — moon + teaching tip while waiting or running tools, braille
-        # working… while composing, empty while thinking (the transcript's
-        # thinking block owns the spinner), hidden while a dialog occupies the
-        # editor slot, and a one-row idle placeholder once anything has run. It
-        # injects blueComponents itself, joining the activation round that pins
-        # its dock position.
-        - id: blue-pane-activity
-          name: '@dsh-blue/blue-transcript/pane-activity'
-          inject: [blueComponents, blueSessionFacts]
-
-        # Queue pane: the attached agent's queued inbox messages, one row each,
-        # refreshed after inbox mutations without taking editor-history keys.
-        # Same blueComponents dock-order pin as the activity pane.
-        - id: blue-pane-queue
-          name: '@dsh-blue/blue-interaction/pane-queue'
-          inject: [blueComponents, blueSessionReader, blueSessionActions]
-
-        # Todo pane: the session's todo list (whole-list todo/write snapshots),
-        # with the global Ctrl-T collapse toggle.
-        - id: blue-pane-todo
-          name: '@dsh-blue/blue-transcript/pane-todo'
-          inject: [blueComponents, blueSessionFacts]
-
-        # Side-question pane and its /btw command: asks the app-owned action seam
-        # for a throwaway side session and renders its official projection.
-        - id: blue-pane-btw
-          name: '@dsh-blue/blue-transcript/pane-btw'
-          inject: [blueComponents, blueSessionActions]
-
-        # Subagent pane (S33): the running subagent group pinned directly above
-        # the editor (the last dock row before it), rendering the group card
-        # over spawn-class calls projected into the agents channel — the kimi
-        # swarm-pane semantics. Injects blueComponents so its fiber joins the
-        # same activation round as the other panes, keeping the dock order
-        # (activity → queue → todo → btw → agents → editor) in row order.
-        - id: blue-pane-agents
-          name: '@dsh-blue/blue-transcript/pane-agents'
-          inject: [blueComponents, blueSessionFacts]
-
-        # Public additive status adapter: projects renderer-neutral status nodes
-        # into the transcript-owned footer registry. Public panes and overlays are
-        # compiled by core's canonical surface bridge.
-        - id: blue-plugin-view-bridge
-          name: '@dsh-blue/blue-transcript/plugin-host-bridge'
-
-        # Exclusive status-provider owner: candidates stay inert in blue-api;
-        # this tree-scoped row follows the persisted blue.statusProvider choice,
-        # dry-renders at the live footer width, and retains the default on failure.
-        - id: blue-status-provider-owner
-          name: '@dsh-blue/blue-transcript/status-provider-owner'
-          inject: [blueStatusComposition, blueSessionReader]
-
-        # --- Assembly segment -------------------------------------------------------
-        # The plain baseline's closing rows: the input editor with its built-in
-        # commands and overlays, the startup provider, and the app driver.
-
-        # Interaction: the input editor, built-in commands (/quit, /resume, /new,
-        # /fork, /sessions, /help), the user-question provider, and the approval
-        # answerer.
-        - id: blue-interaction
-          name: '@dsh-blue/blue-interaction'
-
-        # Exclusive editor-provider owner: candidates remain inert until the
-        # persisted blue.editorProvider id selects one. The owner waits for the
-        # interaction tree's stable editor host and falls back to blue.default.
-        - id: blue-editor-provider-owner
-          name: '@dsh-blue/blue-interaction/editor-provider-owner'
-          inject: [blueEditorHost]
-
-        # Public additive interaction adapter: projects capability-scoped plugin
-        # commands into the harness registry and notifications into the mounted
-        # editor's transient notice channel. Duplicate owner command names fail.
-        - id: blue-plugin-interaction-bridge
-          name: '@dsh-blue/blue-interaction/plugin-host-bridge'
-
-        - id: blue-startup
-          name: '@dsh-blue/blue-app/startup'
-
-        # Reads its launch values from the ordinary blueStartup provider; the
-        # plugin's own inject waits for the core Agent services and blueScreen.
-        - id: blue-app
-          name: '@dsh-blue/blue-app'
-          inject: [blueStartup, agentPresets]
-          config:
-            task: !!js ctx.blueStartup.task
-            resume: !!js ctx.blueStartup.resume
-
-        # Public session capability owner: mounts only after blue-app has
-        # synchronously provided its readonly reader and projection source.
-        - id: blue-plugin-session-bridge
-          name: '@dsh-blue/blue-app/plugin-host-session-bridge'
-          inject: [bluePluginControl, blueSessionReader, blueSessionProjections]
+    - id: blue-interaction
+      name: '@dsh-blue/blue-interaction'

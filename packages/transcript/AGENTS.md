@@ -1,104 +1,29 @@
 # `@dsh-blue/blue-transcript`
 
-Repo-wide rules live in the root [AGENTS.md](../../AGENTS.md). This package is
-the TUI renderer for canonical transcript, status, bottom-pane, and tool
-models; it may depend on core but never exposes renderer objects upstream.
+Transcript owns the projection-backed transcript renderer, tool presentation,
+status footer, and shipped pane/status contributors.
 
-## Boundary
+It consumes the exact Agent from `blueCurrentAgent` and reads native
+`sessionProjections` snapshots. It may consume native dsh tool, command,
+settings, title, and model services where required. It must not fold a second
+copy of Harness session events or expose Agent/Session through renderer models.
 
-Transcript reads current-session facts only through app-owned
-`blueSessionReader`/`blueSessionProjections` and consumes the official
-`blueConversation` projections. It must not observe or fold raw Harness session
-events. Agent-scoped tool presentation comes through the app's official
-presenter seam, then becomes canonical `BlueUiNode` data before rendering.
+Official conversation projection is the transcript source of truth.
+Read/search grouping derives bounded semantic facts at the projection consumer
+layer. Renderer caches are keyed by stable model identity, width, and local
+presentation policy, and are disposed on replacement, eviction, detach, or
+unload.
 
-The parent Fiber creates `SessionFactsService`, `TranscriptModelService`,
-`BlueModelToolService`, the package-private status and bottom-pane registries,
-and the tree-scoped status composition/presentation policy. Theme and locale
-changes invalidate presentation caches; no product state lives in a module
-singleton.
+Assistant Markdown is handed to core's shared Markdown adapter. Transcript
+does not parse Mermaid itself; streamed fences remain source until closed, at
+which point core may enhance them or preserve the source fallback.
 
-## Ownership
+Status producers register directly with `blueStatus`; pane producers register
+directly with `bluePanes`. Blue's shipped rows use the same definitions and
+Fiber cleanup as external plugins. There are no package-private status/pane
+registries, public bridges, provider candidates, or provider selection state.
 
-`official-model.ts` waits for the effect-scoped conversation-projection
-readiness marker, then attaches to the current reader epoch and monotonic
-projection sequence. Session/key mismatches, stale replay, and post-unload work
-are rejected. `session-facts.ts` owns derived title/status/direct-child facts
-and clears them before notifying on a session generation change.
-
-Read/search grouping happens at this projection-consumer layer, not in domain
-or core. Presenter vocabulary determines a read/search call; thinking is
-transparent, while turn/content boundaries split runs. Groups retain bounded
-semantic facts/previews and render the by-file/detail shape locally. Raw
-fallback envelopes are summarized without exposing another event fold or
-unbounded file/tool output.
-
-`TranscriptPresentationPolicy` is frontend-tree state. It owns expansion,
-completed-turn visibility, recent-turn scope, and user-message folding.
-`TranscriptModelService` reconciles by stable model id, bounds retained
-entries, reuses frames only for an unchanged model/width/policy state, and
-disposes renderer resources on replacement, eviction, detach, or unload.
-
-`BlueStatusEntryService` is the private additive fixed-footer registry;
-producers publish canonical `BlueStatusNode` and layout metadata. The separate
-`BlueStatusCompositionService` selects either `blue.default` or one explicitly
-configured provider. Candidates are inert, dry-rendered at the actual footer
-width, fenced by session/tree generation, and activated atomically. Failure
-keeps a same-session last-known-good until its bounded breaker restores the
-default; desired settings are never rewritten by fallback.
-
-`BlueBottomPaneService` accepts only Blue-owned bottom panes. Priority controls
-scarce-row allocation and proximity to the editor. Public panes/overlays do not
-enter it; core's public surface bridge owns them. Activity, todo, agents, BTW,
-and interaction's queue retain narrow renderer adapters only for behavior not
-yet expressible by canonical nodes; each adapter keeps a documented deletion
-condition in source and is clamped through core width truth. Activity's passive
-rotation teaches only stable commands/features; focus- or state-sensitive key
-guidance belongs to the active interaction surface. Todo's Ctrl-T hint remains
-pane-local because it describes that pane's hidden content.
-
-BTW owns one side-session handle for one pane lifetime, reads its official
-conversation projection through the opaque identity, and disposes on close or
-unload. App retains parent seeding, Agent filtering, and action ownership.
-
-`BlueModelToolService` converts official presentation facts to canonical call
-and result nodes. The semantic renderer owns card status/header/chrome and
-bounded expansion; it does not reintroduce the removed frontend View adapter,
-intent registry, or renderer callback in shared models.
-
-Assistant bodies use core's held rich Markdown component. Closed Mermaid
-fences render in the conversation stream; incomplete or rejected diagrams
-remain source. Transcript does not parse Mermaid or own a second diagram
-cache.
-
-## Change Rules
-
-- Every row fits `render(width)` and uses `blueComponents` width/compiler
-  operations. Do not import core-private chrome or implement local width math.
-- Image bytes stay renderer-owned and late-bound. Projection/frontend models
-  carry references and semantic facts, not terminal payloads.
-- The additive public status bridge and Experimental status-provider owner are
-  separate Fibers with separate capability lifetime. Both use private
-  `bluePluginControl`; ordinary plugins cannot enter internal registries.
-- Locale catalogs/subscriptions are Fiber-owned. Translate Blue chrome only,
-  not user text, paths, ids, tool output, or upstream errors.
-- Do not restore the removed generic StatusModel/DockModel, frontend View,
-  intent/fold/child-event compatibility layers, or public dock-model subpath.
-  New behavior enters as projection/action + canonical node + renderer adapter.
-- Runtime entries are derived from package exports; subpath changes also update
-  the manifest files whitelist, bundle row, and direct lifecycle tests.
-
-## Verification
-
-Use `pnpm run verify:changed` for focused model/renderer edits. Projection
-attachment, provider/status composition, bottom-pane allocation, tool
-presentation, public bridge, exports, or bundle rows require
-`pnpm run verify:full` and whole-tree e2e.
-
-Every content renderer and retained bottom-pane adapter participates in
-`tests/width-scan.spec.ts` through the real registry/gutter path. Preserve
-focused tests for replay/live convergence, epoch/sequence fencing, grouping,
-bounded previews, cache disposal, locale/theme invalidation, provider
-swap/fallback/breaker/unload, side-session cleanup, and public owner
-gap/replay. Version or package-surface changes also run
-`pnpm run check:lib`, `pnpm run check:pack`, and the version consistency spec.
+Every row must fit `render(width)` and all width operations use core helpers.
+Locale translates Blue chrome only. Lifecycle, projection, pane, status, tool
+presentation, or width changes require the owning suite and width scan, bundle
+e2e, `pnpm run verify:full`, and dedicated-profile acceptance.

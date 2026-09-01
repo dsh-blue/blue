@@ -1,390 +1,189 @@
-/**
- * The mode-family command over the real command runtime and session log:
- * `/yolo` explicit and bare toggles (the bare-off re-dispatch and the
- * command/run records it leaves), the fold-consistent argument semantics,
- * the plan exit on yolo-on, the Shift+Tab cycle order (via a stub `/plan`
- * standing in for the upstream command), the no-session and
- * plan-absent-degraded cycles, the session-switch/late-activation restore,
- * and the deferred plan/yolo exclusivity watcher.
+/** Native dsh projection and command-backed mode cycling tests.
+ * @module @dsh-blue/blue-interaction/tests/mode-commands
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
-import * as commandsPlugin from '../src/commands-plugin.ts'
+import { cycleMode, sessionModeSnapshot } from '../src/mode-commands.ts'
 import { setSharedEditor } from '../src/editor-instance.ts'
-import { cycleMode } from '../src/mode-commands.ts'
+import type { PermissionPresetsService } from '../src/permission-panel.ts'
 import { fakeBlueContext } from './fakes.ts'
 
-/** The notices the shared editor received. */
 let notices: string[] = []
-const contexts = new WeakMap<Agent, Context>()
 
-function setYolo(agent: Agent, enabled: boolean): void {
-  contexts.get(agent)?.blueSessionActions.setYolo(enabled)
-}
+afterEach(() => { notices = [] })
 
-function yoloActive(agent: Agent): boolean {
-  return contexts.get(agent)?.blueSessionActions.modeState()?.mode === 'yolo'
-}
-
-afterEach(() => {
-  notices = []
-})
-
-/** The mutable state the fake plan-mode controller reports. */
-interface FakePlanMode {
-  state: { active: boolean, pending?: boolean }
-  set: ReturnType<typeof vi.fn>
-}
-
-function fakePlanMode(state: { active: boolean, pending?: boolean }): FakePlanMode {
-  return { state, set: vi.fn(() => 'committed') }
-}
-
+interface PlanState { active: boolean, pending: boolean }
 interface MountOptions {
-  attach?: boolean
-  planMode?: FakePlanMode
-  planCommand?: boolean
-  /** Seed the session log before the plugin mounts. */
-  seed?: string[]
+  readonly attached?: boolean
+  readonly plan?: false | Partial<PlanState>
+  readonly presets?: false | readonly { readonly name: string, readonly sandbox: string, readonly approval: string }[]
+  readonly currentPreset?: string
+  readonly registerPlan?: boolean
+  readonly registerPermission?: boolean
+  readonly resultFor?: (line: string) => { kind: 'success' | 'error', text?: string }
+  readonly throws?: unknown
 }
 
-async function mount(options: MountOptions = {}): Promise<{
-  ctx: Context
-  agent: Agent
-  fiber: { dispose(): Promise<void> }
-}> {
+async function mount(options: MountOptions = {}) {
   const { ctx } = fakeBlueContext()
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
   const session = ctx.sessions.create(SessionId('mode-spec'))
-  if (options.planMode !== undefined) {
-    ctx.provide('planMode', { get: () => ({ ...options.planMode!.state }), set: options.planMode!.set })
-  }
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
-  contexts.set(agent, ctx)
-  for (const args of options.seed ?? []) {
-    session.append('command/run', { commandId: `seed-${args}`, name: 'yolo', args })
+  ctx.provide('testSession', { current: options.attached === false ? null : agent })
+  const plan = options.plan === false ? undefined : { active: options.plan?.active === true, pending: options.plan?.pending === true }
+  vi.spyOn(ctx.sessionProjections, 'snapshot').mockImplementation(() => ({
+    asOfSeq: session.events.length - 1,
+    values: plan === undefined ? {} : { plan: { ...plan } },
+  }))
+
+  const presetRows = options.presets === false
+    ? undefined
+    : options.presets ?? [
+      { name: 'workspace-write', sandbox: 'workspace-write', approval: 'ask' },
+      { name: 'danger-full-access', sandbox: 'danger-full-access', approval: 'never' },
+    ]
+  let currentPreset = options.currentPreset ?? 'workspace-write'
+  if (presetRows !== undefined) {
+    ctx.provide('permissionPresets', {
+      names: presetRows.map(row => row.name),
+      current: () => currentPreset,
+      resolve: name => {
+        const row = presetRows.find(entry => entry.name === name)
+        if (row === undefined) throw new Error(`missing preset ${name}`)
+        return row
+      },
+      optionOf: name => ({ value: name, name }),
+    } satisfies PermissionPresetsService as never)
   }
-  if (options.attach !== false) {
-    ctx.provide('testSession', { current: agent, modelRef: undefined })
+
+  const runs: string[] = []
+  const execute = (line: string) => {
+    runs.push(line)
+    if (options.throws !== undefined) throw options.throws
+    const result = options.resultFor?.(line) ?? { kind: 'success' as const, text: `ran ${line}` }
+    if (result.kind === 'success') {
+      if (line === '/plan' && plan !== undefined) { plan.active = true; plan.pending = false }
+      if (line === '/plan off' && plan !== undefined) { plan.active = false; plan.pending = false }
+      if (line.startsWith('/permission ')) currentPreset = line.slice('/permission '.length)
+    }
+    return result
   }
-  if (options.planCommand === true) {
+  if (options.registerPlan !== false) {
     ctx.commands.register({
-      name: 'plan',
-      description: 'stub standing in for the upstream command',
-      handler: () => ({ kind: 'success' as const }),
+      name: 'plan', description: 'Toggle plan mode',
+      handler: invocation => execute(`/plan${invocation.rawInput}`),
+    })
+  }
+  if (options.registerPermission !== false) {
+    ctx.commands.register({
+      name: 'permission', description: 'Switch permission preset',
+      handler: invocation => execute(`/permission${invocation.rawInput}`),
     })
   }
   setSharedEditor(ctx, {
     editor: { focused: false, render: () => [], invalidate: () => {} } as never,
     submitPrompt: () => {},
-    notice: (text: string) => { notices.push(text) },
+    notice: text => { notices.push(text) },
   })
-  const fiber = await ctx.plugin(commandsPlugin)
-  return { ctx, agent, fiber }
+  return { ctx, agent, plan, runs, currentPreset: () => currentPreset }
 }
-
-const signal = (): AbortSignal => new AbortController().signal
-
-/** The args of every recorded /yolo run, in log order. */
-function yoloRuns(agent: Agent): string[] {
-  return agent.session.events
-    .filter((event) => event.type === 'command/run' && event.data.name === 'yolo')
-    .map((event) => (event.type === 'command/run' ? event.data.args : undefined))
-}
-
-describe('/yolo', () => {
-  it('registers with the hint and the /yes alias', async () => {
-    const { ctx, agent } = await mount()
-    const listed = ctx.commands.list(agent).find(command => command.name === 'yolo')
-    expect(listed?.input?.hint).toBe('[on|off]')
-    expect(listed?.description).toContain('auto-approval')
-    expect(ctx.blueInteractionState.aliases.canonicalOf('yes')).toBe('yolo')
-  })
-
-  it('bare toggle on: one run record with empty args, state on', async () => {
-    const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/yolo', [], signal())
-    expect(execution?.result).toMatchObject({ kind: 'success' })
-    expect(execution?.result.kind === 'success' && execution.result.text).toContain('yolo on')
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([''])
-  })
-
-  it('bare toggle off: re-dispatches the explicit form, folding off', async () => {
-    const { ctx, agent } = await mount()
-    await ctx.commands.execute(agent, '/yolo', [], signal())
-    const execution = await ctx.commands.execute(agent, '/yolo', [], signal())
-    expect(execution?.result.kind === 'success' && execution.result.text).toContain('yolo off')
-    expect(yoloActive(agent)).toBe(false)
-    // The bare record folds on; the explicit follow-up record disambiguates.
-    expect(yoloRuns(agent)).toEqual(['', '', ' off'])
-  })
-
-  it('explicit off records the off argument directly', async () => {
-    const { ctx, agent } = await mount()
-    setYolo(agent, true)
-    await ctx.commands.execute(agent, '/yolo off', [], signal())
-    expect(yoloActive(agent)).toBe(false)
-    expect(yoloRuns(agent)).toEqual([' off'])
-  })
-
-  it("any other non-empty argument means on (fold-consistent, no usage error)", async () => {
-    const { ctx, agent } = await mount()
-    const execution = await ctx.commands.execute(agent, '/yolo blah', [], signal())
-    expect(execution?.result).toMatchObject({ kind: 'success' })
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([' blah'])
-  })
-
-  it('turning on leaves plan first through the controller', async () => {
-    const planMode = fakePlanMode({ active: true })
-    const { ctx, agent } = await mount({ planMode })
-    await ctx.commands.execute(agent, '/yolo on', [], signal())
-    expect(yoloActive(agent)).toBe(true)
-    expect(planMode.set).toHaveBeenCalledWith(agent, false)
-  })
-
-  it('turning on succeeds without a composed plan mode', async () => {
-    const { ctx, agent } = await mount()
-    await ctx.commands.execute(agent, '/yolo on', [], signal())
-    expect(yoloActive(agent)).toBe(true)
-  })
-
-  it('surfaces a rejected structured yolo action', async () => {
-    const { ctx, agent } = await mount()
-    ;(ctx.blueSessionActions as unknown as {
-      setYolo: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
-    }).setYolo = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'mode write rejected' })
-    expect((await ctx.commands.execute(agent, '/yolo on', [], signal()))?.result)
-      .toEqual({ kind: 'error', text: 'mode write rejected' })
-  })
-
-  it('the bare-off re-dispatch surfaces one notice and the fallback guard', async () => {
-    const { ctx, agent } = await mount()
-    setYolo(agent, true)
-    const original = ctx.commands.execute.bind(ctx.commands)
-    let calls = 0
-    const spy = vi.spyOn(ctx.commands, 'execute').mockImplementation((dispatchAgent, line, images, dispatchSignal) => {
-      calls += 1
-      // The second call is the in-handler re-dispatch: report the command
-      // gone (the registration vanished mid-toggle).
-      if (calls === 2) return Promise.resolve(undefined)
-      return original(dispatchAgent, line, images, dispatchSignal)
-    })
-    const execution = await ctx.commands.execute(agent, '/yolo', [], signal())
-    spy.mockRestore()
-    expect(execution?.result).toEqual({ kind: 'error', text: 'failed to turn yolo off' })
-    expect(yoloRuns(agent)).toEqual([''])
-  })
-
-  it('preserves nested yolo-off errors and textless success results', async () => {
-    const failed = await mount()
-    setYolo(failed.agent, true)
-    ;(failed.ctx.blueSessionActions as unknown as {
-      executeCommand: () => Promise<{ result: { kind: 'error', text?: string } }>
-    }).executeCommand = async () => ({ result: { kind: 'error' } })
-    expect((await failed.ctx.commands.execute(failed.agent, '/yolo', [], signal()))?.result)
-      .toEqual({ kind: 'error', text: 'failed to turn yolo off' })
-
-    const succeeded = await mount()
-    setYolo(succeeded.agent, true)
-    ;(succeeded.ctx.blueSessionActions as unknown as {
-      executeCommand: () => Promise<{ result: { kind: 'success', text?: string } }>
-    }).executeCommand = async () => ({ result: { kind: 'success' } })
-    expect((await succeeded.ctx.commands.execute(succeeded.agent, '/yolo', [], signal()))?.result)
-      .toEqual({ kind: 'success' })
-  })
-})
 
 describe('cycleMode', () => {
-  it('normal → plan: dispatches the upstream /plan command', async () => {
-    const planMode = fakePlanMode({ active: false })
-    const { ctx, agent } = await mount({ planMode, planCommand: true })
-    await cycleMode(ctx)
-    const planRuns = agent.session.events
-      .filter((event) => event.type === 'command/run' && event.data.name === 'plan')
-    expect(planRuns).toHaveLength(1)
-    expect(yoloActive(agent)).toBe(false)
+  it('cycles normal -> plan -> yolo -> normal through native commands', async () => {
+    const world = await mount()
+    expect(sessionModeSnapshot(world.ctx, world.agent).mode).toBe('normal')
+
+    await cycleMode(world.ctx)
+    expect(world.runs).toEqual(['/plan'])
+    expect(sessionModeSnapshot(world.ctx, world.agent).mode).toBe('plan')
+
+    await cycleMode(world.ctx)
+    expect(world.runs).toEqual(['/plan', '/plan off', '/permission danger-full-access'])
+    expect(world.currentPreset()).toBe('danger-full-access')
+    expect(sessionModeSnapshot(world.ctx, world.agent).mode).toBe('yolo')
+
+    await cycleMode(world.ctx)
+    expect(world.runs).toEqual(['/plan', '/plan off', '/permission danger-full-access', '/permission workspace-write'])
+    expect(world.currentPreset()).toBe('workspace-write')
+    expect(sessionModeSnapshot(world.ctx, world.agent).mode).toBe('normal')
+    expect(notices).toEqual(['ran /plan', 'ran /permission danger-full-access', 'ran /permission workspace-write'])
   })
 
-  it('plan → yolo: exits plan and turns yolo on', async () => {
-    const planMode = fakePlanMode({ active: true })
-    const { ctx, agent } = await mount({ planMode, planCommand: true })
-    await cycleMode(ctx)
-    expect(planMode.set).toHaveBeenCalledWith(agent, false)
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([' on'])
+  it('turns off a concurrent plan selection when leaving yolo', async () => {
+    const world = await mount({ plan: { active: true }, currentPreset: 'danger-full-access' })
+    expect(sessionModeSnapshot(world.ctx, world.agent).mode).toBe('yolo')
+    await cycleMode(world.ctx)
+    expect(world.runs).toEqual(['/plan off', '/permission workspace-write'])
   })
 
-  it('yolo → normal: dispatches the explicit off', async () => {
-    const { ctx, agent } = await mount()
-    setYolo(agent, true)
-    await cycleMode(ctx)
-    expect(yoloActive(agent)).toBe(false)
-    expect(yoloRuns(agent)).toEqual([' off'])
-    expect(notices.some(text => text.includes('yolo off'))).toBe(true)
+  it('degrades to the available native axis', async () => {
+    const permissionsOnly = await mount({ plan: false })
+    await cycleMode(permissionsOnly.ctx)
+    expect(permissionsOnly.runs).toEqual(['/permission danger-full-access'])
+
+    notices = []
+    const planOnly = await mount({ plan: { active: true }, presets: false })
+    await cycleMode(planOnly.ctx)
+    expect(planOnly.runs).toEqual(['/plan off'])
+
+    notices = []
+    const absent = await mount({ plan: false, presets: false })
+    await cycleMode(absent.ctx)
+    expect(notices).toEqual(['mode switching is unavailable'])
   })
 
-  it('without a live session the cycle only notices', async () => {
-    const { ctx } = await mount({ attach: false })
-    await cycleMode(ctx)
-    expect(notices).toEqual(['no session is live yet'])
-  })
-
-  it('degrades to the two-state cycle when plan mode is not composed', async () => {
-    const { ctx, agent } = await mount()
-    await cycleMode(ctx)
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([' on'])
-    await cycleMode(ctx)
-    expect(yoloActive(agent)).toBe(false)
-    expect(yoloRuns(agent)).toEqual([' on', ' off'])
-  })
-
-  it('defaults an unavailable mode snapshot to normal', async () => {
-    const planMode = fakePlanMode({ active: false })
-    const { ctx, agent } = await mount({ planMode, planCommand: true })
-    ;(ctx.blueSessionActions as unknown as { modeState: () => undefined }).modeState = () => undefined
-    await cycleMode(ctx)
-    expect(agent.session.events.some(event => event.type === 'command/run' && event.data.name === 'plan')).toBe(true)
-  })
-
-  it('surfaces a dispatched error result through the error paint', async () => {
-    const planMode = fakePlanMode({ active: false })
-    const { ctx, agent } = await mount({ planMode })
-    ctx.commands.register({
-      name: 'plan',
-      description: 'stub standing in for the upstream command',
-      handler: () => ({ kind: 'error' as const, text: 'plan unavailable' }),
+  it('reports a yolo table that has no normal preset', async () => {
+    const world = await mount({
+      plan: false,
+      currentPreset: 'unconfined',
+      presets: [{ name: 'unconfined', sandbox: 'danger-full-access', approval: 'never' }],
     })
-    await cycleMode(ctx)
-    expect(notices).toContain('!plan unavailable!')
-    expect(yoloActive(agent)).toBe(false)
+    await cycleMode(world.ctx)
+    expect(world.runs).toEqual([])
+    expect(notices).toEqual(['normal mode is unavailable: no workspace-write/ask permission preset'])
   })
 
-  it('an unknown cycle target surfaces nothing (the command vanished)', async () => {
-    // No /plan stub registered: the dispatch resolves undefined.
-    const planMode = fakePlanMode({ active: false })
-    const { ctx, agent } = await mount({ planMode })
-    await cycleMode(ctx)
-    expect(yoloRuns(agent)).toEqual([])
+  it('publishes the last success, paints errors, and keeps textless success quiet', async () => {
+    const failed = await mount({
+      plan: { active: true },
+      resultFor: line => line === '/plan off'
+        ? { kind: 'success', text: 'left plan' }
+        : { kind: 'error', text: 'denied' },
+    })
+    await cycleMode(failed.ctx)
+    expect(failed.runs).toEqual(['/plan off', '/permission danger-full-access'])
+    expect(notices).toEqual(['!denied!'])
+
+    notices = []
+    const textless = await mount({ resultFor: () => ({ kind: 'success' }) })
+    await cycleMode(textless.ctx)
     expect(notices).toEqual([])
   })
 
-  it('a dispatch failure warns instead of throwing', async () => {
-    const { ctx } = await mount()
-    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    // A string rejection exercises describe()'s non-Error side.
-    const spy = vi.spyOn(ctx.commands, 'execute').mockRejectedValueOnce('append failed')
-    await expect(cycleMode(ctx)).resolves.toBeUndefined()
-    spy.mockRestore()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('append failed'))
-    warn.mockRestore()
+  it('guards detached sessions and missing native commands', async () => {
+    const detached = await mount({ attached: false })
+    await cycleMode(detached.ctx)
+    expect(notices).toEqual(['no session is live yet'])
+
+    notices = []
+    const missing = await mount({ registerPlan: false })
+    await cycleMode(missing.ctx)
+    expect(notices).toEqual(['mode command is unavailable: /plan'])
   })
 
-  it('describes Error dispatch failures in the warning path', async () => {
-    const { ctx } = await mount()
-    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    const spy = vi.spyOn(ctx.commands, 'execute').mockRejectedValueOnce(new Error('append exploded'))
-    await expect(cycleMode(ctx)).resolves.toBeUndefined()
-    spy.mockRestore()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('append exploded'))
-    warn.mockRestore()
-  })
-})
+  it('contains command dispatch failures in the logger', async () => {
+    const world = await mount({ throws: new Error('dispatch failed') })
+    const warn = vi.spyOn(world.ctx.logger, 'warn').mockImplementation(() => {})
+    await cycleMode(world.ctx)
+    expect(warn).toHaveBeenCalledWith('mode cycle dispatch failed: dispatch failed')
 
-describe('session restore', () => {
-  it('a session with logged yolo-on restores on mount (late activation)', async () => {
-    const { agent } = await mount({ seed: [''] })
-    expect(yoloActive(agent)).toBe(true)
-  })
-
-  it('a logged off (or nothing) stays off', async () => {
-    const { agent } = await mount({ seed: [' off'] })
-    expect(yoloActive(agent)).toBe(false)
-  })
-
-  it('test/session-changed restores the next agent from its log', async () => {
-    const { ctx, agent } = await mount()
-    const session = ctx.sessions.create(SessionId('mode-spec-next'))
-    session.append('command/run', { commandId: 'next-0', name: 'yolo', args: '' })
-    const next = { id: session.id, session, status: 'idle' } as unknown as Agent
-    ;(ctx.get('testSession') as { current: Agent | null }).current = next
-    contexts.set(next, ctx)
-    ctx.emit('test/session-changed', next)
-    expect(yoloActive(next)).toBe(true)
-  })
-})
-
-describe('the plan/yolo exclusivity watcher', () => {
-  it('a committed plan entry turns yolo off after the append settles', async () => {
-    const { agent } = await mount()
-    setYolo(agent, true)
-    agent.session.append('plan/mode', { active: true })
-    await vi.waitFor(() => { expect(yoloActive(agent)).toBe(false) })
-    expect(yoloRuns(agent)).toEqual([' off'])
-    expect(notices.some(text => text.includes('yolo off'))).toBe(true)
-  })
-
-  it('a plan exit event leaves yolo alone', async () => {
-    const { agent } = await mount()
-    setYolo(agent, true)
-    agent.session.append('plan/mode', { active: false })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([])
-  })
-
-  it('a plan entry on another session leaves yolo alone', async () => {
-    const { ctx, agent } = await mount()
-    setYolo(agent, true)
-    const other = ctx.sessions.create(SessionId('mode-spec-other'))
-    other.append('plan/mode', { active: true })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([])
-  })
-
-  it('a plan entry with yolo already off dispatches nothing', async () => {
-    const { agent } = await mount()
-    agent.session.append('plan/mode', { active: true })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(yoloRuns(agent)).toEqual([])
-  })
-
-  it('a vanished command surfaces no exclusivity notice', async () => {
-    const { ctx, agent } = await mount()
-    setYolo(agent, true)
-    const spy = vi.spyOn(ctx.commands, 'execute').mockResolvedValueOnce(undefined)
-    agent.session.append('plan/mode', { active: true })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    spy.mockRestore()
-    expect(notices).toEqual([])
-  })
-
-  it('a failed exclusivity dispatch warns instead of throwing', async () => {
-    const { ctx, agent } = await mount()
-    setYolo(agent, true)
-    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    const spy = vi.spyOn(ctx.commands, 'execute').mockRejectedValueOnce(new Error('append failed'))
-    agent.session.append('plan/mode', { active: true })
-    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith(expect.stringContaining('append failed')) })
-    spy.mockRestore()
-    warn.mockRestore()
-  })
-
-  it('unloading the command fiber removes the watcher', async () => {
-    const { agent, fiber } = await mount()
-    setYolo(agent, true)
-    await fiber.dispose()
-    agent.session.append('plan/mode', { active: true })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(yoloActive(agent)).toBe(true)
-    expect(yoloRuns(agent)).toEqual([])
+    const bare = await mount({ throws: 'bare failure' })
+    const bareWarn = vi.spyOn(bare.ctx.logger, 'warn').mockImplementation(() => {})
+    await cycleMode(bare.ctx)
+    expect(bareWarn).toHaveBeenCalledWith('mode cycle dispatch failed: bare failure')
   })
 })

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { BlueComponent, BlueFocusable } from '@dsh-blue/blue-core'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -15,15 +15,13 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SkillSummary } from '@deepseek-ai/dsh-skill'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { BlueEditorSubmitRequest, BlueEditorSubmitValue, BlueResult } from '@dsh-blue/blue-api'
+import type { BlueEditorSubmitRequest, BlueEditorSubmitValue } from '@dsh-blue/blue-api'
 import * as inputPlugin from '../src/input-plugin.ts'
 import { __setCatalogForTest } from '../src/skills-catalog.ts'
 import * as paneQueuePlugin from '../src/pane-queue.ts'
 import {
   getSharedEditor,
   mountEditorReplacement,
-  setEditorExtensions,
-  type EditorExtensionBinding,
 } from '../src/editor-instance.ts'
 import { setExternalEditorLauncher } from '../src/external-editor.ts'
 import { fakeBlueContext, KEY, type FakeBlueComponents, type FakeBlueEditor, type FakeScreen } from './fakes.ts'
@@ -66,17 +64,12 @@ function installEditorTransform(
   transform: (
     request: BlueEditorSubmitRequest,
     signal?: AbortSignal,
-  ) => BlueResult<BlueEditorSubmitValue> | Promise<BlueResult<BlueEditorSubmitValue>>,
+  ) => BlueEditorSubmitValue | Promise<BlueEditorSubmitValue>,
 ): void {
-  const entry = { id: 'spec.input-transform', transformSubmit: (request: BlueEditorSubmitRequest) => transform(request) }
-  const binding: EditorExtensionBinding = {
-    revision: 1,
-    entries: [entry],
-    async complete() { return { ok: true, value: [] } },
-    async transform(_entry, request, signal) { return transform(request, signal) },
-    async dispatch() { return { ok: true, value: undefined } },
-  }
-  setEditorExtensions(ctx, binding)
+  ctx.blueEditorExtensions.register({
+    id: 'spec.input-transform',
+    transformSubmit: (request, context) => transform(request, context.signal),
+  })
 }
 
 function imageRef(id: string): ImageAttachmentRef {
@@ -122,6 +115,7 @@ async function mount(options: {
   const agent = {
     id: session.id,
     session,
+    ctx: new Context(),
     status: options.running === true ? 'running' : 'idle',
     followup,
     cancel,
@@ -148,9 +142,11 @@ function type(editor: FakeBlueEditor, text: string): void {
 }
 
 describe('blue-input plugin', () => {
-  it('declares the app-owned retraction service required by its Escape path', () => {
+  it('declares every direct service used by request, retraction, and extension paths', () => {
+    expect(inputPlugin.inject).toContain('sessionProjections')
     expect(inputPlugin.inject).toContain('blueRequests')
     expect(inputPlugin.inject).toContain('blueRetractions')
+    expect(inputPlugin.inject).toContain('blueEditorExtensions')
   })
 
   it('mounts the editor and hint line focused at the bottom of the tree', async () => {
@@ -177,7 +173,7 @@ describe('blue-input plugin', () => {
   })
 
   it('pauses tail-follow, advertises new messages, and resumes on End', async () => {
-    const { ctx, screen, editor, hint, fiber } = await mount()
+    const { ctx, screen, editor, editorRoot, hint, fiber } = await mount()
     screen.contentScrollResult = true
     screen.contentPaused = true
     ctx.emit('blue/transcript-content-changed', screen.contentChanged())
@@ -199,6 +195,11 @@ describe('blue-input plugin', () => {
     expect(screen.contentPaused).toBe(false)
     expect(hint.render(80)).toEqual([])
 
+    screen.setFocus(null)
+    expect(screen.sendContentInput('x')).toBe(false)
+    screen.setFocus(editorRoot)
+    expect(screen.sendContentInput('x')).toBe(false)
+
     await fiber.dispose()
     expect(screen.sendContentInput('\x1b[F')).toBe(false)
   })
@@ -219,6 +220,8 @@ describe('blue-input plugin', () => {
     expect(hint.render(80)).toEqual(['~creating rewind branch...~'])
     ctx.emit('test/session-changed', agent)
     expect(hint.render(80)).toEqual([])
+    ;(ctx.get('testSession') as { current: Agent | null }).current = null
+    ctx.emit('test/session-changed', null)
   })
 
   it('submits plain text as a user follow-up message, records history, and clears the buffer', async () => {
@@ -247,39 +250,36 @@ describe('blue-input plugin', () => {
   })
 
   it('restores the action failure notice when a follow-up is rejected', async () => {
-    const { ctx, editor, hint, followup } = await mount()
-    ;(ctx.blueSessionActions as unknown as {
-      followup: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
-    }).followup = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'follow-up rejected' })
+    const { editor, hint, followup } = await mount()
+    followup.mockImplementationOnce(() => { throw new Error('follow-up rejected') })
     type(editor, 'cannot send')
     editor.handleInput(KEY.enter)
-    expect(followup).not.toHaveBeenCalled()
+    expect(followup).toHaveBeenCalledOnce()
     expect(hint.render(80)).toEqual(['~!follow-up rejected!~'])
+
+    followup.mockImplementationOnce(() => { throw 'bare follow-up rejection' })
+    type(editor, 'still cannot send')
+    editor.handleInput(KEY.enter)
+    expect(hint.render(80)).toEqual(['~!bare follow-up rejection!~'])
   })
 
   it('restores transformed image attachments when the follow-up is rejected', async () => {
     const { ctx, editor, hint, followup } = await mount()
     const ref = imageRef('rejected-extension-image')
     ctx.blueInteractionState.pasteImage.pastedImages.set('[image #1]', ref)
-    installEditorTransform(ctx, request => ({ ok: true, value: { text: `extended:${request.text}` } }))
-    ;(ctx.blueSessionActions as unknown as {
-      followup: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
-    }).followup = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'extension follow-up rejected' })
+    installEditorTransform(ctx, request => ({ text: `extended:${request.text}` }))
+    followup.mockImplementationOnce(() => { throw new Error('extension follow-up rejected') })
 
     type(editor, '[image #1] caption')
     editor.handleInput(KEY.enter)
     await vi.waitFor(() => expect(hint.render(80)).toEqual(['~!extension follow-up rejected!~']))
-    expect(followup).not.toHaveBeenCalled()
+    expect(followup).toHaveBeenCalledOnce()
     expect(ctx.blueInteractionState.pasteImage.pastedImages.get('[image #1]')).toBe(ref)
   })
 
   it('routes an editor extension failure notice through the hint line', async () => {
     const { ctx, editor, hint, followup } = await mount()
-    installEditorTransform(ctx, () => ({
-      ok: false,
-      code: 'BLUE_ACTION_REJECTED',
-      message: 'extension transform rejected',
-    }))
+    installEditorTransform(ctx, () => { throw new Error('extension transform rejected') })
 
     type(editor, 'keep this draft')
     editor.handleInput(KEY.enter)
@@ -294,7 +294,7 @@ describe('blue-input plugin', () => {
     const { ctx, editor, followup } = await mount({ running: true, retract })
     const ref = imageRef('retracted-extension-image')
     ctx.blueInteractionState.pasteImage.pastedImages.set('[image #1]', ref)
-    installEditorTransform(ctx, request => ({ ok: true, value: { text: `extended:${request.text}` } }))
+    installEditorTransform(ctx, request => ({ text: `extended:${request.text}` }))
 
     type(editor, '[image #1] caption')
     editor.handleInput(KEY.enter)
@@ -400,9 +400,7 @@ describe('blue-input plugin', () => {
       description: 'Poke the agent',
       handler: () => ({ kind: 'success' as const, text: 'poked' }),
     })
-    const commands = ctx.blueSessionActions.commands()
-    ;(ctx.blueSessionActions as unknown as { commands: () => readonly unknown[] }).commands
-      = () => [...commands, { name: 'plain' }]
+    ctx.commands.register({ name: 'plain', description: 'Plain command', handler: () => ({ kind: 'success' }) })
     // A match (bare slash or a prefix) renders nothing whether the dropdown
     // is up or closed — the S34 dogfood verdict retired the discovery tier
     // that double-rendered the catalog next to it; only the empty-result
@@ -498,18 +496,6 @@ describe('blue-input plugin', () => {
     editor.handleInput(KEY.enter)
     await vi.waitFor(() => {
       expect(hint.render(80)).toEqual(['~!boom!~'])
-    })
-  })
-
-  it('uses the generic command failure notice when an error has no text', async () => {
-    const { ctx, editor, hint } = await mount()
-    ;(ctx.blueSessionActions as unknown as {
-      executeCommand: () => Promise<{ result: { kind: 'error' } }>
-    }).executeCommand = async () => ({ result: { kind: 'error' } })
-    type(editor, '/fail-quietly')
-    editor.handleInput(KEY.enter)
-    await vi.waitFor(() => {
-      expect(hint.render(80)).toEqual(['~!command failed!~'])
     })
   })
 
@@ -953,14 +939,28 @@ describe('blue-input plugin', () => {
     })
 
     it('keeps the draft when the structured steer action is rejected', async () => {
-      const { ctx, editor, steer } = await mount()
-      ;(ctx.blueSessionActions as unknown as {
-        steer: () => { ok: false, code: 'BLUE_ACTION_REJECTED', message: string }
-      }).steer = () => ({ ok: false, code: 'BLUE_ACTION_REJECTED', message: 'steer rejected' })
+      const { editor, hint, steer } = await mount()
+      steer.mockImplementationOnce(() => { throw new Error('steer rejected') })
       type(editor, 'keep this')
-      expect(editor.onKey?.(KEY.ctrlS)).toBe(false)
+      expect(editor.onKey?.(KEY.ctrlS)).toBe(true)
       expect(editor.getText()).toBe('keep this')
-      expect(steer).not.toHaveBeenCalled()
+      expect(steer).toHaveBeenCalledOnce()
+
+      steer.mockImplementationOnce(() => { throw 'bare steer rejection' })
+      expect(editor.onKey?.(KEY.ctrlS)).toBe(true)
+      expect(hint.render(80)).toEqual(['~!bare steer rejection!~'])
+    })
+
+    it('dispatches Shift+Tab through the native plan command', async () => {
+      const { ctx, editor } = await mount()
+      const plan = vi.fn(() => ({ kind: 'success' as const, text: 'plan enabled' }))
+      ctx.commands.register({ name: 'plan', description: 'Toggle plan mode', handler: plan })
+      vi.spyOn(ctx.sessionProjections, 'snapshot').mockReturnValue({
+        asOfSeq: -1,
+        values: { plan: { active: false, pending: false } },
+      })
+      expect(editor.onKey?.(KEY.shiftTab)).toBe(true)
+      await vi.waitFor(() => expect(plan).toHaveBeenCalledOnce())
     })
 
     it('passes Ctrl-S through with an empty buffer', async () => {
@@ -1255,7 +1255,7 @@ describe('blue-input plugin', () => {
     it('fences a pending main transform when the side pane connects but not on a busy-only refresh', async () => {
       const { ctx, editor, followup } = await mount({ withAgent: true })
       const command = vi.fn()
-      const gate = Promise.withResolvers<BlueResult<BlueEditorSubmitValue>>()
+      const gate = Promise.withResolvers<BlueEditorSubmitValue>()
       let signal: AbortSignal | undefined
       ctx.on('blue/btw-command', command)
       installEditorTransform(ctx, (_request, currentSignal) => {
@@ -1274,7 +1274,7 @@ describe('blue-input plugin', () => {
       expect(signal?.aborted).toBe(true)
       expect(editor.getText()).toBe('route-sensitive draft')
 
-      gate.resolve({ ok: true, value: { text: 'late transformed draft' } })
+      gate.resolve({ text: 'late transformed draft' })
       await gate.promise
       await Promise.resolve()
       expect(editor.getText()).toBe('route-sensitive draft')

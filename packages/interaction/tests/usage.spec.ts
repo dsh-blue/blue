@@ -1,16 +1,12 @@
 /**
  * Unit tests for the `/usage` read layer: the 1024-base token formatting,
- * the percent/ratio/bar/severity family, the fallback fold's
- * replace-per-step semantics, and the projection-backed reads (snapshot
- * present vs. the degraded host's fallback) plus the turn/step counts.
+ * the percent/ratio/bar/severity family, and native projection-backed reads.
  */
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import { MessageId, type AssistantMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   CONTEXT_BAR_WIDTH,
   formatTokens,
@@ -23,73 +19,18 @@ import {
   usagePercent,
   usageRatio,
 } from '../src/usage.ts'
-import {
-  foldSessionTokenBuckets as foldTokenBuckets,
-  sessionDetails,
-} from '../../app/src/session-details.ts'
-
-let messageSeq = 0
-
-/** A minimal assistant message over text content. */
-function assistantMessage(): AssistantMessage {
-  messageSeq += 1
-  return {
-    id: MessageId(`m-${String(messageSeq)}`),
-    role: 'assistant',
-    content: [{ type: 'text', text: 'hi' }],
-    source: { kind: 'model', provider: 'mock', model: 'mock' },
-  }
-}
-
-interface UsageSample { inputTokens: number, outputTokens: number, cacheReadTokens?: number, cacheWriteTokens?: number }
-
-/** An `assistant/message` event carrying one usage sample. */
-function usageMessage(turn: number, step: number, usage: UsageSample): SessionEvent<'assistant/message'> {
-  return {
-    type: 'assistant/message',
-    seq: -1,
-    time: 0,
-    data: { turn, step, message: assistantMessage(), usage },
-  }
-}
-
-/** An `assistant/chunk` usage event (the streaming sample). */
-function usageChunk(turn: number, step: number, usage: UsageSample): SessionEvent<'assistant/chunk'> {
-  return {
-    type: 'assistant/chunk',
-    seq: -1,
-    time: 0,
-    data: { turn, step, chunk: { type: 'usage', usage } },
-  }
-}
-
-/** A turn/step boundary pair around the sample events of one step. */
-function step(turn: number, stepNumber: number): [SessionEvent<'turn/start'>, SessionEvent<'step/start'>, SessionEvent<'step/end'>, SessionEvent<'turn/end'>] {
-  return [
-    { type: 'turn/start', seq: -1, time: 0, data: { turn } },
-    { type: 'step/start', seq: -1, time: 0, data: { turn, step: stepNumber } },
-    { type: 'step/end', seq: -1, time: 0, data: { turn, step: stepNumber } },
-    { type: 'turn/end', seq: -1, time: 0, data: { turn, reason: { kind: 'completed' } } },
-  ]
-}
-
-/** A live session over the given events (seqs renumbered by the store). */
-async function sessionOver(events: readonly SessionEvent[]): Promise<{ ctx: Context, session: Session, agent: Agent }> {
+/** A live native session and exact current-Agent service. */
+async function sessionOver(): Promise<{ ctx: Context, session: Session, agent: Agent }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   const session = ctx.sessions.create(SessionId('usage-spec'))
-  for (const event of events) {
-    // Surface-eligible events carry their append marker, exactly as the
-    // agent loop passes it.
-    session.append(event.type, event.data, event.type === 'assistant/message' ? { surfaceOp: 'append' } : undefined)
-  }
   const agent = { id: session.id, session, status: 'idle' } as unknown as Agent
-  ctx.provide('blueSessionActions', {
-    sessionDetails: () => {
-      const projections = ctx.get('sessionProjections') as unknown as {
-        snapshot(session: unknown): { values: Readonly<Record<string, unknown>> }
-      } | undefined
-      return sessionDetails(agent, undefined, projections?.snapshot(session).values)
+  ctx.provide('blueCurrentAgent', {
+    current: () => agent,
+    revision: () => 0,
+    subscribe: (listener: (current: Agent, revision: number) => void) => {
+      listener(agent, 0)
+      return () => {}
     },
   } as never)
   return { ctx, session, agent }
@@ -156,58 +97,31 @@ describe('renderBar / ratioSeverity', () => {
     expect(ratioSeverity(0.84)).toBe('warn')
     expect(ratioSeverity(0.85)).toBe('danger')
   })
+
+  it('sums all disjoint provider buckets', () => {
+    expect(totalTokens({ input: 1, cacheRead: 2, cacheWrite: 3, output: 4 })).toBe(10)
+  })
 })
 
 describe('readCompositionFacts', () => {
   it('reads the contextBreakdown projection when the key answers', async () => {
-    const { ctx, agent } = await sessionOver([])
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', {
       snapshot: () => ({ values: { contextBreakdown: { systemTokens: 10, toolsTokens: 20, messageTokens: 30 } } }),
     })
     expect(readCompositionFacts(ctx, agent)).toEqual({ system: 10, tools: 20, messages: 30 })
   })
 
-  it('answers undefined without the seam or without the key', async () => {
-    const { ctx, agent } = await sessionOver([])
-    expect(readCompositionFacts(ctx, agent)).toBeUndefined()
+  it('answers undefined when the native projection has no key', async () => {
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', { snapshot: () => ({ values: {} }) })
     expect(readCompositionFacts(ctx, agent)).toBeUndefined()
   })
 })
 
-describe('foldTokenBuckets', () => {
-  it('sums the disjoint buckets of distinct steps', () => {
-    const [a] = step(0, 0)
-    const [, , c, d] = step(0, 0)
-    const [e, f, g, h] = step(1, 0)
-    const events = [
-      a, usageMessage(0, 0, { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100 }),
-      c, d,
-      e, f, usageMessage(1, 0, { inputTokens: 20, outputTokens: 2, cacheWriteTokens: 7 }), g, h,
-    ]
-    expect(foldTokenBuckets(events)).toEqual({ input: 30, cacheRead: 100, cacheWrite: 7, output: 7 })
-    expect(totalTokens(foldTokenBuckets(events))).toBe(144)
-  })
-
-  it('replaces a step re-report instead of double counting it', () => {
-    const events = [
-      usageChunk(0, 0, { inputTokens: 10, outputTokens: 5 }),
-      usageMessage(0, 0, { inputTokens: 10, outputTokens: 5 }),
-      usageMessage(0, 0, { inputTokens: 12, outputTokens: 6 }),
-    ]
-    expect(foldTokenBuckets(events)).toEqual({ input: 12, cacheRead: 0, cacheWrite: 0, output: 6 })
-  })
-
-  it('folds an empty log to zeros and skips non-usage events', () => {
-    expect(foldTokenBuckets([])).toEqual({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 })
-    const [a, b, c, d] = step(0, 0)
-    expect(foldTokenBuckets([a, b, c, d])).toEqual({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 })
-  })
-})
-
 describe('readUsageFacts', () => {
   it('reads the projection snapshot when the seam is composed', async () => {
-    const { ctx, agent } = await sessionOver([])
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', {
       snapshot: () => ({
         values: {
@@ -224,7 +138,7 @@ describe('readUsageFacts', () => {
   })
 
   it('falls back from projectedTokens to pressureTokens and to absent fields', async () => {
-    const { ctx, agent } = await sessionOver([])
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', {
       snapshot: () => ({ values: { contextPressure: { pressureTokens: 4000 } } }),
     })
@@ -234,7 +148,7 @@ describe('readUsageFacts', () => {
   })
 
   it('reports an empty context when the projection answers without one', async () => {
-    const { ctx, agent } = await sessionOver([])
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', {
       snapshot: () => ({ values: { tokenUsage: { uncachedInputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 } } }),
     })
@@ -242,66 +156,38 @@ describe('readUsageFacts', () => {
     expect(facts.context).toEqual({})
   })
 
-  it('folds the assistant records and the durable request context without the seam', async () => {
-    const [a, b, c, d] = step(0, 0)
-    const [e, f, g, h] = step(1, 0)
-    const { ctx, agent } = await sessionOver([
-      { type: 'request/context', seq: -1, time: 0, data: { provider: 'mock', model: 'mock', contextWindow: 8192 } },
-      a, b, usageMessage(0, 0, { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100 }), c, d,
-      e, f, usageMessage(1, 0, { inputTokens: 5, outputTokens: 1 }), g, h,
-    ])
-    const facts = readUsageFacts(ctx, agent)
-    expect(facts.buckets).toEqual({ input: 15, cacheRead: 100, cacheWrite: 0, output: 6 })
-    // The last reported request's input side is the occupancy numerator.
-    expect(facts.context).toEqual({ used: 5, window: 8192 })
-  })
-
-  it('carries the window alone when no usage was reported yet', async () => {
-    const { ctx, agent } = await sessionOver([
-      { type: 'request/context', seq: -1, time: 0, data: { provider: 'mock', model: 'mock', contextWindow: 8192 } },
-    ])
-    const facts = readUsageFacts(ctx, agent)
-    expect(facts.buckets).toEqual({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 })
-    expect(facts.context).toEqual({ window: 8192 })
-  })
-
-  it('reports absent context facts when nothing advertised or reported', async () => {
-    const { ctx, agent } = await sessionOver([])
+  it('reports zeroed facts when native projections have no usage keys', async () => {
+    const { ctx, agent } = await sessionOver()
+    ctx.provide('sessionProjections', { snapshot: () => ({ values: {} }) })
+    expect(readUsageFacts(ctx, agent).buckets).toEqual({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 })
     expect(readUsageFacts(ctx, agent).context).toEqual({})
   })
 })
 
 describe('readTurnCounts', () => {
   it('reads the sessionStats projection when composed', async () => {
-    const { ctx, agent } = await sessionOver([])
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', {
       snapshot: () => ({ values: { sessionStats: { turns: 3, steps: 9, llmMs: 1, toolMs: 2, ttftMs: 3, ttftSteps: 4, decodeMs: 5, decodeTokens: 6 } } }),
     })
     expect(readTurnCounts(ctx, agent)).toEqual({ turns: 3, steps: 9 })
   })
 
-  it('counts the durable boundary events without the seam', async () => {
-    const [a, b, c, d] = step(0, 0)
-    const [e, f, g, h] = step(1, 0)
-    const [i, j, k, l] = step(2, 0)
-    const { ctx, agent } = await sessionOver([a, b, c, d, e, f, g, h, i, j, k, l])
-    expect(readTurnCounts(ctx, agent)).toEqual({ turns: 3, steps: 3 })
-  })
-
-  it('counts the boundary events when the projection lacks the stats key', async () => {
-    const [a, b, c, d] = step(0, 0)
-    const { ctx, agent } = await sessionOver([a, b, c, d])
+  it('returns zero counts when the projection lacks the stats key', async () => {
+    const { ctx, agent } = await sessionOver()
     ctx.provide('sessionProjections', { snapshot: () => ({ values: {} }) })
-    expect(readTurnCounts(ctx, agent)).toEqual({ turns: 1, steps: 1 })
+    expect(readTurnCounts(ctx, agent)).toEqual({ turns: 0, steps: 0 })
   })
 
-  it('returns zeroed facts when no current session details exist', () => {
+  it('returns zeroed facts when no Agent is current', () => {
     const ctx = new Context()
-    ctx.provide('blueSessionActions', { sessionDetails: () => undefined } as never)
+    ctx.provide('blueCurrentAgent', { current: () => null } as never)
+    ctx.provide('sessionProjections', { snapshot: () => ({ values: {} }) } as never)
     expect(readUsageFacts(ctx)).toEqual({
       buckets: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
       context: {},
     })
     expect(readTurnCounts(ctx)).toEqual({ turns: 0, steps: 0 })
+    expect(readCompositionFacts(ctx)).toBeUndefined()
   })
 })

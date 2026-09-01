@@ -325,6 +325,19 @@ describe('/settings registration and guards', () => {
 })
 
 describe('/settings level one', () => {
+  it('moves the focus background together with the selected namespace', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    const panel = l1(bench.screen)
+    const before = panel.render(80)
+    expect(before.find(row => row.includes('Blue UI preferences'))).toContain('{')
+
+    panel.handleInput(KEY.down)
+    const after = panel.render(80)
+    expect(after.find(row => row.includes('Blue UI preferences'))).not.toContain('{')
+    expect(after.find(row => row.includes('bash tool limits'))).toContain('{')
+  })
+
   it('renders every namespace in row order, with the open-file action last', async () => {
     const bench = mount({ sections: fullSections(), presets: fakePresets(), roster: fakeRoster() })
     const result = await bench.command.handler()
@@ -418,6 +431,20 @@ describe('/settings level one', () => {
 })
 
 describe('/settings level two', () => {
+  it('moves the focus background together with the selected marker', async () => {
+    const bench = mount({ sections: fullSections() })
+    await bench.command.handler()
+    await openNamespace(bench, 'blue')
+    const panel = l2(bench.screen)!
+    const before = panel.render(80)
+    expect(before.find(row => row.includes('Update check'))).toContain('{')
+
+    panel.handleInput(KEY.down)
+    const after = panel.render(80)
+    expect(after.find(row => row.includes('Update check'))).not.toContain('{')
+    expect(after.find(row => row.includes('Update channel'))).toContain('{')
+  })
+
   it('lists the blue rows in order, with resolved values and the namespace frame', async () => {
     const bench = mount({ sections: fullSections() })
     await bench.command.handler()

@@ -13,7 +13,6 @@ import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 
 export const metric = defineBlueComponent<{ label: string, value: number }>({
   id: '@acme/metric',
-  api: '^1.0.0-beta.2',
   render: props => ui.surface({
     title: props.label,
     child: ui.stack.column([
@@ -26,8 +25,8 @@ export const metric = defineBlueComponent<{ label: string, value: number }>({
 })
 ```
 
-`defineBlueComponent` records a package-namespaced id and Blue API range, then
-deeply freezes each rendered node. It is a pure package-level factory, not a
+`defineBlueComponent` records a package-namespaced id, then deeply freezes
+each rendered node. It is a pure package-level factory, not a
 runtime registry. Core still validates node kinds, values, depth, quotas, and
 renderer safety when a plugin contributes the expanded tree.
 

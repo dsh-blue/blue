@@ -1,81 +1,63 @@
-/**
- * `blue-pane-queue` plugin: a bottom-pinned pane listing the UI current
- * agent's queued inbox messages — one muted row each with a `turn:`/`step:`
- * target prefix, refreshed from the app-owned `blue/queue-changed`
- * notification after an inbox mutation. It never claims Up/Down: those keys
- * always remain editor-history navigation.
- *
+/** Current-Agent inbox pane contributed through Blue's public pane registry.
  * @module @dsh-blue/blue-interaction/pane-queue
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-// Carries the transcript-owned bottom-pane service declaration without a
-// runtime dependency; the bundle provides it before this row.
-import type {} from '@dsh-blue/blue-transcript'
-// Empty type import carries the app-owned renderer-neutral session services.
+import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { BlueUiNode } from '@dsh-blue/blue-api'
 import type {} from '@dsh-blue/blue-app'
 
-/** Stable Cordis plugin name. */
 export const name = 'blue-pane-queue'
-/** Services required before the pane can mount. */
-export const inject = [
-  'blueScreen',
-  'blueTheme',
-  'blueComponents',
-  'blueBottomPanes',
-  'blueSessionReader',
-  'blueSessionActions',
-]
+export const inject = ['bluePanes', 'blueCurrentAgent']
 
-/** Collapse a multi-line string to one line for pane rendering. */
-function oneLine(text: string): string {
-  return text.replace(/[\r\n]+/g, ' ').trim()
+function messageText(message: UserMessage): string {
+  return message.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join(' ')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
 }
 
-/**
- * Mount the queue pane and subscribe to the app-owned queue notification.
- * @param ctx - plugin context.
- */
+/** Register one ordinary bottom pane over the selected Agent's inbox. */
 export function apply(ctx: Context): void {
-  const colors = ctx.blueTheme.colors
-  const components = ctx.blueComponents
-
-  const renderPane = (width: number): string[] => {
-    const pending = ctx.blueSessionActions.queued()
-    const rows: string[] = []
-    for (const message of pending) {
-      // The `↑` glyph is the activity accent, the row text stays muted:
-      // truncate the plain row first, then split at the glyph — SGR
-      // inserted before truncation would corrupt the width. The
-      // display-width truncation (not char counting) is load-bearing:
-      // queued texts carry CJK, whose cells are two columns wide
-      // (the S33 acceptance crash — a char-counted cut left a row at
-      // width + 2 and pi-tui threw).
-      const plain = components.truncateToWidth(`queued ↑ ${message.target}: ${oneLine(message.text)}`, width)
-      const at = plain.indexOf('↑')
-      rows.push(
-        at === -1
-          ? colors.muted(plain)
-          : colors.muted(plain.slice(0, at)) + colors.primary('↑') + colors.muted(plain.slice(at + 1)),
-      )
-    }
-    return rows
-  }
-
-  const refresh = (): void => {
-    ctx.blueBottomPanes.refresh('blue.dock.queue')
-  }
-  const sessionRegistration = ctx.blueSessionReader.subscribe(refresh)
-  ctx.effect(() => () => sessionRegistration.dispose())
-
-  ctx.effect(() => ctx.on('blue/queue-changed', refresh))
-  const model = () => {
-    const pending = ctx.blueSessionActions.queued()
+  const render = (): BlueUiNode | null => {
+    const agent = ctx.blueCurrentAgent.current()
+    if (agent === null || !agent.inbox.hasPending) return null
+    const rows = [
+      ...agent.inbox.nextTurn.map(message => `queued / turn: ${messageText(message)}`),
+      ...agent.inbox.nextStep.map(message => `queued / step: ${messageText(message)}`),
+    ]
     return {
-      id: 'blue.dock.queue', priority: 20,
-      node: { kind: 'text' as const, content: pending.length === 0 ? '' : 'Queued messages' },
-      collapsed: pending.length === 0,
+      kind: 'stack',
+      direction: 'column',
+      children: rows.map(content => ({ node: { kind: 'text', content, tone: 'muted' } })),
     }
   }
-  ctx.effect(() => ctx.blueBottomPanes.register(model, (_node, width) => renderPane(width)))
+  const pane = ctx.bluePanes.register({
+    id: 'blue.pane.queue',
+    title: 'Queued messages',
+    placement: 'bottom',
+    priority: 20,
+    narrow: 'bottom',
+    render,
+  })
+  const refresh = (): void => pane.refresh()
+  const offAgent = ctx.blueCurrentAgent.subscribe(refresh)
+  const offInserted = ctx.on('agent/inbox/inserted', ({ agent }) => {
+    if (agent === ctx.blueCurrentAgent.current()) refresh()
+  })
+  const offClaimed = ctx.on('agent/inbox/claimed', ({ agent }) => {
+    if (agent === ctx.blueCurrentAgent.current()) refresh()
+  })
+  const offDiscarded = ctx.on('agent/inbox/discarded', ({ agent }) => {
+    if (agent === ctx.blueCurrentAgent.current()) refresh()
+  })
+  ctx.effect(() => () => {
+    offAgent()
+    offInserted()
+    offClaimed()
+    offDiscarded()
+    pane.dispose()
+  })
 }

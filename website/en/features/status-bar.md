@@ -1,53 +1,36 @@
 # Status bar
 
-The footer is a two-row canonical status surface. Built-in producers publish readonly `BlueStatusNode` values, rendered by the package-private `BlueStatusEntryService` and core status compiler. Third-party plugins contribute the same renderer-neutral nodes through the current Beta `bluePluginHost` `status` capability.
+The footer uses at most two rows. Every built-in and third-party entry
+registers on the same `blueStatus` service with a renderer-neutral
+`BlueStatusNode`.
 
-## Layout and gray tiers
-
-Entries connect with two-space slots — no separator glyphs; brightness tiers build the hierarchy (the kimi visual identity):
-
-| Tier | Color | Carries |
+| Entry | Priority | Content |
 | --- | --- | --- |
-| Brightest | `text` | model, context — what you read every turn |
-| Middle | `muted` | cwd, git badge, session title |
+| basic | 0 | current model |
+| mode | 2 | plan/yolo state |
+| cwd | 5 | current working directory |
+| git | 10 | branch and change summary |
+| context | 20 | context occupancy |
+| title | 30 | session title |
 
-(The dimmest `textMuted` tips tier retired with the S30 footer swap — teaching tips now ride only the activity pane's spinner rows.)
+Entries sort by priority/id within a band. The right band yields first under
+width pressure. An entry declares `row` and `overflow`; lower-priority
+entries hide when space runs out.
 
-## Built-in entries
-
-| Entry | Priority | Position | Content |
-| --- | --- | --- | --- |
-| `blue-status-basic` | 0 | row 1 left | model name (persisted request header, falling back to agent options; `text` tier) |
-| `blue-status-mode` | 2 | row 1 left | session-mode badge: `plan` (accent tier, pending ellipsis while messages are queued) or `yolo` (warning tier); renders nothing in normal (see [Session modes](/en/features/modes)) |
-| `blue-status-cwd` | 5 | row 1 left | session cwd (home shortened to `~`, deep paths to the last three segments; `muted` tier) |
-| `blue-status-git` | 10 | row 1 left | full badge `branch [+a -d ↑e↓f]` (TTL-cached probe: branch 5s / status 15s; hidden outside a git repository) |
-| `blue-status-context` | 20 | row 2 right | latest step's context occupancy: `context: N% (K/M)` with a window, degrading to `ctx N` without (`text` tier) |
-| `blue-status-title` | 30 | row 1 right | the session title folded from the harness `sessionTitle` service (`muted` tier; the slot the rotating tips occupied before the S30 footer swap; hidden while untitled) |
-
-A running agent's status is **not** in the footer — that's the activity pane's job (see [Bottom panes](/en/features/panes)).
-
-## Ordering and yielding
-
-- the same band and cluster sort by ascending priority, then stable id;
-- right clusters right-align and yield before left ones under width pressure;
-- each entry truncates within its cluster budget; entries that fit neither row drop lowest-priority-first.
-
-## Contributing
-
-A third-party plugin opens `status` with a validated canonical `manifest` whose
-required requests include `{ "name": "status", "version": "^1.0.0" }`, then
-registers a `BlueStatusEntryContribution`:
+Third-party contribution:
 
 ```ts
-const opened = ctx.bluePluginHost.open(ctx, manifest)
-if (!opened.ok) throw new Error(opened.message)
+export const inject = ['blueStatus']
 
-const registered = opened.value.api.status!.register({
-  id: 'build.status',
-  priority: 15,
-  render: () => ({ kind: 'text', content: myLine, tone: 'muted' }),
-})
-if (!registered.ok) throw new Error(registered.message)
+export function apply(ctx: Context): void {
+  ctx.blueStatus.register({
+    id: 'acme.health',
+    priority: 15,
+    band: 'right',
+    visible: true,
+    node: { kind: 'text', content: 'healthy', tone: 'success' },
+  })
+}
 ```
 
-The host binds the registration to the caller's Fiber, so the entry disappears on unload. Public status contributions currently enter the default footer lane; row/alignment are internal fixed-footer layout policy, not a third-party renderer contract.
+Registration follows the Fiber. See [plugin status entries](/en/plugins/status).

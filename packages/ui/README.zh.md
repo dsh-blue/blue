@@ -12,7 +12,6 @@ import { defineBlueComponent, ui } from '@dsh-blue/blue-ui'
 
 export const metric = defineBlueComponent<{ label: string, value: number }>({
   id: '@acme/metric',
-  api: '^1.0.0-beta.2',
   render: props => ui.surface({
     title: props.label,
     child: ui.stack.column([
@@ -25,7 +24,7 @@ export const metric = defineBlueComponent<{ label: string, value: number }>({
 })
 ```
 
-`defineBlueComponent` 记录带包 namespace 的 id 与 Blue API range，并深冻结每次
+`defineBlueComponent` 记录带包 namespace 的 id，并深冻结每次
 render 的节点。它只是纯 package factory，不是 runtime registry。插件提交展开后的
 节点树时，kind、数值、深度、quota 与 renderer 安全仍由 core 验证。
 

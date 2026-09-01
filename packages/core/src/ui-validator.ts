@@ -12,13 +12,10 @@ import type {
   BlueChartLevel,
   BlueChartPoint,
   BlueChartSeries,
-  BlueEditorChild,
-  BlueEditorShellNode,
   BlueField,
   BlueFormField,
   BlueInlineSpan,
   BlueListItem,
-  BlueResult,
   BlueSection,
   BlueStatusChild,
   BlueStatusNode,
@@ -28,6 +25,7 @@ import type {
   BlueViewportCondition,
   BlueView,
 } from '@dsh-blue/blue-api'
+import type { BlueEditorChild, BlueEditorShellNode, BlueValidationResult } from './ui-contracts.ts'
 
 /** Maximum aggregate UTF-16 source units accepted in one tree. */
 export const BLUE_UI_MAX_TEXT = 20_000
@@ -668,8 +666,16 @@ function assertEditorControlVisible(node: BlueEditorShellNode, path = '$'): void
   }
 }
 
-function validate<Value>(value: unknown, mode: ValidationMode): BlueResult<Value> {
-  const state: ValidationState = { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, chartCells: 0, controlIds: new Set() }
+function validate<Value>(value: unknown, mode: ValidationMode): BlueValidationResult<Value> {
+  const state: ValidationState = {
+    active: new WeakSet(),
+    nodes: 0,
+    text: 0,
+    scrollDepth: 0,
+    editorControls: 0,
+    chartCells: 0,
+    controlIds: new Set(),
+  }
   try {
     const result = mode === 'ui'
       ? node(value, '$', state, 0, 'ui')
@@ -688,16 +694,16 @@ function validate<Value>(value: unknown, mode: ValidationMode): BlueResult<Value
 }
 
 /** Validate, sanitize, canonicalize, and freeze an ordinary public UI tree. */
-export function validateBlueUiNode(value: unknown): BlueResult<BlueUiNode> {
+export function validateBlueUiNode(value: unknown): BlueValidationResult<BlueUiNode> {
   return validate(value, 'ui')
 }
 
 /** Validate the recursively narrowed, non-interactive status tree. */
-export function validateBlueStatusNode(value: unknown): BlueResult<BlueStatusNode> {
+export function validateBlueStatusNode(value: unknown): BlueValidationResult<BlueStatusNode> {
   return validate(value, 'status')
 }
 
 /** Validate an editor shell and require exactly one host-owned control slot. */
-export function validateBlueEditorShellNode(value: unknown): BlueResult<BlueEditorShellNode> {
+export function validateBlueEditorShellNode(value: unknown): BlueValidationResult<BlueEditorShellNode> {
   return validate(value, 'editor')
 }

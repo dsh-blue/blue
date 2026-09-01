@@ -18,7 +18,6 @@
 | `/provider` | — | `[list \| switch <name> \| add]` | 列出 provider、切换路由或新增 | `blue-commands`（model-commands） |
 | `/preset` | — | `[name]` | 列出 agent 预设或切换（仅空会话） | `blue-commands`（preset-commands） |
 | `/permission` | — | `[name]` | 空参数被输入层拦截、打开权限预设面板；带参数透传给宿主命令 | `blue-input` 拦截裸调用；命令由 `dsh-permission-presets` 注册 |
-| `/yolo` | `/yes` | `[on\|off]` | 开关工具调用自动放行（提问照常弹） | `blue-commands`（mode-commands） |
 | `/tools` | — | — | 列出当前会话可见的工具 | `blue-commands`（tools-commands） |
 | `/mcp` | — | — | 浏览宿主连接的 MCP 服务器与其工具 | `blue-commands`（mcp-commands，S34） |
 | `/skills` | — | — | 列出可用技能（`#` 前缀调用） | `blue-commands`（skills-command） |
@@ -45,7 +44,7 @@
 
 ## 模式与审批
 
-- **`/yolo [on|off]`** —— 切换 yolo 会话模式的开关；也可以随时用 `Shift+Tab` 循环切换 normal → plan → yolo（见[会话模式](/features/modes)）。yolo 下工具调用自动放行，**用户提问照常弹出**。
+- **`Shift+Tab` 模式循环** —— normal → plan → yolo 只编排 dsh 原生命令：`/plan`、`/plan off`、`/permission danger-full-access` 与 `/permission workspace-write`（见[会话模式](/features/modes)）。Blue 不注册 `/yolo` 或 `/yes`。
 - **`/permission`** —— 列出/切换权限预设（sandbox 模式 + 审批策略的命名束）。与 `/preset` 同款单选列表面板；danger 预设需打字 `y` 确认。裸 `/permission` 由输入层拦截开面；命令本身由上游 `dsh-permission-presets` 注册（补全与 `/help` 均会列出），带参调用透传给宿主命令执行切换。
 - **`/mcp`** —— 三层面板浏览宿主连接的 MCP 服务器：服务器选择器 → 服务器面板（config 伪行 + 工具行）→ 详情（config 状态/脱敏连接/策略，或工具 schema）。只读——增删服务器走 profile patch（见 [dsh/mcp](/dsh/mcp)）；空态有指路。
 - **`/init`** —— 让 agent 分析代码库并把结论写入项目根的 `AGENTS.md`：已存在则先读取、延续仍然准确的内容，重写为一个连贯的最新文件（而非追加），使用项目自身文档的主要语言。
