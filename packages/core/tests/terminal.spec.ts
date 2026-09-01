@@ -13,7 +13,13 @@ import { LAYOUT_NODE, type LayoutNode } from '@earendil-works/pi-tui/dist/layout
 import { ui } from '../../ui/src/index.ts'
 import { compileBlueUiNode } from '../src/ui-compiler.ts'
 import type { BlueComponent, BlueComponents, BlueFocusable, BlueRgbColor, BlueSemanticColors } from '../src/types.ts'
-import { createStableTuiReference, createTerminalRelease, normalizeWheelInput, startBlueTerminal } from '../src/terminal.ts'
+import {
+  createStableTuiReference,
+  createTerminalRelease,
+  normalizeNavigationInput,
+  normalizeWheelInput,
+  startBlueTerminal,
+} from '../src/terminal.ts'
 import type { FrameOverflowEntry } from '../src/frame-clamp.ts'
 import type { AmbientOutputStream } from '../src/output-recovery.ts'
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '../src/width.ts'
@@ -1259,7 +1265,7 @@ describe('alternate-screen runtime', () => {
     terminal.dispose()
   })
 
-  it('routes wheel and page keys to a focused replacement panel', async () => {
+  it('routes wheel and legacy or enhanced navigation keys to a focused replacement panel', async () => {
     const terminal = new FakeTerminal(40, 10)
     const runtime = await startBlueTerminal(terminal, noProbe, undefined, undefined, 'alternate')
     const received: string[] = []
@@ -1277,8 +1283,33 @@ describe('alternate-screen runtime', () => {
     terminal.sendInput('\x1b[B')
     terminal.sendInput('\x1b[<65;1;1M')
     terminal.sendInput('\x1b[6~')
+    terminal.sendInput('\x1b[57419;1:1u')
+    terminal.sendInput('\x1b[57420;1:1u')
+    terminal.sendInput('\x1b[57417;1:1u')
+    terminal.sendInput('\x1b[57418;1:1u')
+    terminal.sendInput('\x1b[57421;1:1u')
+    terminal.sendInput('\x1b[57422;1:1u')
+    terminal.sendInput('\x1b[57423;1:1u')
+    terminal.sendInput('\x1b[57424;1:1u')
+    terminal.sendInput('\x1b[57425;1:1u')
+    terminal.sendInput('\x1b[57426;1:1u')
 
-    expect(received).toEqual(['\x1b[A', '\x1b[B', '\x1b[B', '\x1b[6~'])
+    expect(received).toEqual([
+      '\x1b[A',
+      '\x1b[B',
+      '\x1b[B',
+      '\x1b[6~',
+      '\x1b[A',
+      '\x1b[B',
+      '\x1b[D',
+      '\x1b[C',
+      '\x1b[5~',
+      '\x1b[6~',
+      '\x1b[H',
+      '\x1b[F',
+      '\x1b[2~',
+      '\x1b[3~',
+    ])
     await runtime.stop()
   })
 
@@ -1597,6 +1628,34 @@ describe('overlay focus discipline', () => {
 })
 
 describe('input listeners on the stable reference', () => {
+  it('normalizes unmodified enhanced navigation press and repeat events', () => {
+    const enhanced = [
+      ['57419', '\x1b[A'],
+      ['57420', '\x1b[B'],
+      ['57417', '\x1b[D'],
+      ['57418', '\x1b[C'],
+      ['57421', '\x1b[5~'],
+      ['57422', '\x1b[6~'],
+      ['57423', '\x1b[H'],
+      ['57424', '\x1b[F'],
+      ['57425', '\x1b[2~'],
+      ['57426', '\x1b[3~'],
+    ] as const
+
+    for (const [codepoint, normalized] of enhanced) {
+      expect(normalizeNavigationInput(`\x1b[${codepoint};1:1u`)).toBe(normalized)
+      expect(normalizeNavigationInput(`\x1b[${codepoint};1:2u`)).toBe(normalized)
+    }
+  })
+
+  it('preserves enhanced navigation releases, modifiers, and unrelated input', () => {
+    expect(normalizeNavigationInput('\x1b[57419;1:3u')).toBeUndefined()
+    expect(normalizeNavigationInput('\x1b[57419;2:1u')).toBeUndefined()
+    expect(normalizeNavigationInput('\x1b[57417;5:1u')).toBeUndefined()
+    expect(normalizeNavigationInput('text')).toBeUndefined()
+    expect(normalizeNavigationInput('\x1b[99999;1:1u')).toBeUndefined()
+  })
+
   it('normalizes SGR and legacy wheel reports at the core input boundary', () => {
     expect(normalizeWheelInput('\x1b[<64;10;4M')).toBe('\x1b[A')
     expect(normalizeWheelInput('\x1b[<65;10;4M')).toBe('\x1b[B')
