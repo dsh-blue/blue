@@ -27,6 +27,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BlueInlineSpan, BlueUiNode } from '@dsh-blue/blue-api'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import type { ConversationFacts } from '@dsh-blue/blue-conversation'
 import type { SessionFactsService } from './session-facts.ts'
@@ -169,6 +170,8 @@ function todoSpans(todo: TodoItem): readonly BlueInlineSpan[] {
 interface TodoState {
   /** The latest whole-list snapshot; empty until the first `todo/write`. */
   todos: readonly TodoItem[]
+  /** The current official goal projection, when one is active. */
+  goal: GoalProjection | null
   /** Whether the pane renders the full list instead of the folded selection. */
   expanded: boolean
   /** Whether a dialog temporarily occupies the editor slot. */
@@ -183,15 +186,61 @@ interface TodoState {
  */
 function signature(state: TodoState): string {
   const list = state.todos.map(todo => `${todo.status}:${todo.content}`).join('\n')
-  return `${state.dialog ? 'dialog' : 'visible'}\n${state.expanded ? 'expanded' : 'folded'}\n${list}`
+  const badge = goalBadge(state.goal)
+  const goal = badge === null
+    ? 'no-goal'
+    : `${badge.phase}:${badge.goal.goal.revision}:${badge.goal.roundsStarted}:${badge.goal.goal.maxGoalRounds}:${blockedReasonText(badge.goal)}`
+  return `${state.dialog ? 'dialog' : 'visible'}\n${state.expanded ? 'expanded' : 'folded'}\n${goal}\n${list}`
+}
+
+type BadgePhase = 'active' | 'paused' | 'blocked'
+
+const GOAL_BADGE: Record<BadgePhase, { readonly marker: string, readonly tone: 'accent' | 'muted' | 'danger' }> = {
+  active: { marker: '●', tone: 'accent' },
+  paused: { marker: '❚❚', tone: 'muted' },
+  blocked: { marker: '✕', tone: 'danger' },
+}
+
+function goalBadge(goal: GoalProjection | null): { readonly goal: GoalProjection, readonly phase: BadgePhase } | null {
+  if (goal === null || goal.goal.phase === 'complete') return null
+  return { goal, phase: goal.goal.phase }
+}
+
+function blockedReasonText(goal: GoalProjection): string {
+  return goal.goal.blockedReason?.message ?? ''
+}
+
+function titleSpans(goal: GoalProjection | null): readonly BlueInlineSpan[] {
+  const title: BlueInlineSpan = { text: '  Todo', tone: 'accent', emphasis: 'strong' }
+  const badge = goalBadge(goal)
+  if (badge === null) return [title]
+  const paint = GOAL_BADGE[badge.phase]
+  return [
+    title,
+    { text: ' · ', tone: 'muted' },
+    { text: `${paint.marker} ${badge.phase}`, tone: paint.tone, ...(badge.phase === 'active' ? { emphasis: 'strong' as const } : {}) },
+    { text: ` · ${badge.goal.roundsStarted}/${badge.goal.goal.maxGoalRounds}`, tone: 'muted' },
+  ]
 }
 
 /** Build the canonical todo tree; the core compiler owns paint and width. */
 function todoNode(state: TodoState): BlueUiNode {
   const children: { readonly node: BlueUiNode }[] = [
     { node: { kind: 'divider' } },
-    { node: { kind: 'rich-text', spans: [{ text: '  Todo', tone: 'accent', emphasis: 'strong' }] } },
+    { node: { kind: 'rich-text', spans: titleSpans(state.goal) } },
   ]
+  const badge = goalBadge(state.goal)
+  if (badge?.phase === 'blocked') {
+    children.push({
+      node: {
+        kind: 'rich-text',
+        spans: [
+          { text: '  blocked: ', tone: 'danger' },
+          { text: blockedReasonText(badge.goal), tone: 'muted' },
+        ],
+      },
+    })
+  }
   if (state.expanded) {
     for (const todo of state.todos) children.push({ node: { kind: 'rich-text', spans: todoSpans(todo) } })
     if (state.todos.length > MAX_VISIBLE) {
@@ -220,7 +269,7 @@ function todoNode(state: TodoState): BlueUiNode {
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  const state: TodoState = { todos: [], expanded: false, dialog: false }
+  const state: TodoState = { todos: [], goal: null, expanded: false, dialog: false }
   let rendered = signature(state)
   const pane = ctx.bluePanes.register({
     id: 'blue.pane.todo',
@@ -228,7 +277,7 @@ export function apply(ctx: Context): void {
     placement: 'bottom',
     priority: 30,
     narrow: 'bottom',
-    render: () => state.dialog || state.todos.length === 0 ? null : todoNode(state),
+    render: () => state.dialog || (state.todos.length === 0 && goalBadge(state.goal) === null) ? null : todoNode(state),
   })
 
   /**
@@ -255,11 +304,20 @@ export function apply(ctx: Context): void {
     if (agent?.id === sessionId) return
     sessionId = agent?.id
     state.expanded = false
+    state.goal = null
     update([])
   })
   const offFacts = facts?.subscribe((next: ConversationFacts) => update(next.todos))
+  const offGoal = facts?.subscribeGoal((goal) => {
+    state.goal = goal
+    const next = signature(state)
+    if (next === rendered) return
+    rendered = next
+    pane.refresh()
+  })
   ctx.effect(() => () => offAgent?.())
   ctx.effect(() => () => offFacts?.())
+  ctx.effect(() => () => offGoal?.())
   ctx.on('blue/editor-slot-swapped', (occupied) => {
     if (state.dialog === occupied) return
     state.dialog = occupied

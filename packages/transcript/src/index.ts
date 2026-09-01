@@ -52,12 +52,15 @@ export { AgentGroupComponent, setAgentGroupTimers, type AgentGroupTimers } from 
 export { ReadGroupComponent, groupReadsByFile, READ_GROUP_ROW_LIMIT, READ_GROUP_EXPANDED_ROW_LIMIT, type ReadFileGroup } from './read-group.ts'
 export { SearchGroupComponent, SEARCH_GROUP_ROW_LIMIT, SEARCH_GROUP_EXPANDED_ROW_LIMIT } from './search-group.ts'
 export { READ_PREVIEW_LINE_LIMIT, SEARCH_PREVIEW_MATCH_LIMIT, SEARCH_PATH_LIMIT } from './official-model.ts'
+export { conversationTranscriptModel } from './official-model.ts'
+export type { ToolPresentationSource } from './present.ts'
 export { parseXmlEnvelope, summarizeToolText, type EnvelopePair } from './envelope.ts'
 export { ellipsize, parseToolArguments, summarizeToolCall, TOOL_ARG_PAIR_LIMIT, TOOL_ARG_VALUE_MAX_CHARS } from './present.ts'
 export { SessionFactsService } from './session-facts.ts'
 export { createToolPresentationModel, toolCallNode, toolResultNode, toolResultChip, BlueModelToolService, ToolModelComponent, ToolModelService } from './tool-model.ts'
 export type { ToolPresentationFacts } from './tool-model.ts'
 export { appendTranscriptNode, createTranscriptModel, TRANSCRIPT_MODEL_WINDOW, TranscriptModelService, TranscriptModelComponent } from './transcript-model.ts'
+export type { TranscriptModelRenderer } from './transcript-model.ts'
 export {
   BRAILLE_SPINNER_FRAMES,
   BRAILLE_SPINNER_INTERVAL_MS,

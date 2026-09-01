@@ -8,7 +8,7 @@ Blue bundle 在 `dsh-base` 上插入 31 个普通 Cordis sibling：6 个 dsh 支
 ```mermaid
 flowchart TB
     BASE["dsh-base"]
-    subgraph GRAPH["flat Cordis sibling graph · 31 inserted rows"]
+    subgraph GRAPH["flat Cordis sibling graph · 35 inserted rows"]
         SUPPORT["dsh support · 6 rows<br/>subagent settings · presets · host runner<br/>workspace · session controller · title"]
         API["blue-api<br/>four direct UI registries"]
         APP["blue-conversation · blue-startup · blue-app"]

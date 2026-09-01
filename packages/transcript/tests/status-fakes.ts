@@ -8,6 +8,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import { BlueStatusService } from '@dsh-blue/blue-api'
 import type {
   BlueComponent,
@@ -115,8 +116,10 @@ export class FakeFactsService {
   private session: FakeSessionSnapshot | null = null
   private value: ConversationFacts = initialConversationFacts()
   private title: string | undefined
+  private goal: GoalProjection | null = null
   private readonly listeners = new Set<(facts: ConversationFacts) => void>()
   private readonly titleListeners = new Set<(title: string | undefined) => void>()
+  private readonly goalListeners = new Set<(goal: GoalProjection | null) => void>()
   private readonly sessionListeners = new Set<(session: FakeSessionSnapshot | null) => void>()
   private readonly agentListeners = new Set<(agent: FakeAgent | null) => void>()
   private readonly childStates = new Map<string, { parentId: string, facts: ConversationFacts }>()
@@ -167,6 +170,8 @@ export class FakeFactsService {
 
   get currentTitle(): string | undefined { return this.title }
 
+  get currentGoal(): GoalProjection | null { return this.goal }
+
   get currentSession(): FakeSessionSnapshot | null { return this.session }
 
   get currentAgent(): FakeAgent | null { return this.agent }
@@ -181,6 +186,18 @@ export class FakeFactsService {
     this.titleListeners.add(listener)
     listener(this.title)
     return () => this.titleListeners.delete(listener)
+  }
+
+  subscribeGoal(listener: (goal: GoalProjection | null) => void): () => void {
+    this.goalListeners.add(listener)
+    listener(this.goal)
+    return () => this.goalListeners.delete(listener)
+  }
+
+  /** Publish a goal projection to pane tests. */
+  setGoal(goal: GoalProjection | null): void {
+    this.goal = goal
+    for (const listener of this.goalListeners) listener(goal)
   }
 
   subscribeSession(listener: (session: FakeSessionSnapshot | null) => void): () => void {
@@ -209,6 +226,7 @@ export class FakeFactsService {
     this.publishSession()
     const titleEvent = agent?.session.events.findLast((event): event is SessionEvent<'session/title'> => event.type === 'session/title')
     this.title = this.titleProjection ? titleEvent?.data.title : undefined
+    this.goal = null
     this.value = agent === null ? initialConversationFacts() : agent.session.events.reduce(foldConversationFacts, {
       ...initialConversationFacts(),
       ...(agent.options?.provider === undefined ? {} : { provider: agent.options.provider }),

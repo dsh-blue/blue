@@ -7,7 +7,7 @@
  * session-change rebinding.
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import * as paneAgents from '../src/pane-agents.ts'
@@ -26,6 +26,11 @@ const T0 = 1_700_000_000_000
 
 /** The parent session id the tracker admits children by. */
 const PARENT = 'parent-1'
+
+afterEach(() => {
+  paneAgents.setPaneAgentsClock(undefined)
+  vi.useRealTimers()
+})
 
 /** A fake agent whose session carries the id the admission keys match. */
 function fakeAgent(events: SessionEvent[]): Agent {
@@ -180,7 +185,7 @@ describe('blue-pane-agents plugin', () => {
     rig.ctx.emit('session/event', child, childTurnStart())
     rig.ctx.emit('session/event', rig.agent.session, { ...turnStart(2), seq: 99, time: T0 + 10_000 })
     const running = rig.screen.paneLines(140).join('\n')
-    expect(running).toContain('waiting Survey')
+    expect(running).toContain('running Survey')
     rig.ctx.emit('session/event', child, {
       type: 'turn/end', seq: 2, time: T0 + 30_000, data: { turn: 1, reason: { kind: 'completed' } },
     })
@@ -216,6 +221,53 @@ describe('blue-pane-agents plugin', () => {
     expect(text).toContain('1 tools')
     expect(text).toContain('3200 tokens')
     expect(text).toContain('Using read')
+  })
+
+  it('holds a fresh waiting phase as running for one second, then reveals it', async () => {
+    vi.useFakeTimers()
+    let now = T0
+    paneAgents.setPaneAgentsClock(() => now)
+    const rig = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Queued', 'queue', { time: T0 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
+    rig.ctx.emit('session/event', child, childTurnStart())
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Queued')
+    now += 1_000
+    vi.advanceTimersByTime(1_000)
+    expect(rig.screen.paneLines(140).join('\n')).toContain('waiting Queued')
+    rig.ctx.emit('session/event', child, {
+      type: 'tool/call', seq: 2, time: T0 + 2_000,
+      data: { turn: 1, step: 1, callId: 't1', name: 'read', arguments: '{}' },
+    })
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Queued')
+    await rig.dispose()
+
+    const pending = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Pending', 'pending', { time: T0 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    pending.ctx.emit('session/event', child, childTurnStart())
+    pending.screen.paneLines(140)
+    const next = fakeAgent([])
+    ;(next as unknown as { id: string }).id = 'parent-next'
+    pending.ctx.emit('test/session-changed', next)
+    await pending.dispose()
+
+    const unloading = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Unloading', 'unloading', { time: T0 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    unloading.ctx.emit('session/event', child, childTurnStart())
+    expect(unloading.screen.paneLines(140).join('\n')).toContain('running Unloading')
+    await unloading.dispose()
   })
 
   it('shows distinct agent detail and a failed live child phase', async () => {
@@ -263,7 +315,7 @@ describe('blue-pane-agents plugin', () => {
       },
     })
     rig.ctx.emit('session/event', child, childTurnStart())
-    expect(rig.screen.paneLines(140).join('\n')).toContain('waiting Map docs')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Map docs')
   })
 
   it('rebinds on session change, dropping the old group', async () => {

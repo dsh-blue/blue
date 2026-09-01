@@ -3,7 +3,7 @@
 [English](README.md) | 中文
 
 可安装的 dsh Blue 终端 UI bundle。它的 flat `cordis.patch.yml` 在
-`dsh-base` 上增加 31 个 sibling：6 个 dsh 支撑行和 25 个 Blue product
+`dsh-base` 上增加 35 个 sibling：6 个 dsh 支撑行和 29 个 Blue product
 行。
 
 插件直接继承 dsh 原生 service，并通过 `bluePanes`、`blueStatus`、
