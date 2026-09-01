@@ -26,6 +26,22 @@ export interface ToolPresentationSource {
 /** Maximum length of the key argument shown on a card header. */
 export const KEY_ARG_MAX_CHARS = 60
 
+/**
+ * Host-authored label shown when model text contains the reserved runtime
+ * envelope shape. The assistant source stays untouched; this is presentation
+ * chrome only, so a replay and a live projection render the same warning.
+ */
+export const MODEL_AUTHORED_TEXT_MARKER = 'model-authored text (not a runtime notice)'
+
+/**
+ * Recognize a complete reserved runtime envelope in model-origin assistant
+ * text. This deliberately does not parse, strip, or rewrite the content: it
+ * only selects an explicit renderer marker for the user-facing transcript.
+ */
+export function isReservedRuntimeEnvelope(text: string): boolean {
+  return /<system-reminder(?:\s[^>]*)?>[\s\S]*?<\/system-reminder>/iu.test(text)
+}
+
 /** The key-arg whitelist, in priority order (the S20 doc's own list). */
 const KEY_ARG_KEYS = ['file_path', 'command', 'pattern']
 

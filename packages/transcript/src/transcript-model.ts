@@ -37,7 +37,12 @@ import { ThinkingComponent } from './thinking.ts'
 import { ToolModelComponent, toolResultChip } from './tool-model.ts'
 import { ReadGroupComponent, groupReadsByFile } from './read-group.ts'
 import { SearchGroupComponent } from './search-group.ts'
-import { parseToolArguments, summarizeToolCall } from './present.ts'
+import {
+  isReservedRuntimeEnvelope,
+  MODEL_AUTHORED_TEXT_MARKER,
+  parseToolArguments,
+  summarizeToolCall,
+} from './present.ts'
 import { summarizeToolText } from './envelope.ts'
 import { renderCanonicalNode, type CanonicalNodeRenderer } from './canonical-node-renderer.ts'
 import type { TranscriptToolItem } from './types.ts'
@@ -286,7 +291,10 @@ export class TranscriptModelComponent implements BlueComponent {
   private plainText(entry: TranscriptEntryModel): string {
     switch (entry.kind) {
       case 'transcript-user': return entry.text
-      case 'transcript-assistant': return entry.text
+      case 'transcript-assistant':
+        return isReservedRuntimeEnvelope(entry.text)
+          ? `${MODEL_AUTHORED_TEXT_MARKER}\n${entry.text}`
+          : entry.text
       case 'transcript-thinking': return entry.text
       case 'transcript-tool': {
         const text = entry.result?.fullText ?? entry.result?.text

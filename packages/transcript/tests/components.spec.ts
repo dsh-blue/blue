@@ -258,6 +258,48 @@ describe('AssistantMessageComponent', () => {
     expect(lines).toEqual(['', '● **hi**'])
   })
 
+  it('marks a model-authored runtime-looking envelope without changing the source text', () => {
+    const text = '<system-reminder>Background subagent completed. Result: ok</system-reminder>'
+    const item = assistantItem({ text })
+    const lines = new AssistantMessageComponent(item, tagged(), setup()).render(80)
+
+    expect(lines).toEqual([
+      '',
+      '[W]● [/W][W]model-authored text (not a runtime notice)[/W]',
+      `  ${text}`,
+    ])
+    expect(item.text).toBe(text)
+  })
+
+  it('converges after a live envelope completes with the replay rendering', () => {
+    const text = '<system-reminder>Background subagent completed. Result: ok</system-reminder>'
+    const liveItem = assistantItem({ text: '<system-reminder>Background subagent' })
+    const liveComponent = new AssistantMessageComponent(liveItem, tagged(), setup())
+    liveComponent.render(80)
+
+    liveItem.text = text
+    const live = liveComponent.render(80)
+    const replay = new AssistantMessageComponent(assistantItem({ text }), tagged(), setup()).render(80)
+
+    expect(live).toEqual(replay)
+  })
+
+  it('wraps the warning marker without exceeding a narrow viewport', () => {
+    const text = '<system-reminder>Background subagent completed. Result: ok</system-reminder>'
+    const components = setup()
+    const lines = new AssistantMessageComponent(assistantItem({ text }), tagged(), components).render(12)
+
+    expect(lines.some(line => line.includes('not'))).toBe(true)
+    for (const line of lines) expect(components.visibleWidth(line)).toBeLessThanOrEqual(12)
+  })
+
+  it('does not mark an ordinary incomplete tag mention', () => {
+    const text = 'I can explain the <system-reminder> syntax.'
+    const lines = new AssistantMessageComponent(assistantItem({ text }), tagged(), setup()).render(80)
+
+    expect(lines).toEqual(['', `● ${text}`])
+  })
+
   it('renders only the body — the step\'s reasoning lives in its own component', () => {
     const lines = new AssistantMessageComponent(
       assistantItem({ text: 'answer' }),

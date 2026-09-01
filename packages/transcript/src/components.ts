@@ -20,7 +20,13 @@ import type {
   BlueSemanticColors,
 } from '@dsh-blue/blue-core'
 import { interpolateLocaleMessage, type BlueTranslate } from '@dsh-blue/blue-frontend'
-import { extractKeyArgument, isPlanDecline, KEY_ARG_MAX_CHARS } from './present.ts'
+import {
+  extractKeyArgument,
+  isPlanDecline,
+  isReservedRuntimeEnvelope,
+  KEY_ARG_MAX_CHARS,
+  MODEL_AUTHORED_TEXT_MARKER,
+} from './present.ts'
 import { summarizeToolText } from './envelope.ts'
 import {
   DEFAULT_USER_FOLD_CHARS,
@@ -307,8 +313,15 @@ export class AssistantMessageComponent implements BlueComponent {
       this.markdown.setText(text)
       const contentWidth = Math.max(1, width - this.components.visibleWidth(STATUS_BULLET))
       const content = this.markdown.render(contentWidth)
-      lines.push(...content.map((line, index) =>
-        (index === 0 ? this.colors.text(STATUS_BULLET) : MESSAGE_INDENT) + line))
+      if (isReservedRuntimeEnvelope(text)) {
+        const marker = this.components.wrapText(MODEL_AUTHORED_TEXT_MARKER, contentWidth)
+        lines.push(...marker.map((line, index) =>
+          (index === 0 ? this.colors.warning(STATUS_BULLET) : MESSAGE_INDENT) + this.colors.warning(line)))
+        lines.push(...content.map(line => MESSAGE_INDENT + line))
+      } else {
+        lines.push(...content.map((line, index) =>
+          (index === 0 ? this.colors.text(STATUS_BULLET) : MESSAGE_INDENT) + line))
+      }
     }
     const clamped = lines.map(text => this.components.truncateToWidth(text, width))
     this.cache = { key, lines: clamped }
