@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/)
 [![Marketplace](https://img.shields.io/badge/marketplace-plugins-0EA5E9)](https://dsh-blue.dev/marketplace/)
+[![Chat](https://img.shields.io/badge/chat-%E9%A3%9E%E4%B9%A6%E7%BE%A4-3370FF)](https://github.com/dsh-blue/blue/issues/106)
 
 [English](README.md) | 中文
 
@@ -103,6 +104,10 @@ flowchart TB
 - **开发手册**——[编写插件](https://dsh-blue.dev/plugins/) · [公共 UI Kit](https://dsh-blue.dev/plugins/ui-kit/) · [Seam 参考](https://dsh-blue.dev/plugins/seams/) · [贡献指南](https://dsh-blue.dev/plugins/contributing/)
 - **Harness 手册**——[dsh 概念、profile、工具、MCP](https://dsh-blue.dev/dsh/)
 - **设计文档**（仓库内部）——living/archived 索引见 [docs/README.md](docs/README.md)；仓库级约定见 [AGENTS.md](AGENTS.md) 与各包自己的 `AGENTS.md`。
+
+## 社区
+
+欢迎加入 Blue 官方飞书群——反馈、排障、功能讨论与版本动态的第一线。入群链接 7 天过期，请从置顶的[群组 issue](https://github.com/dsh-blue/blue/issues/106) 最新评论获取当前链接；bug 仍请通过 [issue](https://github.com/dsh-blue/blue/issues) 提交追踪。
 
 ## 许可证
 

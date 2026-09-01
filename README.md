@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/en/)
 [![Marketplace](https://img.shields.io/badge/marketplace-plugins-0EA5E9)](https://dsh-blue.dev/en/marketplace/)
+[![Chat](https://img.shields.io/badge/chat-Feishu%20group-3370FF)](https://github.com/dsh-blue/blue/issues/106)
 
 English | [中文](README.zh.md)
 
@@ -104,6 +105,10 @@ The runtime flow is `Harness domain -> projection/action boundary -> renderer-ne
 - **Developer manual** — [writing a plugin](https://dsh-blue.dev/en/plugins/) · [UI kit](https://dsh-blue.dev/en/plugins/ui-kit/) · [seam reference](https://dsh-blue.dev/en/plugins/seams/) · [contributing](https://dsh-blue.dev/en/plugins/contributing/)
 - **Harness handbook** — [dsh concepts, profiles, tools, MCP](https://dsh-blue.dev/en/dsh/)
 - **Design documents** (Chinese, repo-internal) — the living/archived index is [docs/README.md](docs/README.md); repo-wide conventions live in [AGENTS.md](AGENTS.md) and each package's own `AGENTS.md`.
+
+## Community
+
+Questions, feedback, or feature ideas? Join the official Blue group on Feishu (primarily Chinese). Invite links expire every 7 days — grab the current one from the latest comment of the pinned [group issue](https://github.com/dsh-blue/blue/issues/106). Bug reports still belong in [issues](https://github.com/dsh-blue/blue/issues).
 
 ## License
 
