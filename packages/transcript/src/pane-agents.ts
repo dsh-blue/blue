@@ -40,6 +40,9 @@ export const inject = ['bluePanes', 'blueSessionFacts']
 /** A fresh child must remain waiting for this long before the badge changes. */
 const WAITING_HOLD_MS = 1000
 
+/** Running elapsed labels advance once per second. */
+const ELAPSED_TICK_MS = 1000
+
 let paneAgentsNow: () => number = Date.now
 
 /** Replace the pane clock for deterministic tests. */
@@ -77,9 +80,17 @@ function formatElapsed(seconds: number): string {
 
 function memberElapsed(member: PaneMember, live: AgentLiveLookup | undefined): number {
   const snapshot = live?.(member.item)
-  const terminal = snapshot?.phase === 'completed' || snapshot?.phase === 'failed' || member.item.result !== undefined
+  const phase = agentPhase(member, live).label
+  const terminal = phase === 'done' || phase === 'failed'
   const end = terminal ? snapshot?.endedAt ?? member.item.result?.endedAt : undefined
   return Math.max(0, Math.floor(((end ?? paneAgentsNow()) - member.item.startedAt) / 1000))
+}
+
+function hasRunningMember(members: readonly PaneMember[], live: AgentLiveLookup | undefined): boolean {
+  return members.some(member => {
+    const phase = agentPhase(member, live).label
+    return phase === 'running' || phase === 'waiting'
+  })
 }
 
 function firstNonEmptyLine(text: string): string | undefined {
@@ -168,6 +179,12 @@ export function apply(ctx: Context): void {
   let refresh = (): void => undefined
   const waitingSince = new Map<string, number>()
   const waitingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  let elapsedTimer: ReturnType<typeof setInterval> | undefined
+  const stopElapsedTimer = (): void => {
+    if (elapsedTimer === undefined) return
+    clearInterval(elapsedTimer)
+    elapsedTimer = undefined
+  }
   const clearWaiting = (id: string): void => {
     waitingSince.delete(id)
     const timer = waitingTimers.get(id)
@@ -258,11 +275,24 @@ export function apply(ctx: Context): void {
   refresh = () => {
     pane.setHidden(members.length === 0)
     if (members.length > 0) pane.refresh()
+    if (!hasRunningMember(members, liveLookup)) {
+      stopElapsedTimer()
+    } else if (elapsedTimer === undefined) {
+      elapsedTimer = setInterval(() => {
+        if (!hasRunningMember(members, liveLookup)) {
+          stopElapsedTimer()
+          return
+        }
+        pane.refresh()
+      }, ELAPSED_TICK_MS)
+      elapsedTimer.unref()
+    }
   }
   refresh()
   ctx.effect(() => {
     return () => {
       tracker?.dispose()
+      stopElapsedTimer()
       for (const id of waitingSince.keys()) clearWaiting(id)
       pane.dispose()
     }

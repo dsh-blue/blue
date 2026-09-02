@@ -228,7 +228,7 @@ describe('blue-pane-agents plugin', () => {
       turnStart(1),
       stepStart(1, 1),
       subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey the tests', { time: T0 }),
-      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 70 }),
     ])
     const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
     rig.ctx.emit('session/event', child, childTurnStart())
@@ -248,6 +248,7 @@ describe('blue-pane-agents plugin', () => {
     const text = rows.join('\n')
     expect(text).toContain('running Survey')
     expect(text).toContain('1 tool')
+    expect(text).toContain('6s')
     expect(text).toContain('3200 tokens')
     expect(text).toContain('Using read')
   })
@@ -265,9 +266,12 @@ describe('blue-pane-agents plugin', () => {
     const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
     rig.ctx.emit('session/event', child, childTurnStart())
     expect(rig.screen.paneLines(140).join('\n')).toContain('running Queued')
+    const revision = rig.ctx.bluePanes.list().find(entry => entry.id === 'blue.pane.agents')!.revision
     now += 1_000
     vi.advanceTimersByTime(1_000)
     expect(rig.screen.paneLines(140).join('\n')).toContain('waiting Queued')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('1s')
+    expect(rig.ctx.bluePanes.list().find(entry => entry.id === 'blue.pane.agents')!.revision).toBeGreaterThan(revision)
     rig.ctx.emit('session/event', child, {
       type: 'tool/call', seq: 2, time: T0 + 2_000,
       data: { turn: 1, step: 1, callId: 't1', name: 'read', arguments: '{}' },
@@ -297,6 +301,25 @@ describe('blue-pane-agents plugin', () => {
     unloading.ctx.emit('session/event', child, childTurnStart())
     expect(unloading.screen.paneLines(140).join('\n')).toContain('running Unloading')
     await unloading.dispose()
+  })
+
+  it('stands down an elapsed tick queued before the group disappears', async () => {
+    vi.useFakeTimers()
+    const intervals = vi.spyOn(globalThis, 'setInterval')
+    const rig = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Pending', 'pending', { time: T0 }),
+    ])
+    const tick = intervals.mock.calls.find(([, ms]) => ms === 1_000)?.[0] as (() => void) | undefined
+    expect(tick).toBeTypeOf('function')
+    const next = fakeAgent([])
+    ;(next as unknown as { id: string }).id = 'parent-next'
+    rig.ctx.emit('test/session-changed', next)
+    tick?.()
+    expect(rig.screen.paneLines(140)).toEqual([])
+    await rig.dispose()
+    intervals.mockRestore()
   })
 
   it('shows distinct agent detail and a failed live child phase', async () => {
