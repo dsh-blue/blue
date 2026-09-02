@@ -6,11 +6,22 @@
  * @module @dsh-blue/blue-core/ui-compiler
  */
 
-import type { BlueFormField, BlueStatusNode, BlueTone, BlueUiEvent, BlueUiNode, BlueViewportCondition, BlueView } from '@dsh-blue/blue-api'
+import type {
+  BlueChartNode,
+  BlueDocumentNode,
+  BlueFormField,
+  BlueStatusNode,
+  BlueTone,
+  BlueUiEvent,
+  BlueUiNode,
+  BlueViewportCondition,
+  BlueView,
+} from '@dsh-blue/blue-api'
 import { CURSOR_MARKER, HStack, Key, matchesKey, ScrollView, VStack, type Component } from '@earendil-works/pi-tui'
 import { renderLayoutFrame, type LayoutBox, type LayoutRect } from '@earendil-works/pi-tui/dist/layout.js'
 import { getLayoutNode, LAYOUT_NODE, type LayoutNode, type LayoutViewport } from '@earendil-works/pi-tui/dist/layout-node.js'
 import { hintRow } from './chrome.ts'
+import { renderChartRows } from './chart-renderer.ts'
 import { ownDataErrorMessage } from './error-message.ts'
 import { paintPluginTone, renderCanonicalView } from './plugin-view.ts'
 import type { BlueComponent, BlueComponents, BlueEditor, BlueFocusable, BlueFocusIdentity, BlueSemanticColors } from './types.ts'
@@ -373,6 +384,29 @@ function markdownLeafComponent(node: Extract<BlueUiNode, { readonly kind: 'text'
     },
     invalidate: () => markdown.invalidate(),
   }
+}
+
+function documentSource(node: BlueDocumentNode): string {
+  if (node.format === 'markdown') return node.source
+  const longest = Math.max(0, ...Array.from(node.source.matchAll(/`+/gu), match => match[0].length))
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  return `${fence}mermaid\n${node.source}\n${fence}`
+}
+
+function documentComponent(node: BlueDocumentNode, path: string, options: RuntimeCompilerOptions): BlueComponent {
+  const markdown = options.components.createMarkdown({ text: documentSource(node) })
+  return {
+    render: width => windowLeafRows(markdown.render(Math.max(1, width)), path, options),
+    invalidate: () => markdown.invalidate(),
+  }
+}
+
+function chartComponent(node: BlueChartNode, path: string, options: RuntimeCompilerOptions): BlueComponent {
+  return staticComponent(width => windowLeafRows(
+    renderChartRows(node, Math.max(1, width), options.components, options.colors),
+    path,
+    options,
+  ), options)
 }
 
 function editorFieldComponent(field: TextField, key: string, state: FocusState, options: RuntimeCompilerOptions): BlueComponent {
@@ -1042,6 +1076,8 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
     case 'progress': return staticComponent(width => renderProgress(node, width, options.colors), options)
     case 'spacer': return staticComponent(() => Array.from({ length: node.size ?? 1 }, () => ''), options)
     case 'divider': return staticComponent(width => renderDivider(node.label, width, options.colors), options)
+    case 'document': return documentComponent(node, path, options)
+    case 'chart': return chartComponent(node, path, options)
   }
 }
 

@@ -18,11 +18,24 @@ Queue panes register with `bluePanes`; mode status registers with
 for internal dialogs that require concrete editor/focus behavior. External
 overlay contributions use `blueOverlays`.
 
+`/jobs` reads, kills, and subscribes through the native `jobs` registry for
+the exact current Agent; output is consumed only by explicit Enter. `/agents`
+lists native `subagents`, enriches resident rows from native Sessions and
+projections, and fills an absent one-shot descriptor label from the native
+`workflow/agent-start` identity. It owns its temporary child attach view. Attach does not change
+the selected Agent or publish a service; it aborts pending reads, follow-ups,
+listeners, timers, and transcript renderers on close, Agent replacement, or
+Fiber unload.
+
 Async extension callbacks are bounded, abortable, generation-fenced, and
 validated before applying completion/submit/event output. Unload aborts work
 and disposes all registrations. There is one Blue-owned editor engine; do not
 restore editor providers, status providers, candidate selection, host bridges,
 plugin catalog commands, or plugin author environment wiring.
+
+Editor-extension before/after nodes remain deliberately lightweight and do
+not admit `document` or `chart`; rich terminal content belongs to pane and
+overlay trees.
 
 Command, editor, dialog, callback, lifecycle, or width changes require the
 owning suites and width scan, bundle e2e, `pnpm run verify:full`, and

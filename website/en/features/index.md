@@ -1,7 +1,7 @@
 # Features overview
 
 Blue `0.2.0-alpha.1` is a flat Cordis plugin tree over `dsh-base`. The
-bundle inserts six dsh support rows and 25 Blue rows.
+bundle inserts six dsh support rows and 30 Blue rows.
 
 ## Data and interaction
 
@@ -16,7 +16,8 @@ bundle inserts six dsh support rows and 25 Blue rows.
 
 - core is the only pi-tui/raw-terminal owner;
 - status producers register directly on `blueStatus`;
-- activity, queue, todo, BTW, and Agent panes register on `bluePanes`;
+- activity, queue, todo, BTW, Agent, and workflow panes register on `bluePanes`;
+- the jobs footer, `/jobs`, and `/agents` consume native Harness services;
 - `blueOverlays` renders overlay contributions;
 - `blueEditorExtensions` composes extensions around the one Blue editor.
 

@@ -13,6 +13,10 @@ List `detailSpans`, like all inline semantic content, pass through unchanged
 and are cloned/frozen with their list item. Do not add hidden layout metadata
 or renderer callbacks to nodes.
 
+Document and chart builders preserve only the public wire data. They must not
+import, configure, or expose Mermaid/chart renderer libraries, and they remain
+outside the narrower status, editor-extension, and `BlueView` unions.
+
 `defineBlueComponent` is a package-level composition factory. It validates
 the component id and render function, then freezes render output.
 It must not validate node schemas, register component kinds, capture a Fiber,

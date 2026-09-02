@@ -17,6 +17,9 @@ describe('ui builders', () => {
       ui.diff('before', 'after'),
       ui.sections([{ title: 'Details', body: { kind: 'text', content: 'body' }, collapsed: false }]),
       ui.richText([{ text: 'ready', tone: 'success' }]),
+      ui.document({ format: 'markdown', source: '| A | B |\n| - | - |' }),
+      ui.document({ format: 'mermaid', source: 'graph LR; A --> B' }),
+      ui.chart({ chart: 'sparkline', values: [1, null, 3], label: 'Load', tone: 'accent' }),
     ]
     expect(leaves).toEqual([
       { kind: 'text', content: 'hello', tone: 'accent' },
@@ -25,6 +28,9 @@ describe('ui builders', () => {
       { kind: 'diff', before: 'before', after: 'after' },
       { kind: 'sections', sections: [{ title: 'Details', body: { kind: 'text', content: 'body' }, collapsed: false }] },
       { kind: 'rich-text', spans: [{ text: 'ready', tone: 'success' }] },
+      { kind: 'document', format: 'markdown', source: '| A | B |\n| - | - |' },
+      { kind: 'document', format: 'mermaid', source: 'graph LR; A --> B' },
+      { kind: 'chart', chart: 'sparkline', values: [1, null, 3], label: 'Load', tone: 'accent' },
     ])
     for (const leaf of leaves) expectDeepFrozen(leaf)
   })
@@ -88,6 +94,8 @@ describe('ui builders', () => {
     expect(ui.scroll(ui.text('x'))).toEqual({ kind: 'scroll', child: { kind: 'text', content: 'x' } })
     expect(ui.spacer()).toEqual({ kind: 'spacer' })
     expect(ui.divider()).toEqual({ kind: 'divider' })
+    expect(ui.document({ format: 'markdown', source: 'x' })).toEqual({ kind: 'document', format: 'markdown', source: 'x' })
+    expect(ui.chart({ chart: 'sparkline', values: [1] })).toEqual({ kind: 'chart', chart: 'sparkline', values: [1] })
     expect(Object.isFrozen(ui)).toBe(true)
     expect(Object.isFrozen(ui.stack)).toBe(true)
   })

@@ -8,6 +8,7 @@
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-title/types'
@@ -36,8 +37,10 @@ export class SessionFactsService extends Service {
   private agent: Agent | null = null
   private facts: ConversationFacts = initialConversationFacts()
   private title: string | undefined
+  private goal: GoalProjection | null = null
   private readonly listeners = new Set<(facts: ConversationFacts) => void>()
   private readonly titleListeners = new Set<(title: string | undefined) => void>()
+  private readonly goalListeners = new Set<(goal: GoalProjection | null) => void>()
   private readonly agentListeners = new Set<(agent: Agent | null) => void>()
   private readonly childListeners = new Set<(children: readonly ChildSessionFacts[]) => void>()
   private readonly children = new Map<string, ChildSessionFacts>()
@@ -50,6 +53,7 @@ export class SessionFactsService extends Service {
       if (session === this.agent?.session) {
         if (key === 'blueConversationFacts' && isFacts(value)) this.publish(value)
         if (key === 'title' && isTitle(value)) this.publishTitle(value ?? undefined)
+        if (key === 'goal' && isGoalProjection(value)) this.publishGoal(value)
         return
       }
       if (key === 'blueConversationFacts' && this.isDirectChild(session) && isFacts(value)) {
@@ -69,6 +73,11 @@ export class SessionFactsService extends Service {
     return this.title
   }
 
+  /** Current official goal projection value, or null without a current goal. */
+  get currentGoal(): GoalProjection | null {
+    return this.goal
+  }
+
   /** Current raw dsh Agent selected by Blue. */
   get currentAgent(): Agent | null { return this.agent }
 
@@ -84,6 +93,13 @@ export class SessionFactsService extends Service {
     this.titleListeners.add(listener)
     listener(this.title)
     return () => this.titleListeners.delete(listener)
+  }
+
+  /** Subscribe to goal-projection changes; the current value is delivered first. */
+  subscribeGoal(listener: (goal: GoalProjection | null) => void): () => void {
+    this.goalListeners.add(listener)
+    listener(this.goal)
+    return () => this.goalListeners.delete(listener)
   }
 
   /** Subscribe to exact current-Agent changes. */
@@ -110,11 +126,13 @@ export class SessionFactsService extends Service {
     this.children.clear()
     const snapshot = agent === null
       ? undefined
-      : this.ctx.sessionProjections.snapshot(agent.session, ['blueConversationFacts', 'title'])
+      : this.ctx.sessionProjections.snapshot(agent.session, ['blueConversationFacts', 'title', 'goal'])
     const facts = snapshot?.values.blueConversationFacts
     this.publish(isFacts(facts) ? facts : initialConversationFacts())
     const title = snapshot?.values.title
     this.publishTitle(isTitle(title) ? title ?? undefined : undefined)
+    const goal = snapshot?.values.goal
+    this.publishGoal(isGoalProjection(goal) ? goal : null)
     for (const child of this.directChildren()) {
       const childFacts = this.ctx.sessionProjections.snapshot(child, ['blueConversationFacts']).values.blueConversationFacts
       if (isFacts(childFacts)) this.children.set(String(child.id), projectChildSessionFacts(String(child.id), childFacts))
@@ -127,12 +145,14 @@ export class SessionFactsService extends Service {
     this.offAgent()
     this.listeners.clear()
     this.titleListeners.clear()
+    this.goalListeners.clear()
     this.agentListeners.clear()
     this.childListeners.clear()
     this.children.clear()
     this.agent = null
     this.facts = initialConversationFacts()
     this.title = undefined
+    this.goal = null
   }
 
   private publish(next: ConversationFacts): void {
@@ -144,6 +164,12 @@ export class SessionFactsService extends Service {
     if (next === this.title) return
     this.title = next
     for (const listener of this.titleListeners) listener(next)
+  }
+
+  private publishGoal(next: GoalProjection | null): void {
+    if (next === this.goal) return
+    this.goal = next
+    for (const listener of this.goalListeners) listener(next)
   }
 
   private publishChild(id: string, facts: ConversationFacts): void {
@@ -209,4 +235,22 @@ function isFacts(value: unknown): value is ConversationFacts {
 
 function isTitle(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
+}
+
+function isGoalProjection(value: unknown): value is GoalProjection | null {
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const row = value as { goal?: unknown, roundsStarted?: unknown, createdAt?: unknown, updatedAt?: unknown }
+  if (typeof row.roundsStarted !== 'number' || typeof row.createdAt !== 'number' || typeof row.updatedAt !== 'number') return false
+  if (row.goal === null || typeof row.goal !== 'object') return false
+  const goal = row.goal as { id?: unknown, revision?: unknown, objective?: unknown, phase?: unknown, blockedReason?: unknown, maxGoalRounds?: unknown }
+  if (typeof goal.id !== 'string' || typeof goal.revision !== 'number' || typeof goal.objective !== 'string') return false
+  if (goal.phase !== 'active' && goal.phase !== 'paused' && goal.phase !== 'blocked' && goal.phase !== 'complete') return false
+  if (typeof goal.maxGoalRounds !== 'number') return false
+  if (goal.blockedReason !== undefined) {
+    if (goal.blockedReason === null || typeof goal.blockedReason !== 'object') return false
+    const reason = goal.blockedReason as { code?: unknown, message?: unknown }
+    if (typeof reason.code !== 'string' || typeof reason.message !== 'string') return false
+  }
+  return true
 }

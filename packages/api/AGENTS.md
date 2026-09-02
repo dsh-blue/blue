@@ -19,6 +19,11 @@ width, focus handle, pi-tui component, Agent, Session, or renderer object.
 Callbacks are allowed only where the surface contract requires render/event,
 completion, or submit behavior.
 
+`document` and `chart` are data-only `BlueUiNode` variants for full pane and
+overlay trees. They do not widen `BlueView`, `BlueStatusNode`, or
+`BlueEditorExtensionNode`; renderer libraries, width behavior, and fallbacks
+remain core-owned.
+
 Do not add capability negotiation, manifests, grants, host facades, owner
 attachments, private control planes, result wrappers, service mirrors, or
 compatibility aliases. Native dsh services remain native dsh services.

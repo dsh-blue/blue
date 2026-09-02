@@ -15,6 +15,10 @@ bundle，针对 Harness `0.1.2-alpha.3` 构建。Blue `0.2.0-alpha.1`
 刻意与 dsh Web 使用同一种插件模型：插件是普通 Cordis sibling，直接消费
 dsh 原生服务。
 
+Blue 可以直接在终端显示 Markdown 表格、assistant 消息中的闭合 Mermaid fence，
+以及 renderer-neutral 的 line、point、bar、sparkline 与 heatmap 节点；超宽或不支持
+的内容会安全回退为源码或文本。
+
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示：流式会话、工具卡片与面板"></a>
 </p>

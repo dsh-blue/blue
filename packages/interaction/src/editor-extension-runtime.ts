@@ -12,6 +12,7 @@ import type {
   BlueEditorCompletionItem,
   BlueEditorCompletionRequest,
   BlueEditorExtensionContribution,
+  BlueEditorExtensionNode,
   BlueEditorSubmitRequest,
   BlueUiEvent,
   BlueUiNode,
@@ -196,7 +197,7 @@ function submitValue(result: unknown): Admission<{ readonly text: string }> {
   }
 }
 
-function isPassive(node: BlueUiNode): boolean {
+function isPassive(node: BlueUiNode): node is BlueEditorExtensionNode {
   switch (node.kind) {
     case 'text':
     case 'rich-text':

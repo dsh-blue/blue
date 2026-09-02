@@ -57,7 +57,9 @@
     "@dsh-blue/blue-ui": "workspace:*",
     "@deepseek-ai/schemastery": "3.18.2",
     "@earendil-works/pi-tui": "^0.84.2",
-    "cli-highlight": "^2.1.11"
+    "beautiful-mermaid": "1.1.3",
+    "cli-highlight": "^2.1.11",
+    "simple-ascii-chart": "6.0.0"
   },
   "peerDependencies": {
     "@dsh-blue/blue-frontend": "workspace:*",

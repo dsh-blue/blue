@@ -16,6 +16,10 @@ It is an out-of-tree Cordis bundle over `dsh-base`, built against Harness
 model as dsh Web: plugins are ordinary Cordis siblings and consume native dsh
 services directly.
 
+Blue renders Markdown tables, closed Mermaid fences in assistant messages,
+and renderer-neutral line, point, bar, sparkline, and heatmap nodes directly in
+the terminal, with width-safe source or text fallbacks.
+
 <p align="center">
   <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue demo: streaming transcript, tool cards, and panes"></a>
 </p>

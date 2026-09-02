@@ -1,4 +1,11 @@
-import { defineBlueComponent, ui, type BlueUiChild, type BlueUiNode } from '@dsh-blue/blue-ui'
+import {
+  defineBlueComponent,
+  ui,
+  type BlueEditorExtensionNode,
+  type BlueStatusNode,
+  type BlueUiChild,
+  type BlueUiNode,
+} from '@dsh-blue/blue-ui'
 
 interface MetricProps { readonly label: string, readonly value: number }
 
@@ -16,6 +23,15 @@ export const metric = defineBlueComponent<MetricProps>({
 
 export const node: BlueUiNode = metric.render({ label: 'Context', value: 42 })
 export const child: BlueUiChild = ui.child(node, { shrink: 1 })
+export const document = ui.document({ format: 'mermaid', source: 'graph TD\nA --> B' })
+export const chart = ui.chart({ chart: 'line', series: [{ id: 'load', points: [{ x: 0, y: 1 }] }] })
+
+// @ts-expect-error rich documents are not status nodes
+export const statusDocument: BlueStatusNode = document
+// @ts-expect-error charts are not editor-extension nodes
+export const editorChart: BlueEditorExtensionNode = chart
+// @ts-expect-error bar charts require category-aligned values
+ui.chart({ chart: 'bar', series: [{ id: 'load', values: [1] }] })
 
 // @ts-expect-error flex properties belong to ui.child, not scroll options
 ui.scroll(node, { grow: 1 })

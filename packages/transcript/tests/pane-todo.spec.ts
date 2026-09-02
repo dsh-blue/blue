@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { GoalPhase, GoalProjection } from '@deepseek-ai/dsh-goal'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import * as todo from '../src/pane-todo.ts'
 import { event, resetSeq, userEvent } from './helpers.ts'
@@ -19,6 +20,22 @@ import { asAgent, fakeAgent } from './status-fakes.ts'
 /** A `todo/write` whole-list snapshot event. */
 function todoWrite(todos: TodoItem[]): SessionEvent<'todo/write'> {
   return event('todo/write', { todos })
+}
+
+function goalProjection(phase: GoalPhase, options: { rounds?: number, max?: number, message?: string } = {}): GoalProjection {
+  return {
+    goal: {
+      id: 'goal-1' as GoalProjection['goal']['id'],
+      revision: 3,
+      objective: 'ship the badge',
+      phase,
+      ...(options.message === undefined ? {} : { blockedReason: { code: 'tests-red', message: options.message } }),
+      maxGoalRounds: options.max ?? 8,
+    },
+    roundsStarted: options.rounds ?? 2,
+    createdAt: 1_000,
+    updatedAt: 2_000,
+  }
 }
 
 /** The canonical divider at the given width. */
@@ -152,6 +169,55 @@ describe('blue-pane-todo', () => {
     const noTodos = await bootPanePlugin(todo, fakeAgent([userEvent('hi')]))
     expect(noTodos.screen.paneLines()).toEqual([])
     await noTodos.dispose()
+  })
+
+  it('does not open a Todo pane for a goal without todo items', async () => {
+    const harness = await bootPanePlugin(todo)
+    for (const phase of ['active', 'paused', 'blocked', 'complete'] as const) {
+      harness.facts.setGoal(goalProjection(phase))
+      expect(harness.screen.paneLines()).toEqual([])
+    }
+    harness.facts.setGoal(null)
+    expect(harness.screen.paneLines()).toEqual([])
+    await harness.dispose()
+  })
+
+  it('adds active, paused, and blocked goal context to an existing Todo pane', async () => {
+    const harness = await bootPanePlugin(todo, fakeAgent([todoWrite([{ content: 'next task', status: 'pending' }])]))
+    harness.facts.setGoal(goalProjection('active'))
+    expect(harness.screen.paneLines()).toEqual([
+      rule(), '  Todo · ● active · 2/8', '  ship the badge', row('○', 'next task'),
+    ])
+    harness.facts.setGoal(goalProjection('paused', { rounds: 4, max: 12 }))
+    expect(harness.screen.paneLines()).toEqual([
+      rule(), '  Todo · ❚❚ paused · 4/12', '  ship the badge', row('○', 'next task'),
+    ])
+    harness.facts.setGoal(goalProjection('blocked', { message: 'tests are red' }))
+    expect(harness.screen.paneLines()).toEqual([
+      rule(),
+      '  Todo · ✕ blocked · 2/8',
+      '  ship the badge',
+      '  blocked: tests are red',
+      row('○', 'next task'),
+    ])
+    harness.facts.setGoal(goalProjection('complete'))
+    expect(harness.screen.paneLines()).toEqual([rule(), TITLE, row('○', 'next task')])
+    harness.facts.setGoal(null)
+    expect(harness.screen.paneLines()).toEqual([rule(), TITLE, row('○', 'next task')])
+    await harness.dispose()
+  })
+
+  it('keeps todos visible when a goal completes and resets the badge on session change', async () => {
+    resetSeq()
+    const first = fakeAgent([todoWrite([{ content: 'keep me', status: 'pending' }])])
+    const harness = await bootPanePlugin(todo, first)
+    harness.facts.setGoal(goalProjection('blocked'))
+    expect(harness.screen.paneLines()).toContain('  blocked: ')
+    harness.facts.setGoal(goalProjection('complete'))
+    expect(harness.screen.paneLines()).toEqual([rule(), TITLE, row('○', 'keep me')])
+    harness.ctx.emit('test/session-changed', asAgent(fakeAgent([])))
+    expect(harness.screen.paneLines()).toEqual([])
+    await harness.dispose()
   })
 
   it('reads the latest whole-list snapshot and shows it folded by default', async () => {

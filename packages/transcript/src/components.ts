@@ -266,7 +266,8 @@ export class UserMessageComponent implements BlueComponent {
  * `▌` cursor retired with the S17 third dogfood ruling — the activity
  * pane's composing row is the signal. The body is a held `BlueMarkdown`
  * whose own text/width cache replaces the former hand-rolled Markdown
- * cache; mid-stream unterminated constructs settle as the text completes.
+ * cache; mid-stream unterminated constructs settle as the text completes,
+ * including closed Mermaid fences rendered by core's rich document adapter.
  */
 export class AssistantMessageComponent implements BlueComponent {
   private readonly item: TranscriptAssistantItem

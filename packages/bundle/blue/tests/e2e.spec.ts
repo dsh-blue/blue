@@ -42,6 +42,9 @@ describe('Blue direct-service whole tree', () => {
       commands: true,
       sessionProjections: true,
       tools: true,
+      jobs: true,
+      subagents: true,
+      sessions: true,
       blueCurrentAgent: true,
       bluePanes: true,
       blueStatus: true,
@@ -107,7 +110,8 @@ describe('Blue direct-service whole tree', () => {
     await tree.ctx.loader.await()
     tree.ctx.blueScreen.requestRender(true)
     await waitForRender()
-    expect(tree.terminal.output).toContain('e2e.renderer-independent')
+    expect(tree.ctx.bluePanes.list().map(pane => pane.id)).toContain('e2e.renderer-independent')
+    expect(tree.terminal.output).toContain('registry survives renderer gaps')
   })
 
   it('passes every newly selected exact Agent to native scoped services', async () => {

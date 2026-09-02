@@ -185,6 +185,7 @@ export function apply(ctx: Context): void {
   let tipIndex = 0
   const pane = ctx.bluePanes.register({
     id: 'blue.pane.activity',
+    title: 'Activity',
     placement: 'bottom',
     priority: 10,
     size: { preferred: 1, max: 1 },

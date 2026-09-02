@@ -16,6 +16,11 @@ Each registration belongs to the calling Cordis Fiber and disappears when
 that Fiber unloads. Definitions use `BlueUiNode` data; core owns validation
 and terminal rendering.
 
+The full pane/overlay node union includes renderer-neutral `document` nodes
+for Markdown or Mermaid source and structured `chart` nodes for line, point,
+bar, sparkline, and heatmap data. These leaves are intentionally absent from
+the narrower status, notification, editor-extension, and `BlueView` contracts.
+
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@dsh-blue/blue-api'

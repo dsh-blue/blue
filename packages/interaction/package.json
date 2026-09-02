@@ -17,6 +17,18 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./jobs": {
+      "types": "./lib/types/jobs.d.ts",
+      "default": "./lib/jobs.js"
+    },
+    "./agents-command": {
+      "types": "./lib/types/agents-command.d.ts",
+      "default": "./lib/agents-command.js"
+    },
+    "./attach-view": {
+      "types": "./lib/types/attach-view.d.ts",
+      "default": "./lib/attach-view.js"
+    },
     "./editor-plus": {
       "types": "./lib/types/editor-plus.d.ts",
       "default": "./lib/editor-plus.js"
@@ -58,6 +70,7 @@
   },
   "peerDependencies": {
     "@dsh-blue/blue-api": "workspace:*",
+    "@dsh-blue/blue-conversation": "workspace:*",
     "@dsh-blue/blue-frontend": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.2-alpha.3",
@@ -68,6 +81,7 @@
     "@deepseek-ai/dsh-commands": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-credentials": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-invariants": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-jobs": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-llm": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-permission-presets": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-plan-mode": "^0.1.2-alpha.3",
@@ -75,6 +89,7 @@
     "@deepseek-ai/dsh-session-persistence": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-session-projection": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-session-query": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-subagent": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-session-stats": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-skill": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-shell-env": "^0.1.2-alpha.3",
@@ -83,12 +98,14 @@
     "@deepseek-ai/dsh-token-meter": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-user-approval": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-user-questions": "^0.1.2-alpha.3",
+    "@deepseek-ai/dsh-workflow": "^0.1.2-alpha.3",
     "@dsh-blue/blue-app": "workspace:*",
     "@dsh-blue/blue-core": "workspace:*",
     "@dsh-blue/blue-transcript": "workspace:*"
   },
   "devDependencies": {
     "@dsh-blue/blue-api": "workspace:*",
+    "@dsh-blue/blue-conversation": "workspace:*",
     "@types/semver": "7.8.0",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-include": "1.0.7",
@@ -100,20 +117,24 @@
     "@deepseek-ai/dsh-commands": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-credentials": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-invariants": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-jobs": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-llm": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-permission-presets": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-plan-mode": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-session-persistence": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-session-projection": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-query": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-session-stats": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-shell-env": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-skill": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-token-meter": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-subagent": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-user-approval": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-user-questions": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-workflow": "0.1.2-alpha.3",
     "@dsh-blue/blue-app": "workspace:*",
     "@dsh-blue/blue-core": "workspace:*",
     "@dsh-blue/blue-transcript": "workspace:*"

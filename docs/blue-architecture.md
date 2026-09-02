@@ -79,7 +79,7 @@ Harness session event truth。
 ```mermaid
 flowchart TB
     BASE["dsh-base"]
-    subgraph GRAPH["flat Cordis sibling graph · 31 inserted rows"]
+    subgraph GRAPH["flat Cordis sibling graph · 36 inserted rows"]
         SUPPORT["dsh support · 6 rows<br/>subagent settings · presets · host runner<br/>workspace · session controller · title"]
         API["blue-api<br/>four direct UI registries"]
         APP["blue-conversation · blue-startup · blue-app"]
@@ -102,7 +102,7 @@ flowchart TB
 ```
 <!-- END diagram:blue-composition -->
 
-`cordis.patch.yml` 插入 31 个普通 sibling：6 个 dsh 支撑行和 25 个 Blue
+`cordis.patch.yml` 插入 35 个普通 sibling：6 个 dsh 支撑行和 29 个 Blue
 product 行。YAML 顺序不代表启动顺序；所有顺序要求必须由 `inject` 表达。
 动态 Cordis plugin 与官方 Blue 行处在同一 service graph。
 

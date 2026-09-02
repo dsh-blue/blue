@@ -275,6 +275,30 @@ describe('AssistantMessageComponent', () => {
     expect(component.render(80)).toEqual(['', '● partial, still growing'])
   })
 
+  it('forwards streaming fence closure to the held rich Markdown adapter', () => {
+    let source = ''
+    const components = {
+      ...setup(),
+      createMarkdown: () => ({
+        setText: (text: string) => { source = text },
+        render: () => {
+          const close = source.indexOf('\n```', source.indexOf('```mermaid') + 3)
+          if (close === -1) return [source]
+          const trailing = source.slice(close + 4).trim()
+          return ['MERMAID-DIAGRAM', ...(trailing === '' ? [] : [trailing])]
+        },
+        invalidate: () => {},
+      }),
+    } as BlueComponents
+    const item = assistantItem({ text: '```mermaid\ngraph TD\nA --> B' })
+    const component = new AssistantMessageComponent(item, COLORS, components)
+    expect(component.render(80).join('\n')).toContain('graph TD')
+    item.text += '\n```'
+    expect(component.render(80)).toEqual(['', '● MERMAID-DIAGRAM'])
+    item.text += '\ncontinuing'
+    expect(component.render(80)).toEqual(['', '● MERMAID-DIAGRAM', '  continuing'])
+  })
+
   it('indents continuation lines under the bullet (kimi MESSAGE_INDENT)', () => {
     const components = setup()
     const lines = new AssistantMessageComponent(assistantItem({ text: 'aaa bbb ccc' }), COLORS, components).render(6)

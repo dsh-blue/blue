@@ -8,11 +8,19 @@ It provides `blueScreen`, `blueKeymap`, `blueTerminalInfo`, and
 `blueComponents`, while theme subpaths provide `blueTheme`. The direct
 surface renderer subscribes to `bluePanes` and `blueOverlays`; it compiles
 their current definitions without a host bridge or private facade.
+Visible passive bottom panes stack by priority above the editor within the
+shared height budget; focusable bottom panes and header/side lanes retain one
+active tab at a time.
 
 Public node admission clones known fields, strips terminal controls, enforces
 depth/node/text/collection budgets, and never mutates caller data. Status
 nodes remain non-interactive. Editor shell validation remains separate because
 the Blue-owned editor control is not an external node kind.
+
+Core owns the Mermaid and chart adapters. Only closed Mermaid fences are
+enhanced; invalid, unsafe, over-quota, or over-wide content falls back to
+source or a bounded text summary. `document` and `chart` remain width-contained
+passive leaves and are rejected by status and editor-shell admission.
 
 Capturing overlays receive focus directly. Unless `dismissible: false`, Escape
 closes them and restores prior focus. Non-capturing overlays must contain no

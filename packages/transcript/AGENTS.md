@@ -14,6 +14,20 @@ layer. Renderer caches are keyed by stable model identity, width, and local
 presentation policy, and are disposed on replacement, eviction, detach, or
 unload.
 
+Assistant Markdown is handed to core's shared Markdown adapter. Transcript
+does not parse Mermaid itself; streamed fences remain source until closed, at
+which point core may enhance them or preserve the source fallback.
+
+`SessionFactsService` also mirrors the official `goal` projection for the todo
+title and clears it on Agent replacement. A goal never opens the Todo pane by
+itself: an existing Todo list carries its objective, while the footer reads
+phase, rounds, and process-local activation from native `goals` for the exact
+current Agent. Jobs status reads the native `jobs` registry for that Agent.
+Workflow rows fold native lifecycle
+facts only after a member child id is attributed through the current Agent's
+native Sessions; settled rows clear on the next turn, while live timers and all
+event subscriptions are Fiber-owned.
+
 Status producers register directly with `blueStatus`; pane producers register
 directly with `bluePanes`. Blue's shipped rows use the same definitions and
 Fiber cleanup as external plugins. There are no package-private status/pane

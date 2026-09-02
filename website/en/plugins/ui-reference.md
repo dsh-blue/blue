@@ -260,6 +260,84 @@ ui.sections([
 ])
 ```
 
+### `document`
+
+```ts
+ui.document({
+  format: 'markdown' | 'mermaid',
+  source: string,
+})
+```
+
+Markdown reuses Blue's pi-tui adapter, including tables and fenced code.
+Mermaid is rendered as terminal Unicode through `beautiful-mermaid`; closed
+`mermaid` fences in assistant messages use the same path. Parse failures,
+unsupported or over-wide diagrams, source/output quota failures, and labels
+containing CJK, emoji, or other full-width characters remain visible as the
+original Mermaid code fence. Diagrams are never wrapped or truncated.
+
+```ts
+ui.document({
+  format: 'mermaid',
+  source: 'flowchart TD\n  Request --> Validate\n  Validate --> Result',
+})
+```
+
+`document` is available in ordinary panes and passive or capturing overlays.
+It is not a status, notification, editor-extension, or `sections.body` node.
+
+### `chart`
+
+`chart` carries data rather than renderer options. Blue adapts it through
+`simple-ascii-chart`, maps semantic tones through the active theme, and falls
+back to a bounded textual summary when a chart cannot fit.
+
+```ts
+ui.chart({
+  chart: 'line' | 'point',
+  title?: string,
+  xLabel?: string,
+  yLabel?: string,
+  height?: number, // 4..20
+  series: [{
+    id: string,
+    label?: string,
+    tone?: BlueTone,
+    points: [{ x: number, y: number | null }],
+  }],
+})
+
+ui.chart({
+  chart: 'bar',
+  layout?: 'grouped' | 'stacked' | 'normalized',
+  title?: string,
+  yLabel?: string,
+  height?: number, // 4..20
+  categories: readonly string[],
+  series: [{ id: string, label?: string, tone?: BlueTone, values: readonly (number | null)[] }],
+})
+
+ui.chart({ chart: 'sparkline', values: [2, 4, null, 7], label: 'Load', tone: 'warning' })
+
+ui.chart({
+  chart: 'heatmap',
+  columns: ['Linux', 'macOS'],
+  rows: ['Node 22'],
+  values: [['pass', 'fail']],
+  levels: [
+    { value: 'pass', label: 'Passed', tone: 'success' },
+    { value: 'fail', label: 'Failed', tone: 'danger' },
+  ],
+})
+```
+
+Values must be finite; `null` marks missing data. Series ids and heatmap level
+values are unique, bar values match the category count, and heatmap dimensions
+match their row/column labels. Each chart accepts at most 20 series, and one
+tree accepts at most 4,000 chart cells. Like `document`, `chart` is available
+in ordinary panes and passive or capturing overlays, not in narrower status,
+notification, editor-extension, or `BlueView` trees.
+
 ## Layout nodes
 
 ### `child`

@@ -384,9 +384,10 @@ export function apply(ctx: Context): void {
     // the canonical name owns the handler and the session log. The raw
     // input after the name travels untouched.
     const canonical = aliases.canonicalOf(parsed.name)
+    const commandName = canonical ?? parsed.name
     void ctx.commands.execute(
       agent,
-      canonical === undefined ? line : `/${canonical}${parsed.rawInput}`,
+      canonical === undefined ? line : `/${commandName}${parsed.rawInput}`,
       [],
       new AbortController().signal,
     ).then(
@@ -396,7 +397,7 @@ export function apply(ctx: Context): void {
         if (unloaded) return
         if (execution === undefined) setNotice(`unknown command: ${line}`)
         else if (execution.result.kind === 'error') setNotice(colors.error(execution.result.text))
-        else if (execution.result.text !== undefined) setNotice(execution.result.text)
+        else if (execution.result.text !== undefined && commandName !== 'goal') setNotice(execution.result.text)
       },
       (error: unknown) => {
         if (unloaded) return

@@ -1,7 +1,9 @@
 /** Pure builders for Blue's renderer-independent public UI wire format. */
 import type {
   BlueActionsNode,
+  BlueChartNode,
   BlueDividerNode,
+  BlueDocumentNode,
   BlueEmptyNode,
   BlueFormNode,
   BlueInlineSpan,
@@ -33,6 +35,9 @@ type CodeOptions = Omit<BlueCodeNode, 'kind' | 'code'>
 type ChildOptions = Omit<BlueUiChild, 'node'>
 type StackOptions = Omit<BlueStackNode, 'kind' | 'direction' | 'children'>
 type ScrollOptions = Omit<BlueScrollNode, 'kind' | 'child'>
+type ChartOptions = BlueChartNode extends infer Node
+  ? Node extends BlueChartNode ? Omit<Node, 'kind'> : never
+  : never
 const COMPONENT_ID_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
 
 /** Deeply freeze a value in place while tolerating object cycles. */
@@ -157,6 +162,14 @@ function divider(options: Omit<BlueDividerNode, 'kind'> = {}): BlueDividerNode {
   return frozen({ ...options, kind: 'divider' })
 }
 
+function document(options: Omit<BlueDocumentNode, 'kind'>): BlueDocumentNode {
+  return frozen({ ...options, kind: 'document' })
+}
+
+function chart(options: ChartOptions): BlueChartNode {
+  return frozen({ ...options, kind: 'chart' } as BlueChartNode)
+}
+
 /** Pure builder namespace. Every result is recursively frozen. */
 export const ui = Object.freeze({
   text,
@@ -181,6 +194,8 @@ export const ui = Object.freeze({
   progress,
   spacer,
   divider,
+  document,
+  chart,
 })
 
 /** User-kit component definition before runtime hardening. */

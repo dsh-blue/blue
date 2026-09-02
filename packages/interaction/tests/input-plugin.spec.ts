@@ -517,6 +517,32 @@ describe('blue-input plugin', () => {
     expect(hint.render(120)).toHaveLength(4)
   })
 
+  it('keeps successful goal output in Todo/footer surfaces while preserving errors', async () => {
+    const { ctx, editor, hint, agent } = await mount()
+    ctx.commands.register({
+      name: 'goal',
+      description: 'Manage the current goal',
+      handler: invocation => invocation.rawInput === ' fail'
+        ? { kind: 'error', text: 'goal failed' }
+        : {
+            kind: 'success',
+            text: 'Goal created\nStatus: active\nObjective: harmless test\nRounds: 0/256\nActivation: armed',
+          },
+    })
+    type(editor, '/goal create')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(agent.session.events.some(event => event.type === 'command/done')).toBe(true)
+    })
+    expect(hint.render(120)).toEqual([])
+
+    type(editor, '/goal fail')
+    editor.handleInput(KEY.enter)
+    await vi.waitFor(() => {
+      expect(hint.render(120)).toEqual(['~!goal failed!~'])
+    })
+  })
+
   it('drops the result notice when the fiber unloads before the command settles', async () => {
     const { ctx, screen, editor, hint, agent, fiber } = await mount()
     // A handler gate the test settles by hand, so the unload can land while

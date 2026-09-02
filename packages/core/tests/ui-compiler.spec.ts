@@ -185,6 +185,10 @@ describe('compileBlueUiNode', () => {
       ui.progress({ value: 1, max: 2 }),
       ui.spacer(),
       ui.divider(),
+      ui.document({ format: 'markdown', source: '| A | B |\n| - | - |' }),
+      ui.document({ format: 'mermaid', source: 'graph LR; A --> B' }),
+      ui.chart({ chart: 'line', series: [{ id: 'series', points: [{ x: 0, y: 1 }, { x: 1, y: 2 }] }] }),
+      ui.chart({ chart: 'sparkline', values: [1, 3, 2] }),
     ])
     const { options } = fixture()
     const result = compiled(tree, options)
@@ -193,6 +197,23 @@ describe('compileBlueUiNode', () => {
     }
     expect(result.focusTarget).not.toBeNull()
     result.component.invalidate()
+  })
+
+  it('routes document formats through the shared Markdown adapter', () => {
+    const sources: string[] = []
+    const markdownComponents = {
+      ...components,
+      createMarkdown: (options?: { text?: string }) => {
+        sources.push(options?.text ?? '')
+        return { setText: () => {}, render: () => ['document'], invalidate: () => {} }
+      },
+    } as BlueComponents
+    expect(compiled(ui.document({ format: 'markdown', source: '# Heading' }), fixture({ components: markdownComponents }).options).component.render(20)).toEqual(['document'])
+    expect(compiled(ui.document({ format: 'mermaid', source: 'graph TD\nA --> B' }), fixture({ components: markdownComponents }).options).component.render(20)).toEqual(['document'])
+    expect(compiled(ui.document({ format: 'mermaid', source: 'graph TD\nA[```] --> B' }), fixture({ components: markdownComponents }).options).component.render(20)).toEqual(['document'])
+    expect(sources[0]).toBe('# Heading')
+    expect(sources[1]).toBe('```mermaid\ngraph TD\nA --> B\n```')
+    expect(sources[2]).toBe('````mermaid\ngraph TD\nA[```] --> B\n````')
   })
 
   it('applies the private compatibility row budget to wrapped rich text', () => {

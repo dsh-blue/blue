@@ -1,7 +1,7 @@
 # 功能总览
 
 Blue `0.2.0-alpha.1` 是 `dsh-base` 上的 flat Cordis plugin tree。Bundle
-插入 6 个 dsh 支撑 row 与 25 个 Blue row。
+插入 6 个 dsh 支撑 row 与 30 个 Blue row。
 
 ## 数据与交互
 
@@ -15,7 +15,8 @@ Blue `0.2.0-alpha.1` 是 `dsh-base` 上的 flat Cordis plugin tree。Bundle
 
 - core 是唯一 pi-tui/raw-terminal owner；
 - status producer 直接注册到 `blueStatus`；
-- activity、queue、todo、BTW、agents pane 直接注册到 `bluePanes`；
+- activity、queue、todo、BTW、agents、workflow pane 直接注册到 `bluePanes`；
+- jobs footer、`/jobs` 与 `/agents` 直接消费 Harness 原生 service；
 - overlay 由 `blueOverlays` 渲染；
 - editor 扩展由 `blueEditorExtensions` 组合在唯一 Blue editor 周围。
 

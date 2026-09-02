@@ -7,7 +7,7 @@
  * session-change rebinding.
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import * as paneAgents from '../src/pane-agents.ts'
@@ -26,6 +26,15 @@ const T0 = 1_700_000_000_000
 
 /** The parent session id the tracker admits children by. */
 const PARENT = 'parent-1'
+
+beforeEach(() => {
+  paneAgents.setPaneAgentsClock(() => T0 + 6_000)
+})
+
+afterEach(() => {
+  paneAgents.setPaneAgentsClock(undefined)
+  vi.useRealTimers()
+})
 
 /** A fake agent whose session carries the id the admission keys match. */
 function fakeAgent(events: SessionEvent[]): Agent {
@@ -59,8 +68,30 @@ function childTurnStart(): SessionEvent<'turn/start'> {
 
 describe('blue-pane-agents plugin', () => {
   it('renders zero rows with no spawn calls', async () => {
-    const { screen } = await boot()
+    const { ctx, screen } = await boot()
     expect(screen.paneLines(80)).toEqual([])
+    const entry = ctx.bluePanes.list().find(candidate => candidate.id === 'blue.pane.agents')
+    expect(entry?.hidden).toBe(true)
+    expect(entry?.contribution.render()).toBeNull()
+  })
+
+  it('covers fallback labels and bounded parent-call errors in the tree', async () => {
+    const { screen } = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      toolCallEvent(1, 1, 'failed-text', 'subagent', JSON.stringify({ description: 'Broken text' })),
+      toolResultEvent(1, 1, 'failed-text', '\nactual failure', { isError: true, time: T0 + 1_000 }),
+      toolCallEvent(1, 1, 'failed-empty', 'subagent', JSON.stringify({ description: 'Broken empty' })),
+      toolResultEvent(1, 1, 'failed-empty', '\n ', { isError: true, time: T0 + 2_000 }),
+      toolCallEvent(1, 1, 'same', 'subagent', JSON.stringify({ name: 'Same', description: 'Same' })),
+      toolResultEvent(1, 1, 'same', 'done', { time: T0 + 3_000 }),
+      toolCallEvent(1, 1, 'unnamed', 'subagent', ''),
+    ])
+    const text = screen.paneLines(140).join('\n')
+    expect(text).toContain('failed Broken text')
+    expect(text).toContain('Error: actual failure')
+    expect(text).toContain('done Same')
+    expect(text).toContain('running subagent')
   })
 
   it('ignores ordinary tool calls and keeps an unacked group across turns', async () => {
@@ -119,7 +150,7 @@ describe('blue-pane-agents plugin', () => {
         message: { role: 'user', content: [{ type: 'tool-result', toolCallId: 'bad2', isError: false }] },
       },
     })
-    expect(rig.screen.paneLines(140).join('\n')).toContain('Agents (2)')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('2 agents finished')
   })
 
   it('boots without an agent and survives a malformed result event', async () => {
@@ -147,7 +178,10 @@ describe('blue-pane-agents plugin', () => {
     ])
     const rows = screen.paneLines(140)
     const text = rows.join('\n')
-    expect(rows[0]).toBe('Agents (2)')
+    expect(rows[0]).toBe('─'.repeat(140))
+    expect(rows[1]).toBe('✓ 2 agents finished · 1m 30s')
+    expect(rows[2]).toContain('├─ done Survey tests')
+    expect(rows[3]).toContain('└─ done Map docs')
     expect(text).toContain('done Survey tests')
     expect(text).toContain('done Map docs')
     // No live projection on replay: no tool counts or tokens.
@@ -180,7 +214,7 @@ describe('blue-pane-agents plugin', () => {
     rig.ctx.emit('session/event', child, childTurnStart())
     rig.ctx.emit('session/event', rig.agent.session, { ...turnStart(2), seq: 99, time: T0 + 10_000 })
     const running = rig.screen.paneLines(140).join('\n')
-    expect(running).toContain('waiting Survey')
+    expect(running).toContain('running Survey')
     rig.ctx.emit('session/event', child, {
       type: 'turn/end', seq: 2, time: T0 + 30_000, data: { turn: 1, reason: { kind: 'completed' } },
     })
@@ -194,7 +228,7 @@ describe('blue-pane-agents plugin', () => {
       turnStart(1),
       stepStart(1, 1),
       subagentCallEvent(1, 1, 'a1', 'subagent', 'Survey', 'survey the tests', { time: T0 }),
-      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 70 }),
     ])
     const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
     rig.ctx.emit('session/event', child, childTurnStart())
@@ -213,9 +247,79 @@ describe('blue-pane-agents plugin', () => {
     const rows = rig.screen.paneLines(140)
     const text = rows.join('\n')
     expect(text).toContain('running Survey')
-    expect(text).toContain('1 tools')
+    expect(text).toContain('1 tool')
+    expect(text).toContain('6s')
     expect(text).toContain('3200 tokens')
     expect(text).toContain('Using read')
+  })
+
+  it('holds a fresh waiting phase as running for one second, then reveals it', async () => {
+    vi.useFakeTimers()
+    let now = T0
+    paneAgents.setPaneAgentsClock(() => now)
+    const rig = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Queued', 'queue', { time: T0 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    const child = childSession('9f5c4086a0674b55b621c3eaf8b88c0e')
+    rig.ctx.emit('session/event', child, childTurnStart())
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Queued')
+    const revision = rig.ctx.bluePanes.list().find(entry => entry.id === 'blue.pane.agents')!.revision
+    now += 1_000
+    vi.advanceTimersByTime(1_000)
+    expect(rig.screen.paneLines(140).join('\n')).toContain('waiting Queued')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('1s')
+    expect(rig.ctx.bluePanes.list().find(entry => entry.id === 'blue.pane.agents')!.revision).toBeGreaterThan(revision)
+    rig.ctx.emit('session/event', child, {
+      type: 'tool/call', seq: 2, time: T0 + 2_000,
+      data: { turn: 1, step: 1, callId: 't1', name: 'read', arguments: '{}' },
+    })
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Queued')
+    await rig.dispose()
+
+    const pending = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Pending', 'pending', { time: T0 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    pending.ctx.emit('session/event', child, childTurnStart())
+    pending.screen.paneLines(140)
+    const next = fakeAgent([])
+    ;(next as unknown as { id: string }).id = 'parent-next'
+    pending.ctx.emit('test/session-changed', next)
+    await pending.dispose()
+
+    const unloading = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Unloading', 'unloading', { time: T0 }),
+      toolResultEvent(1, 1, 'a1', 'started subagent 9f5c4086a0674b55b621c3eaf8b88c0e', { time: T0 + 5_000 }),
+    ])
+    unloading.ctx.emit('session/event', child, childTurnStart())
+    expect(unloading.screen.paneLines(140).join('\n')).toContain('running Unloading')
+    await unloading.dispose()
+  })
+
+  it('stands down an elapsed tick queued before the group disappears', async () => {
+    vi.useFakeTimers()
+    const intervals = vi.spyOn(globalThis, 'setInterval')
+    const rig = await boot([
+      turnStart(1),
+      stepStart(1, 1),
+      subagentCallEvent(1, 1, 'a1', 'subagent', 'Pending', 'pending', { time: T0 }),
+    ])
+    const tick = intervals.mock.calls.find(([, ms]) => ms === 1_000)?.[0] as (() => void) | undefined
+    expect(tick).toBeTypeOf('function')
+    const next = fakeAgent([])
+    ;(next as unknown as { id: string }).id = 'parent-next'
+    rig.ctx.emit('test/session-changed', next)
+    tick?.()
+    expect(rig.screen.paneLines(140)).toEqual([])
+    await rig.dispose()
+    intervals.mockRestore()
   })
 
   it('shows distinct agent detail and a failed live child phase', async () => {
@@ -244,6 +348,7 @@ describe('blue-pane-agents plugin', () => {
     })
     const text = rig.screen.paneLines(140).join('\n')
     expect(text).toContain('failed Worker · Survey tests')
+    expect(text).toContain('Error: Failed')
   })
 
   it('correlates a fork member through its delegation prompt', async () => {
@@ -263,7 +368,7 @@ describe('blue-pane-agents plugin', () => {
       },
     })
     rig.ctx.emit('session/event', child, childTurnStart())
-    expect(rig.screen.paneLines(140).join('\n')).toContain('waiting Map docs')
+    expect(rig.screen.paneLines(140).join('\n')).toContain('running Map docs')
   })
 
   it('rebinds on session change, dropping the old group', async () => {

@@ -36,6 +36,47 @@ function contentGroup() {
   ]
 }
 
+/** Rich content demos: Markdown, Mermaid, plots, bars, sparkline, and heatmap. */
+function richContentGroup() {
+  const trend = [
+    { id: 'api', label: 'API', tone: 'accent' as const, points: [{ x: 0, y: 3 }, { x: 1, y: 8 }, { x: 2, y: 5 }] },
+    { id: 'worker', label: 'Worker', tone: 'success' as const, points: [{ x: 0, y: 6 }, { x: 1, y: 4 }, { x: 2, y: 9 }] },
+  ]
+  const bars = [
+    { id: 'passed', label: 'Passed', tone: 'success' as const, values: [8, 11, 9] },
+    { id: 'failed', label: 'Failed', tone: 'danger' as const, values: [2, 1, 3] },
+  ]
+  return [
+    ui.divider({ label: 'Rich content' }),
+    ui.document({
+      format: 'markdown',
+      source: '| Service | State |\n| --- | --- |\n| API | Ready |\n| Worker | Running |',
+    }),
+    ui.document({
+      format: 'mermaid',
+      source: 'flowchart TD\n  Request --> Validate\n  Validate --> Execute\n  Execute --> Result',
+    }),
+    ui.chart({ chart: 'line', title: 'Request latency', xLabel: 'minute', yLabel: 'ms', height: 6, series: trend }),
+    ui.chart({ chart: 'point', title: 'Samples', height: 5, series: [trend[0]!] }),
+    ui.chart({ chart: 'bar', layout: 'grouped', title: 'Grouped jobs', categories: ['Mon', 'Tue', 'Wed'], height: 6, series: bars }),
+    ui.chart({ chart: 'bar', layout: 'stacked', title: 'Stacked jobs', categories: ['Mon', 'Tue', 'Wed'], height: 6, series: bars }),
+    ui.chart({ chart: 'bar', layout: 'normalized', title: 'Normalized jobs', categories: ['Mon', 'Tue', 'Wed'], height: 6, series: bars }),
+    ui.chart({ chart: 'sparkline', label: 'Context pressure', tone: 'warning', values: [2, 4, 3, 7, null, 6, 9] }),
+    ui.chart({
+      chart: 'heatmap',
+      title: 'CI matrix',
+      columns: ['Linux', 'macOS', 'Windows'],
+      rows: ['Node 22', 'Node 24'],
+      values: [['pass', 'pass', 'fail'], ['pass', 'pending', 'pass']],
+      levels: [
+        { value: 'pass', label: 'Passed', tone: 'success' },
+        { value: 'pending', label: 'Pending', tone: 'warning' },
+        { value: 'fail', label: 'Failed', tone: 'danger' },
+      ],
+    }),
+  ]
+}
+
 /** Layout demos: stacks, responsive child hints, surfaces, and rhythm nodes. */
 function layoutGroup() {
   return [
@@ -124,12 +165,14 @@ function renderGallery() {
         activeId: 'content',
         items: [
           { id: 'content', label: 'Content' },
+          { id: 'rich', label: 'Rich' },
           { id: 'layout', label: 'Layout' },
           { id: 'patterns', label: 'Patterns' },
         ],
       }),
       ui.scroll(ui.stack.column([
         ...contentGroup(),
+        ...richContentGroup(),
         ...layoutGroup(),
         ...patternsGroup(),
       ], { gap: 1 }), { scrollbar: true }),

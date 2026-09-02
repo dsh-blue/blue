@@ -145,6 +145,10 @@
       name: '@dsh-blue/blue-transcript/status-context'
     - id: blue-status-mode
       name: '@dsh-blue/blue-interaction/mode-status'
+    - id: blue-status-jobs
+      name: '@dsh-blue/blue-transcript/status-jobs'
+    - id: blue-status-goal
+      name: '@dsh-blue/blue-transcript/status-goal'
 
     - id: blue-pane-activity
       name: '@dsh-blue/blue-transcript/pane-activity'
@@ -156,6 +160,8 @@
       name: '@dsh-blue/blue-transcript/pane-btw'
     - id: blue-pane-agents
       name: '@dsh-blue/blue-transcript/pane-agents'
+    - id: blue-pane-workflow
+      name: '@dsh-blue/blue-transcript/pane-workflow'
 
     - id: blue-attachments
       name: '@dsh-blue/blue-interaction/attachments'
@@ -165,6 +171,11 @@
         backend: auto
     - id: blue-editor-plus
       name: '@dsh-blue/blue-interaction/editor-plus'
+
+    - id: blue-jobs
+      name: '@dsh-blue/blue-interaction/jobs'
+    - id: blue-agents-command
+      name: '@dsh-blue/blue-interaction/agents-command'
 
     - id: blue-interaction
       name: '@dsh-blue/blue-interaction'

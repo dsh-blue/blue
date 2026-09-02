@@ -102,6 +102,38 @@ describe('SurfaceManager', () => {
     expect(renderSurfaceLane(manager.linearLayout(120, 24).left, 20)).toEqual([])
   })
 
+  it('stacks every visible bottom contribution without lane tabs', () => {
+    const manager = new SurfaceManager({ userState: { active: { bottom: 'activity' } } })
+    manager.register(contribution('activity', 'bottom', { title: 'Activity', priority: 10 }, component('activity')))
+    manager.register(contribution('todo', 'bottom', { title: 'Todo', priority: 30 }, component('todo-title', 'todo-row')))
+    manager.register(contribution('agents', 'bottom', { title: 'Agents', priority: 50 }, component('agents-title', 'agent-row')))
+    const lane = manager.linearLayout(120, 24).bottom!
+
+    expect(lane.entries.map(entry => entry.id)).toEqual(['agents', 'todo', 'activity'])
+    expect(renderSurfaceLane(lane, 80)).toEqual([
+      'agents-title', 'agent-row', 'todo-title', 'todo-row', 'activity',
+    ])
+    expect(renderSurfaceLane(lane, 80, 4)).toEqual([
+      'agents-title', 'agent-row', 'todo-title', 'todo-row',
+    ])
+  })
+
+  it('stacks passive bottom progress around only the active focusable pane', () => {
+    const manager = new SurfaceManager()
+    const first = { ...component('first-form'), focused: false }
+    const second = { ...component('second-form'), focused: false }
+    manager.register(contribution('progress', 'bottom', { title: 'Progress', priority: 50 }, component('progress-row')))
+    manager.register({ ...contribution('first', 'bottom', { title: 'First', priority: 20 }, first), focusTarget: first })
+    manager.register({ ...contribution('second', 'bottom', { title: 'Second', priority: 10 }, second), focusTarget: second })
+
+    let lane = manager.linearLayout(80, 24).bottom!
+    expect(renderSurfaceTabs(lane, 80)).toBe('[First] Second')
+    expect(renderSurfaceLane(lane, 80)).toEqual(['[First] Second', 'progress-row', 'first-form'])
+    expect(manager.activate('bottom', 'second')).toBe(true)
+    lane = manager.linearLayout(80, 24).bottom!
+    expect(renderSurfaceLane(lane, 80)).toEqual(['First [Second]', 'progress-row', 'second-form'])
+  })
+
   it('keeps the transcript at 40 columns and reopens sides only with 44 columns of margin', () => {
     const manager = new SurfaceManager()
     manager.register(contribution('strong', 'left', { priority: 100 }))
