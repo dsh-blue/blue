@@ -526,6 +526,22 @@ describe('blue-commands plugin', () => {
     expect(rows.some(row => row.includes('Title s-8'))).toBe(true)
   })
 
+  it('/sessions remains usable with more than 200 persisted rows', async () => {
+    const headers = Array.from({ length: 500 }, (_, index) => header(`large-${String(index)}`, 1_000 - index, HERE))
+    const { ctx, screen, agent } = await mount({ persistence: { list: () => Promise.resolve(headers) } })
+    const onResume = vi.fn()
+    ctx.on('blue/request-resume', onResume)
+
+    const execution = await ctx.commands.execute(agent, '/sessions', [], signal())
+    expect(execution?.result).toEqual({ kind: 'success' })
+    expect(screen.overlays[0]?.component.render(80).join('\n')).toContain('(1/500)')
+    expect(screen.overlays[0]?.component.render(80).join('\n')).not.toContain('Blue UI rejected')
+
+    overlay(screen).handleInput('\x1b[F')
+    overlay(screen).handleInput(KEY.enter)
+    expect(onResume).toHaveBeenCalledWith('large-499')
+  })
+
   it('/sessions drops a late page hydration after the picker fiber unloads', async () => {
     const headers = Array.from({ length: 10 }, (_, index) => header(`late-${index}`, 10_000 - index, HERE))
     const gate = Promise.withResolvers<ReadonlyArray<ReturnType<typeof titled>>>()

@@ -7,6 +7,10 @@ import {
   BLUE_UI_MAX_DEPTH,
   BLUE_UI_MAX_NODES,
   BLUE_UI_MAX_TEXT,
+  admittedListIndex,
+  admittedListItem,
+  deferredUiNodeMayHaveControls,
+  materializeDeferredUiNode,
   validateBlueEditorShellNode,
   validateBlueStatusNode,
   validateBlueUiNode,
@@ -180,6 +184,146 @@ describe('validateBlueUiNode', () => {
     const groups = Array.from({ length: 2 }, (_, group) => ui.stack.column(Array.from({ length: 128 }, (_, index) => ui.text(`${String(group)}-${String(index)}`))))
     expect(validateBlueUiNode(ui.stack.column(groups))).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED', message: expect.stringContaining(String(BLUE_UI_MAX_NODES)) })
     expect(validateBlueUiNode({ kind: 'fields', rows: Array.from({ length: BLUE_UI_MAX_COLLECTION + 1 }, () => ({ label: 'x', value: [] })) })).toMatchObject({ ok: false, code: 'BLUE_LIMIT_EXCEEDED' })
+  })
+
+  it('admits large lists lazily and isolates an invalid item when it is reached', () => {
+    const items: unknown[] = Array.from({ length: 500 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` }))
+    items[499] = Object.defineProperty({ id: 'bad' }, 'label', { get: () => 'unsafe', enumerable: true })
+    const result = validateBlueUiNode({ kind: 'list', id: 'large', selectedIds: [], items })
+    expect(result).toMatchObject({ ok: true, value: { kind: 'list', items: { length: 500 } } })
+    if (!result.ok || result.value.kind !== 'list') return
+    expect(result.value.items[0]).toMatchObject({ id: '0', label: 'Item 0' })
+    expect(result.value.items[0]).toBe(result.value.items[0])
+    expect(result.value.items[499]).toMatchObject({ disabled: true, label: expect.stringContaining('must be data') })
+    expect(0 in result.value.items).toBe(true)
+    expect(999 in result.value.items).toBe(false)
+    expect(Symbol.iterator in result.value.items).toBe(true)
+    expect(typeof result.value.items[Symbol.iterator]).toBe('function')
+    expect(admittedListItem(result.value.items, -1)).toBeUndefined()
+    expect(admittedListItem(result.value.items, Number.NaN)).toBeUndefined()
+    expect(admittedListItem(result.value.items, 500)).toBeUndefined()
+  })
+
+  it('bounds lazy list caches while preserving indexed array behavior', () => {
+    const items = Array.from({ length: 600 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` }))
+    items[550] = { label: 'Missing id' } as never
+    items[599] = { id: '598', label: 'Duplicate' }
+    const result = validateBlueUiNode({ kind: 'list', id: 'cached', selectedIds: [], items })
+    expect(result.ok).toBe(true)
+    if (!result.ok || result.value.kind !== 'list') return
+    expect(admittedListIndex(result.value.items, '10')).toBe(10)
+    expect(admittedListIndex(result.value.items, '10')).toBe(10)
+    expect(admittedListIndex(result.value.items, 'missing')).toBe(-1)
+    expect(result.value.items.map(item => item.id)).toHaveLength(600)
+    expect(result.value.items[599]).toMatchObject({ disabled: true, label: expect.stringContaining('duplicate ids') })
+    expect(result.value.items[0]).toMatchObject({ id: '0' })
+  })
+
+  it('contains sparse, accessor, throwing, and subclassed large list inputs', () => {
+    const sparse = Array.from({ length: 201 }, (_, index) => ({ id: String(index), label: 'ok' }))
+    delete sparse[200]
+    const sparseResult = accepted({ kind: 'list', id: 'sparse', selectedIds: [], items: sparse }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'list' }>
+    expect(sparseResult.items[200]).toMatchObject({ disabled: true, label: expect.stringContaining('dense array') })
+    expect(admittedListIndex(sparseResult.items, 'missing')).toBe(-1)
+
+    const accessor = Array.from({ length: 201 }, (_, index) => ({ id: String(index), label: 'ok' }))
+    Object.defineProperty(accessor, '200', { get: () => ({ id: 'bad', label: 'bad' }) })
+    const accessorResult = accepted({ kind: 'list', id: 'accessor', selectedIds: [], items: accessor }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'list' }>
+    expect(accessorResult.items[200]).toMatchObject({ disabled: true, label: expect.stringContaining('must be data') })
+
+    const throwing = new Proxy(Array.from({ length: 201 }, (_, index) => ({ id: String(index), label: 'ok' })), {
+      getOwnPropertyDescriptor(target, property) {
+        if (property === '200') throw new Error('descriptor failed')
+        return Reflect.getOwnPropertyDescriptor(target, property)
+      },
+    })
+    const throwingResult = accepted({ kind: 'list', id: 'throwing', selectedIds: [], items: throwing }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'list' }>
+    expect(throwingResult.items[200]).toMatchObject({ disabled: true, label: expect.stringContaining('is invalid') })
+
+    class ListSubclass extends Array<unknown> {}
+    const subclass = new ListSubclass(...Array.from({ length: 201 }, (_, index) => ({ id: String(index), label: 'ok' })))
+    expect(validateBlueUiNode({ kind: 'list', id: 'subclass', selectedIds: [], items: subclass })).toMatchObject({ ok: false, message: expect.stringContaining('plain array') })
+    expect(validateBlueUiNode({ kind: 'list', id: 'object', selectedIds: [], items: {} })).toMatchObject({ ok: false, message: expect.stringContaining('array') })
+  })
+
+  it('materializes responsive placeholders once and safely contains unexpected failures', () => {
+    expect(materializeDeferredUiNode(ui.text('plain'))).toBeUndefined()
+    expect(deferredUiNodeMayHaveControls(ui.text('plain'))).toBe(false)
+    const valid = accepted({
+      kind: 'stack', direction: 'column',
+      children: [{ node: { kind: 'text', content: 'lazy' }, when: { minWidth: 80 } }],
+    }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'stack' }>
+    expect(deferredUiNodeMayHaveControls(valid.children[0]!.node)).toBe(false)
+    const first = materializeDeferredUiNode(valid.children[0]!.node)
+    expect(first).toMatchObject({ ok: true, value: { kind: 'text', content: 'lazy' } })
+    expect(materializeDeferredUiNode(valid.children[0]!.node)).toBe(first)
+
+    const hostile = new Proxy({}, { getOwnPropertyDescriptor: () => { throw new Error('hostile') } })
+    const contained = accepted({
+      kind: 'stack', direction: 'column',
+      children: [{ node: hostile, when: { minWidth: 80 } }],
+    }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'stack' }>
+    expect(deferredUiNodeMayHaveControls(contained.children[0]!.node)).toBe(true)
+    expect(materializeDeferredUiNode(contained.children[0]!.node)).toEqual({
+      ok: false,
+      code: 'BLUE_INVALID_CONTRIBUTION',
+      message: 'Blue UI validation failed safely',
+    })
+  })
+
+  it('classifies deferred control potential without reading hidden values', () => {
+    const deferred = (source: unknown): import('@dsh-blue/blue-api').BlueUiNode => {
+      const result = accepted({
+        kind: 'stack', direction: 'column',
+        children: [{ node: source, when: { minWidth: 80 } }],
+      }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'stack' }>
+      return result.children[0]!.node
+    }
+    const kindAccessor = Object.defineProperty({}, 'kind', { get: () => 'text', enumerable: true })
+    expect(deferredUiNodeMayHaveControls(deferred(ui.actions({ id: 'actions', items: [] })))).toBe(true)
+    expect(deferredUiNodeMayHaveControls(deferred(null))).toBe(true)
+    expect(deferredUiNodeMayHaveControls(deferred({}))).toBe(true)
+    expect(deferredUiNodeMayHaveControls(deferred(kindAccessor))).toBe(true)
+    expect(deferredUiNodeMayHaveControls(deferred({ kind: 1 }))).toBe(true)
+  })
+
+  it('shares tree quotas and control identities across deferred branches', () => {
+    const controls = accepted({
+      kind: 'stack', direction: 'column',
+      children: [
+        { node: ui.actions({ id: 'root', items: [{ id: 'shared', label: 'Root' }] }) },
+        {
+          node: ui.actions({ id: 'conflict', items: [
+            { id: 'temporary', label: 'Temporary' },
+            { id: 'shared', label: 'Conflict' },
+          ] }),
+          when: { minWidth: 80 },
+        },
+        {
+          node: ui.actions({ id: 'recovery', items: [{ id: 'temporary', label: 'Recovered' }] }),
+          when: { minWidth: 100 },
+        },
+      ],
+    }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'stack' }>
+    expect(materializeDeferredUiNode(controls.children[1]!.node)).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('duplicated'),
+    })
+    expect(materializeDeferredUiNode(controls.children[2]!.node)).toMatchObject({ ok: true })
+
+    const quota = accepted({
+      kind: 'stack', direction: 'column',
+      children: [0, 1].map(group => ({
+        node: ui.stack.column(Array.from({ length: 128 }, (_, index) => ui.text(`${String(group)}-${String(index)}`))),
+        when: { minWidth: 80 + group },
+      })),
+    }) as Extract<import('@dsh-blue/blue-api').BlueUiNode, { kind: 'stack' }>
+    expect(materializeDeferredUiNode(quota.children[0]!.node)).toMatchObject({ ok: true })
+    expect(materializeDeferredUiNode(quota.children[1]!.node)).toMatchObject({
+      ok: false,
+      code: 'BLUE_LIMIT_EXCEEDED',
+      message: expect.stringContaining(String(BLUE_UI_MAX_NODES)),
+    })
   })
 
   it.each([

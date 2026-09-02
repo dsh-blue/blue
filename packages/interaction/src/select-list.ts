@@ -10,7 +10,7 @@ import type { BlueUiEvent, BlueUiNode } from '@dsh-blue/blue-api'
 import type { BlueComponents, BlueFocusable, BlueFocusIdentity, BlueKeymap, BlueTheme } from '@dsh-blue/blue-core'
 import type { BlueTranslate } from '@dsh-blue/blue-frontend'
 import { CanonicalPanelAdapter, type CanonicalContextHint, type CanonicalNodeSource } from './canonical-panel.ts'
-import { ACTION_CANCEL, ACTION_TOGGLE } from './keys.ts'
+import { ACTION_CANCEL, ACTION_MOVE_DOWN, ACTION_MOVE_UP, ACTION_TOGGLE } from './keys.ts'
 
 /** One selectable row of a {@link CanonicalSelectController}. */
 export interface SelectRow {
@@ -53,6 +53,13 @@ export function oneLine(text: string): string {
   return text.replace(/[\r\n]+/g, ' ').trim()
 }
 
+function windowStart(cursor: number, count: number): number {
+  return Math.min(
+    Math.max(0, count - MAX_LIST_VISIBLE),
+    Math.max(0, cursor - Math.floor(MAX_LIST_VISIBLE / 2)),
+  )
+}
+
 /** Canonical single-select panel preserving filtering and callback behavior. */
 export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSource {
   private readonly adapter: CanonicalPanelAdapter
@@ -72,17 +79,6 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       theme: options.theme,
       node: () => this.currentNode(),
       onEvent: event => this.onEvent(event),
-      onFocusChange: identity => {
-        if (identity.controlId !== 'select-list' || identity.itemId === undefined) return
-        const view = this.filtered()
-        const index = view.findIndex(row => row.value === identity.itemId)
-        if (index < 0 || index === this.cursor) return
-        this.cursor = index
-        const row = view[index]!
-        this.options.onHighlight?.(row)
-        this.options.onCursorChanged?.(this.cursor, view)
-        this.adapter.focus(identity)
-      },
       onUnhandledEscape: options.onCancel,
       maxLeafRows: MAX_LIST_VISIBLE,
       ...(options.t === undefined ? {} : { t: options.t }),
@@ -127,6 +123,17 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       } else this.adapter.handleInput(data)
       return
     }
+    const movement = this.options.keymap.matches(data, ACTION_MOVE_UP) ? -1
+      : this.options.keymap.matches(data, ACTION_MOVE_DOWN) ? 1
+        : data === '\x1b[5~' ? -MAX_LIST_VISIBLE
+          : data === '\x1b[6~' ? MAX_LIST_VISIBLE
+            : data === '\x1b[H' ? -Infinity
+              : data === '\x1b[F' ? Infinity
+                : undefined
+    if (movement !== undefined) {
+      this.moveCursor(view, movement)
+      return
+    }
     if (!this.filter) { this.adapter.handleInput(data); return }
     if (data === '\x7f') {
       this.query = this.query.slice(0, -1)
@@ -153,6 +160,8 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     const t = this.options.t ?? ((value: string) => value)
     const view = this.filtered()
     const selected = view[this.cursor]
+    const start = windowStart(this.cursor, view.length)
+    const visible = view.slice(start, start + MAX_LIST_VISIBLE)
     const footer = [
       this.options.footer === undefined ? undefined : t(this.options.footer),
       counterRow(this.cursor, view.length, MAX_LIST_VISIBLE),
@@ -162,7 +171,7 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
       id: 'select-list',
       selectedIds: selected === undefined ? [] : [selected.value],
       ...(this.query === '' ? {} : { filter: this.query }),
-      items: view.map(row => ({
+      items: visible.map(row => ({
         id: row.value,
         label: t(row.label),
         ...(row.description === undefined ? {} : { detail: oneLine(t(row.description)) }),
@@ -204,6 +213,41 @@ export class CanonicalSelectController implements BlueFocusable, CanonicalNodeSo
     const view = this.filtered()
     const seeded = this.options.initialValue === undefined ? -1 : view.findIndex(row => row.value === this.options.initialValue)
     this.cursor = seeded >= 0 ? seeded : 0
+  }
+
+  private moveCursor(view: readonly SelectRow[], movement: number): void {
+    if (view.length === 0) return
+    if (!Number.isFinite(movement)) {
+      const target = movement < 0
+        ? view.findIndex(row => row.disabled !== true)
+        : view.findLastIndex(row => row.disabled !== true)
+      if (target < 0 || target === this.cursor) return
+      this.cursor = target
+      const row = view[target]!
+      this.options.onHighlight?.(row)
+      this.options.onCursorChanged?.(target, view)
+      this.focusCursor()
+      return
+    }
+    const direction = movement < 0 ? -1 : 1
+    let remaining = Math.max(1, Math.abs(movement))
+    let next = this.cursor
+    let target = -1
+    while (remaining > 0) {
+      const candidate = next + direction
+      if (candidate < 0 || candidate >= view.length) break
+      next = candidate
+      if (view[next]!.disabled !== true) {
+        target = next
+        remaining -= 1
+      }
+    }
+    if (target < 0 || target === this.cursor) return
+    this.cursor = target
+    const row = view[target]!
+    this.options.onHighlight?.(row)
+    this.options.onCursorChanged?.(target, view)
+    this.focusCursor()
   }
 
   private focusCursor(): void {

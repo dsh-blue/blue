@@ -116,6 +116,29 @@ describe('CanonicalSelectController navigation', () => {
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v1' }))
   })
 
+  it('navigates a 100,000-row logical list while exposing only one render window', () => {
+    const { panel, onSelect } = mount({ rows: rows(100_000) })
+    const first = panel.currentNode()
+    expect(first.kind === 'surface' && first.child.kind === 'list' ? first.child.items : []).toHaveLength(MAX_LIST_VISIBLE)
+    panel.handleInput('\x1b[H')
+    panel.handleInput('\x1b[6~')
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v8' }))
+    panel.handleInput('\x1b[5~')
+
+    panel.handleInput('\x1b[F')
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v99999' }))
+    const last = panel.currentNode()
+    const lastItems = last.kind === 'surface' && last.child.kind === 'list' ? last.child.items : []
+    expect(lastItems).toHaveLength(MAX_LIST_VISIBLE)
+    expect(lastItems.at(-1)).toMatchObject({ id: 'v99999' })
+
+    panel.handleInput('\x1b[H')
+    panel.handleInput(KEY.enter)
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ value: 'v0' }))
+  })
+
   it('moves the focus background together with the selected marker', () => {
     const { panel } = mount()
     const before = panel.render(60)
@@ -158,6 +181,8 @@ describe('CanonicalSelectController navigation', () => {
       onCancel: () => {},
     })
     panel.handleInput(KEY.enter)
+    panel.handleInput('\x1b[H')
+    panel.handleInput('\x1b[F')
     // No throw and no selection: the press is swallowed.
   })
 

@@ -40,6 +40,8 @@ flowchart TB
    Fiber unload 是唯一的插件贡献清理机制。
 5. 只有 `packages/core` import pi-tui、处理 ANSI/raw mode、焦点、布局和
    visible width。
+6. UI contribution 始终是普通 readonly node；core 私有地窗口化大列表，并在
+   响应式分支首次可见时才校验和编译，不向插件暴露 renderer 调度状态。
 
 ## 包边界
 
@@ -67,7 +69,8 @@ flowchart TB
 - API registry 持有当前 UI contribution definitions，且每项 registration 随
   consumer Fiber 清理。
 - transcript 与 interaction 持有它们自己的 renderer-neutral/TUI product state。
-- core 持有 terminal、focus、layout 与编译后的 renderer object。
+- core 持有 terminal、focus、layout、懒 admission cache 与编译后的 renderer
+  object；这些状态随 surface generation 失效，不进入公开 node。
 
 Renderer 可以根据当前 Agent 调用 projection snapshot，但不能折叠第二份
 Harness session event truth。

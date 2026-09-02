@@ -964,6 +964,86 @@ describe('compileBlueUiNode', () => {
     expect(f.events.at(-1)).toEqual({ kind: 'activate', controlId: 'fallback' })
   })
 
+  it('does not admit a responsive subtree until it becomes visible', () => {
+    const f = fixture({ screenMode: 'main' })
+    f.viewport.columns = 40
+    const hidden = Object.defineProperty({ kind: 'text' }, 'content', {
+      enumerable: true,
+      get: () => 'must not run',
+    })
+    const result = compiled({
+      kind: 'stack',
+      direction: 'column',
+      children: [
+        { node: { kind: 'text', content: 'always' } },
+        { node: hidden, when: { minWidth: 80 } },
+      ],
+    }, f.options)
+    result.component.invalidate()
+    expect(result.component.render(40).join('\n')).toContain('always')
+    expect(result.component.render(40).join('\n')).not.toContain('rejected')
+
+    f.viewport.columns = 100
+    expect(result.component.render(100).join('\n')).toContain('must be data')
+    expect(result.component.render(100).join('\n')).toContain('must be data')
+  })
+
+  it('keeps a hidden deferred empty-state tree and deactivates its scroll control', () => {
+    const emptyFixture = fixture({ screenMode: 'main' })
+    emptyFixture.viewport.columns = 40
+    const empty = compiled({
+      kind: 'list', id: 'empty-deferred', selectedIds: [], items: [],
+      empty: {
+        kind: 'stack', direction: 'column',
+        children: [{ node: { kind: 'text', content: 'wide empty' }, when: { minWidth: 80 } }],
+      },
+    }, emptyFixture.options)
+    expect(empty.focusTarget).toBeNull()
+    expect(empty.component.render(40)).toEqual([])
+
+    const scrollFixture = fixture()
+    scrollFixture.viewport.columns = 100
+    const scroll = compiled(ui.stack.column([
+      ui.child(ui.scroll(ui.text('scroll body')), { when: { minWidth: 80 } }),
+    ]), scrollFixture.options)
+    scroll.component.render(100)
+    scrollFixture.viewport.columns = 40
+    expect(scroll.component.render(40)).toEqual([])
+  })
+
+  it('owns editor state created by a deferred responsive form', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const editors: BlueEditor[] = []
+    const f = fixture({
+      screenMode: 'main',
+      components: {
+        ...components,
+        createEditor: () => {
+          const editor = createTestEditor()
+          editors.push(editor)
+          return editor
+        },
+      } as BlueComponents,
+    })
+    f.viewport.columns = 40
+    const result = compiledSurface(ui.stack.column([
+      ui.child(ui.form({ id: 'deferred-form', fields: [{ kind: 'input', id: 'name', label: 'Name', value: '' }] }), { when: { minWidth: 80 } }),
+    ]), f.options, runtime)
+    result.component.render(40)
+    expect(editors).toHaveLength(0)
+
+    f.viewport.columns = 100
+    result.component.render(100)
+    expect(editors).toHaveLength(1)
+    result.focusTarget!.focused = true
+    result.focusTarget!.handleInput?.('\r')
+    result.component.render(100)
+    expect(editors[0]!.focused).toBe(true)
+
+    runtime.dispose()
+    expect(editors[0]!.focused).toBe(false)
+  })
+
   it('falls back to the preferred sibling when the selected semantic control is removed', () => {
     const runtime = new BlueUiSurfaceRuntime()
     const f = fixture()
@@ -1788,6 +1868,89 @@ describe('compileBlueUiNode', () => {
     multiple.handleInput?.('\x1b[H')
     multiple.handleInput?.('\x1b[6~')
     expect(multiple.captureFocusIdentity?.()).toMatchObject({ itemId: '3' })
+  })
+
+  it('materializes list work by viewport instead of logical collection size', () => {
+    let reads = 0
+    const items = new Proxy(
+      Array.from({ length: 100_000 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` })),
+      {
+        getOwnPropertyDescriptor(target, property) {
+          if (typeof property === 'string' && /^\d+$/u.test(property)) reads += 1
+          return Reflect.getOwnPropertyDescriptor(target, property)
+        },
+      },
+    )
+    const { options } = fixture()
+    const focus = compiled({ kind: 'list', id: 'large', selectedIds: [], items }, options).focusTarget!
+    expect(reads).toBeLessThan(100)
+    focus.focused = true
+    focus.handleInput?.('\x1b[A')
+    expect(focus.captureFocusIdentity?.()).toMatchObject({ itemId: '0' })
+    focus.handleInput?.('\x1b[6~')
+    expect(focus.captureFocusIdentity?.()).toMatchObject({ itemId: '10' })
+    focus.handleInput?.('\x1b[5~')
+    expect(focus.captureFocusIdentity?.()).toMatchObject({ itemId: '0' })
+    focus.handleInput?.('\x1b[F')
+    expect(focus.captureFocusIdentity?.()).toMatchObject({ itemId: '99999' })
+    focus.handleInput?.('\x1b[F')
+    expect(focus.captureFocusIdentity?.()).toMatchObject({ itemId: '99999' })
+    focus.handleInput?.('\x1b[H')
+    expect(focus.captureFocusIdentity?.()).toMatchObject({ itemId: '0' })
+    expect(reads).toBeLessThan(250)
+  })
+
+  it('anchors virtual list focus around disabled and missing selections', () => {
+    const forward = compiled(ui.list({
+      id: 'forward', selectedIds: [],
+      items: [
+        { id: 'blocked', label: 'Blocked', disabled: true },
+        { id: 'also-blocked', label: 'Also blocked', disabled: true },
+        { id: 'next', label: 'Next' },
+      ],
+    }), fixture().options).focusTarget!
+    expect(forward.captureFocusIdentity?.()).toMatchObject({ itemId: 'next' })
+
+    const backward = compiled(ui.list({
+      id: 'backward', selectedIds: ['blocked'],
+      items: [{ id: 'previous', label: 'Previous' }, { id: 'blocked', label: 'Blocked', disabled: true }],
+    }), fixture().options).focusTarget!
+    expect(backward.captureFocusIdentity?.()).toMatchObject({ itemId: 'previous' })
+
+    const disabled = compiled(ui.list({
+      id: 'disabled', selectedIds: [], items: [{ id: 'blocked', label: 'Blocked', disabled: true }],
+    }), fixture().options)
+    expect(disabled.focusTarget).toBeNull()
+
+    const missing = compiled({
+      kind: 'list', id: 'missing', selectedIds: ['not-present'],
+      items: Array.from({ length: 201 }, (_, index) => ({ id: String(index), label: `Item ${String(index)}` })),
+    }, fixture().options).focusTarget!
+    expect(missing.captureFocusIdentity?.()).toMatchObject({ itemId: '0' })
+  })
+
+  it('bounds empty list windows and restores private cursor checkpoints', () => {
+    const runtime = new BlueUiSurfaceRuntime()
+    const empty = { kind: 'list' as const, id: 'empty', selectedIds: [], items: [] }
+    expect(runtime.listWindow(empty, Number.NaN)).toEqual([])
+    expect(runtime.moveList(empty, 0, 'down', 1)).toBeUndefined()
+
+    const node = { kind: 'list' as const, id: 'checkpoint', selectedIds: [], items: [
+      { id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' },
+    ] }
+    expect(runtime.listWindow(node, Number.NaN)).toHaveLength(3)
+    expect(runtime.moveList(node, 0, 'down', 1)).toMatchObject({ index: 1 })
+    const rollback = runtime.checkpoint()
+    expect(runtime.moveList(node, 1, 'down', 1)).toMatchObject({ index: 2 })
+    rollback()
+    expect(runtime.listWindow(node, 1)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ index: 1, item: expect.objectContaining({ id: 'b' }) }),
+    ]))
+
+    const withDisabled = { kind: 'list' as const, id: 'skip', selectedIds: [], items: [
+      { id: 'a', label: 'A' }, { id: 'blocked', label: 'Blocked', disabled: true }, { id: 'c', label: 'C' },
+    ] }
+    expect(runtime.moveList(withDisabled, 0, 'down', 1)).toMatchObject({ index: 2 })
   })
 
   it('climbs nested tabs one layer at a time before dismissing', () => {

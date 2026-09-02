@@ -52,10 +52,14 @@ class ValidationFault extends Error {
 
 interface ValidationState {
   readonly active: WeakSet<object>
-  nodes: number
-  text: number
   scrollDepth: number
   editorControls: number
+  readonly budget: ValidationBudget
+}
+
+interface ValidationBudget {
+  nodes: number
+  text: number
   chartCells: number
   readonly controlIds: Set<string>
 }
@@ -116,8 +120,8 @@ function required(object: Record<string, unknown>, key: string, path: string): u
 
 function text(value: unknown, path: string, state: ValidationState): string {
   if (typeof value !== 'string') invalid(`${path} must be a string`)
-  state.text += value.length
-  if (state.text > BLUE_UI_MAX_TEXT) limit(`Blue UI text exceeds ${String(BLUE_UI_MAX_TEXT)} characters`)
+  state.budget.text += value.length
+  if (state.budget.text > BLUE_UI_MAX_TEXT) limit(`Blue UI text exceeds ${String(BLUE_UI_MAX_TEXT)} characters`)
   return value.replace(TERMINAL_SEQUENCE, '').replace(UNSAFE_CONTROLS, '')
 }
 
@@ -151,8 +155,8 @@ function identifier(value: unknown, path: string, state: ValidationState, reserv
   const result = text(value, path, state)
   if (result.trim().length === 0) invalid(`${path} must not be empty`)
   if (reserve) {
-    if (state.controlIds.has(result)) invalid(`control id "${result}" is duplicated`)
-    state.controlIds.add(result)
+    if (state.budget.controlIds.has(result)) invalid(`control id "${result}" is duplicated`)
+    state.budget.controlIds.add(result)
   }
   return result
 }
@@ -232,6 +236,205 @@ function listItem(value: unknown, path: string, state: ValidationState): BlueLis
   })
 }
 
+const LAZY_LIST_CACHE_LIMIT = 256
+const LAZY_LIST_ID_CACHE_LIMIT = 512
+const LAZY_LIST_INVALID_ID = '__blue-invalid-list-item-'
+
+interface LazyListAdmission {
+  readonly length: number
+  item(index: number): BlueListItem
+  indexOf(id: string): number
+}
+
+const lazyLists = new WeakMap<readonly BlueListItem[], LazyListAdmission>()
+
+function validationState(budget: ValidationBudget = {
+  nodes: 0,
+  text: 0,
+  chartCells: 0,
+  controlIds: new Set(),
+}): ValidationState {
+  return {
+    active: new WeakSet(),
+    scrollDepth: 0,
+    editorControls: 0,
+    budget,
+  }
+}
+
+interface DeferredUiAdmission {
+  readonly source: unknown
+  readonly path: string
+  readonly depth: number
+  readonly scrollDepth: number
+  readonly budget: ValidationBudget
+  readonly mayHaveControls: boolean
+  result?: BlueValidationResult<BlueUiNode>
+}
+
+const deferredUiNodes = new WeakMap<BlueUiNode, DeferredUiAdmission>()
+const PASSIVE_UI_KINDS = new Set([
+  'text', 'fields', 'code', 'diff', 'sections', 'rich-text', 'progress',
+  'spacer', 'divider', 'document', 'chart',
+])
+
+function deferredMayHaveControls(source: unknown): boolean {
+  try {
+    if (typeof source !== 'object' || source === null) return true
+    const descriptor = Object.getOwnPropertyDescriptor(source, 'kind')
+    return descriptor === undefined
+      || !('value' in descriptor)
+      || typeof descriptor.value !== 'string'
+      || !PASSIVE_UI_KINDS.has(descriptor.value)
+  } catch {
+    return true
+  }
+}
+
+function deferredUiNode(source: unknown, path: string, depth: number, scrollDepth: number, budget: ValidationBudget): BlueUiNode {
+  const placeholder = Object.freeze({ kind: 'spacer' as const, size: 1 as const })
+  deferredUiNodes.set(placeholder, { source, path, depth, scrollDepth, budget, mayHaveControls: deferredMayHaveControls(source) })
+  return placeholder
+}
+
+/** Identify a renderer-private responsive placeholder without exposing it on the wire format. */
+export function isDeferredUiNode(value: BlueUiNode): boolean {
+  return deferredUiNodes.has(value)
+}
+
+/** Conservatively identify an unadmitted branch that may later add controls. */
+export function deferredUiNodeMayHaveControls(value: BlueUiNode): boolean {
+  return deferredUiNodes.get(value)?.mayHaveControls === true
+}
+
+/** Read an already materialized responsive subtree without activating a hidden branch. */
+export function materializedDeferredUiNode(value: BlueUiNode): BlueValidationResult<BlueUiNode> | undefined {
+  return deferredUiNodes.get(value)?.result
+}
+
+/** Materialize one responsive subtree the first time its viewport condition becomes active. */
+export function materializeDeferredUiNode(value: BlueUiNode): BlueValidationResult<BlueUiNode> | undefined {
+  const deferred = deferredUiNodes.get(value)
+  if (deferred === undefined) return undefined
+  if (deferred.result !== undefined) return deferred.result
+  const checkpoint = {
+    nodes: deferred.budget.nodes,
+    text: deferred.budget.text,
+    chartCells: deferred.budget.chartCells,
+    controlIds: new Set(deferred.budget.controlIds),
+  }
+  const state = validationState(deferred.budget)
+  state.scrollDepth = deferred.scrollDepth
+  try {
+    deferred.result = { ok: true, value: freeze(node(deferred.source, deferred.path, state, deferred.depth, 'ui')) }
+  } catch (error) {
+    deferred.budget.nodes = checkpoint.nodes
+    deferred.budget.text = checkpoint.text
+    deferred.budget.chartCells = checkpoint.chartCells
+    deferred.budget.controlIds.clear()
+    for (const id of checkpoint.controlIds) deferred.budget.controlIds.add(id)
+    deferred.result = error instanceof ValidationFault
+      ? { ok: false, code: error.code, message: error.message }
+      : { ok: false, code: 'BLUE_INVALID_CONTRIBUTION', message: 'Blue UI validation failed safely' }
+  }
+  return deferred.result
+}
+
+function lazyListItems(value: unknown, path: string): readonly BlueListItem[] {
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype === null || !hasRealmConstructor(prototype, 'Array')) invalid(`${path} must be a plain array`)
+  const length = Object.getOwnPropertyDescriptor(value, 'length')!.value as number
+  const source = value as readonly unknown[]
+  const cache = new Map<number, BlueListItem>()
+  const ids = new Map<number, string | undefined>()
+  const owners = new Map<string, number>()
+  const raw = (index: number): unknown => {
+    const descriptor = Object.getOwnPropertyDescriptor(source, String(index))
+    if (descriptor === undefined) throw new ValidationFault('BLUE_INVALID_CONTRIBUTION', `${path} must be a dense array`)
+    if (!('value' in descriptor)) throw new ValidationFault('BLUE_INVALID_CONTRIBUTION', `${path}[${String(index)}] must be data`)
+    return descriptor.value
+  }
+  const peekId = (index: number): string | undefined => {
+    if (ids.has(index)) return ids.get(index)
+    try {
+      const object = record(raw(index), `${path}[${String(index)}]`)
+      const id = text(required(object, 'id', `${path}[${String(index)}]`), `${path}[${String(index)}].id`, validationState())
+      ids.set(index, id)
+      if (ids.size > LAZY_LIST_ID_CACHE_LIMIT) ids.delete(ids.keys().next().value!)
+      return id
+    } catch {
+      ids.set(index, undefined)
+      if (ids.size > LAZY_LIST_ID_CACHE_LIMIT) ids.delete(ids.keys().next().value!)
+      return undefined
+    }
+  }
+  const admission: LazyListAdmission = {
+    length,
+    item(index) {
+      const cached = cache.get(index)
+      if (cached !== undefined) {
+        cache.delete(index)
+        cache.set(index, cached)
+        return cached
+      }
+      let admitted: BlueListItem
+      try {
+        admitted = listItem(raw(index), `${path}[${String(index)}]`, validationState())
+        const owner = owners.get(admitted.id)
+        if (owner !== undefined && owner !== index) invalid(`${path} contains duplicate ids`)
+        owners.set(admitted.id, index)
+        if (owners.size > LAZY_LIST_ID_CACHE_LIMIT) owners.delete(owners.keys().next().value!)
+      } catch (error) {
+        const message = error instanceof ValidationFault ? error.message : `${path}[${String(index)}] is invalid`
+        admitted = {
+          id: `${LAZY_LIST_INVALID_ID}${String(index)}`,
+          label: `Blue UI rejected: ${message}`,
+          disabled: true,
+        }
+      }
+      admitted = freeze(admitted)
+      cache.set(index, admitted)
+      if (cache.size > LAZY_LIST_CACHE_LIMIT) cache.delete(cache.keys().next().value!)
+      return admitted
+    },
+    indexOf(id) {
+      for (let index = 0; index < length; index += 1) if (peekId(index) === id) return index
+      return -1
+    },
+  }
+  const target: BlueListItem[] = []
+  target.length = length
+  const proxy = new Proxy(target, {
+    get(array, property, receiver) {
+      if (typeof property === 'string') {
+        const index = Number(property)
+        if (Number.isSafeInteger(index) && index >= 0 && index < length && String(index) === property) return admission.item(index)
+      }
+      return Reflect.get(array, property, receiver)
+    },
+    has(array, property) {
+      if (typeof property === 'string') {
+        const index = Number(property)
+        if (Number.isSafeInteger(index) && index >= 0 && index < length && String(index) === property) return true
+      }
+      return Reflect.has(array, property)
+    },
+  }) as readonly BlueListItem[]
+  lazyLists.set(proxy, admission)
+  return proxy
+}
+
+/** Core-private indexed access for an admitted list without forcing the full collection. */
+export function admittedListItem(items: readonly BlueListItem[], index: number): BlueListItem | undefined {
+  if (!Number.isSafeInteger(index) || index < 0 || index >= items.length) return undefined
+  return lazyLists.get(items)?.item(index) ?? items[index]
+}
+
+/** Core-private ID lookup that reads only IDs for a lazy admitted list. */
+export function admittedListIndex(items: readonly BlueListItem[], id: string): number {
+  return lazyLists.get(items)?.indexOf(id) ?? items.findIndex(item => item.id === id)
+}
+
 function actionItem(value: unknown, path: string, state: ValidationState): BlueActionItem {
   return enter(value, path, state, object => {
     const intentValue = own(object, 'intent', path)
@@ -253,7 +456,7 @@ function uniqueIds(items: readonly { readonly id: string }[], path: string): voi
 }
 
 function viewportCondition(value: unknown, path: string): BlueViewportCondition {
-  return enter(value, path, { active: new WeakSet(), nodes: 0, text: 0, scrollDepth: 0, editorControls: 0, chartCells: 0, controlIds: new Set() }, object => {
+  return enter(value, path, validationState(), object => {
     const result: { minWidth?: number, maxWidth?: number, minHeight?: number, maxHeight?: number } = {}
     for (const key of ['minWidth', 'maxWidth', 'minHeight', 'maxHeight'] as const) {
       const item = own(object, key, path)
@@ -273,8 +476,8 @@ function chartTone(object: Record<string, unknown>, path: string): BlueInlineSpa
 }
 
 function addChartCells(state: ValidationState, count: number): void {
-  state.chartCells += count
-  if (state.chartCells > 4_000) limit('Blue chart data exceeds 4000 cells')
+  state.budget.chartCells += count
+  if (state.budget.chartCells > 4_000) limit('Blue chart data exceeds 4000 cells')
 }
 
 function chartPoint(value: unknown, path: string, state: ValidationState): BlueChartPoint {
@@ -332,7 +535,14 @@ function chartHeight(object: Record<string, unknown>, path: string): number | un
   return height
 }
 
-function uiChild<Node>(value: unknown, path: string, state: ValidationState, depth: number, parseNode: (value: unknown, path: string, state: ValidationState, depth: number) => Node): Omit<BlueUiChild, 'node'> & { readonly node: Node } {
+function uiChild<Node>(
+  value: unknown,
+  path: string,
+  state: ValidationState,
+  depth: number,
+  parseNode: (value: unknown, path: string, state: ValidationState, depth: number) => Node,
+  deferWhen?: (value: unknown, path: string, depth: number, scrollDepth: number, budget: ValidationBudget) => Node,
+): Omit<BlueUiChild, 'node'> & { readonly node: Node } {
   return enter(value, path, state, object => {
     const basisValue = own(object, 'basis', path)
     const basis = basisValue === undefined ? undefined : basisValue === 'auto' ? 'auto' : finiteInteger(basisValue, `${path}.basis`)
@@ -341,17 +551,21 @@ function uiChild<Node>(value: unknown, path: string, state: ValidationState, dep
     const minValue = own(object, 'minSize', path)
     const maxValue = own(object, 'maxSize', path)
     const whenValue = own(object, 'when', path)
+    const when = whenValue === undefined ? undefined : viewportCondition(whenValue, `${path}.when`)
     const minSize = minValue === undefined ? undefined : finiteInteger(minValue, `${path}.minSize`)
     const maxSize = maxValue === undefined ? undefined : finiteInteger(maxValue, `${path}.maxSize`)
     if (minSize !== undefined && maxSize !== undefined && minSize > maxSize) invalid(`${path} size range is inverted`)
+    const childValue = required(object, 'node', path)
     return {
-      node: parseNode(required(object, 'node', path), `${path}.node`, state, depth),
+      node: when === undefined || deferWhen === undefined
+        ? parseNode(childValue, `${path}.node`, state, depth)
+        : deferWhen(childValue, `${path}.node`, depth, state.scrollDepth, state.budget),
       ...optional(basis, 'basis'),
       ...optional(growValue === undefined ? undefined : finiteInteger(growValue, `${path}.grow`), 'grow'),
       ...optional(shrinkValue === undefined ? undefined : finiteInteger(shrinkValue, `${path}.shrink`), 'shrink'),
       ...optional(minSize, 'minSize'),
       ...optional(maxSize, 'maxSize'),
-      ...optional(whenValue === undefined ? undefined : viewportCondition(whenValue, `${path}.when`), 'when'),
+      ...optional(when, 'when'),
     }
   })
 }
@@ -405,8 +619,8 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
 function node(value: unknown, path: string, state: ValidationState, depth: number, mode: 'editor', viewOnly?: false, editorSlotAllowed?: boolean): BlueEditorShellNode
 function node(value: unknown, path: string, state: ValidationState, depth: number, mode: ValidationMode, viewOnly = false, editorSlotAllowed = false): BlueUiNode | BlueStatusNode | BlueEditorShellNode {
   if (depth > BLUE_UI_MAX_DEPTH) limit(`Blue UI depth exceeds ${String(BLUE_UI_MAX_DEPTH)}`)
-  state.nodes += 1
-  if (state.nodes > BLUE_UI_MAX_NODES) limit(`Blue UI tree exceeds ${String(BLUE_UI_MAX_NODES)} nodes`)
+  state.budget.nodes += 1
+  if (state.budget.nodes > BLUE_UI_MAX_NODES) limit(`Blue UI tree exceeds ${String(BLUE_UI_MAX_NODES)} nodes`)
   return enter(value, path, state, object => {
     const kind = own(object, 'kind', path)
     if (typeof kind !== 'string') invalid(`${path}.kind must be a string`)
@@ -446,7 +660,14 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
           const children: readonly BlueEditorChild[] = entries.map((item, index) => uiChild(item, `${path}.children[${String(index)}]`, state, depth + 1, (child, childPath, childState, childDepth) => node(child, childPath, childState, childDepth, 'editor', false, true)))
           return { ...stack, children }
         }
-        const children: readonly BlueUiChild[] = entries.map((item, index) => uiChild(item, `${path}.children[${String(index)}]`, state, depth + 1, (child, childPath, childState, childDepth) => node(child, childPath, childState, childDepth, 'ui')))
+        const children: readonly BlueUiChild[] = entries.map((item, index) => uiChild(
+          item,
+          `${path}.children[${String(index)}]`,
+          state,
+          depth + 1,
+          (child, childPath, childState, childDepth) => node(child, childPath, childState, childDepth, 'ui'),
+          (child, childPath, childDepth, scrollDepth, budget) => deferredUiNode(child, childPath, childDepth, scrollDepth, budget),
+        ))
         return { ...stack, children }
       }
       case 'surface': {
@@ -489,12 +710,18 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
       case 'list': {
         const modeValue = own(object, 'mode', path)
         const emptyValue = own(object, 'empty', path)
-        const items = collection(required(object, 'items', path), `${path}.items`).map((item, index) => listItem(item, `${path}.items[${String(index)}]`, state))
-        uniqueIds(items, `${path}.items`)
+        const itemsValue = required(object, 'items', path)
+        const itemCount = Array.isArray(itemsValue)
+          ? Object.getOwnPropertyDescriptor(itemsValue, 'length')!.value as number
+          : 0
+        const items = itemCount > BLUE_UI_MAX_COLLECTION
+          ? lazyListItems(itemsValue, `${path}.items`)
+          : collection(itemsValue, `${path}.items`).map((item, index) => listItem(item, `${path}.items[${String(index)}]`, state))
+        if (itemCount <= BLUE_UI_MAX_COLLECTION) uniqueIds(items, `${path}.items`)
         const selectedIds = collection(required(object, 'selectedIds', path), `${path}.selectedIds`).map((item, index) => text(item, `${path}.selectedIds[${String(index)}]`, state))
         if (new Set(selectedIds).size !== selectedIds.length) invalid(`${path}.selectedIds contains duplicate ids`)
         if ((modeValue ?? 'single') === 'single' && selectedIds.length > 1) invalid(`${path}.selectedIds has more than one id in single mode`)
-        if (selectedIds.some(id => !items.some(item => item.id === id))) invalid(`${path}.selectedIds contains an unknown id`)
+        if (itemCount <= BLUE_UI_MAX_COLLECTION && selectedIds.some(id => admittedListIndex(items, id) < 0)) invalid(`${path}.selectedIds contains an unknown id`)
         return { kind, id: identifier(required(object, 'id', path), `${path}.id`, state, true), ...optional(modeValue === undefined ? undefined : enumeration(modeValue, ['single', 'multiple'], `${path}.mode`), 'mode'), selectedIds, items, ...optional(optionalText(object, 'filter', path, state), 'filter'), ...optional(emptyValue === undefined ? undefined : node(emptyValue, `${path}.empty`, state, depth + 1, 'ui'), 'empty') }
       }
       case 'form': {
@@ -503,15 +730,15 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
         const id = identifier(required(object, 'id', path), `${path}.id`, state, true)
         for (const field of fields) {
           if (field.id.trim().length === 0) invalid(`${path}.fields id must not be empty`)
-          if (state.controlIds.has(field.id)) invalid(`control id "${field.id}" is duplicated`)
-          state.controlIds.add(field.id)
+          if (state.budget.controlIds.has(field.id)) invalid(`control id "${field.id}" is duplicated`)
+          state.budget.controlIds.add(field.id)
         }
         const submitActionId = optionalText(object, 'submitActionId', path, state)
         const cancelActionId = optionalText(object, 'cancelActionId', path, state)
         for (const actionId of [submitActionId, cancelActionId]) if (actionId !== undefined) {
           if (actionId.trim().length === 0) invalid(`${path} action id must not be empty`)
-          if (state.controlIds.has(actionId)) invalid(`control id "${actionId}" is duplicated`)
-          state.controlIds.add(actionId)
+          if (state.budget.controlIds.has(actionId)) invalid(`control id "${actionId}" is duplicated`)
+          state.budget.controlIds.add(actionId)
         }
         return { kind, id, fields, ...optional(submitActionId, 'submitActionId'), ...optional(cancelActionId, 'cancelActionId') }
       }
@@ -520,8 +747,8 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
         uniqueIds(items, `${path}.items`)
         for (const item of items) {
           if (item.id.trim().length === 0) invalid(`${path}.items id must not be empty`)
-          if (state.controlIds.has(item.id)) invalid(`control id "${item.id}" is duplicated`)
-          state.controlIds.add(item.id)
+          if (state.budget.controlIds.has(item.id)) invalid(`control id "${item.id}" is duplicated`)
+          state.budget.controlIds.add(item.id)
         }
         return { kind, id: text(required(object, 'id', path), `${path}.id`, state), items }
       }
@@ -531,8 +758,8 @@ function node(value: unknown, path: string, state: ValidationState, depth: numbe
         const cancelActionId = optionalText(object, 'cancelActionId', path, state)
         if (cancelActionId !== undefined) {
           if (cancelActionId.trim().length === 0) invalid(`${path}.cancelActionId must not be empty`)
-          if (state.controlIds.has(cancelActionId)) invalid(`control id "${cancelActionId}" is duplicated`)
-          state.controlIds.add(cancelActionId)
+          if (state.budget.controlIds.has(cancelActionId)) invalid(`control id "${cancelActionId}" is duplicated`)
+          state.budget.controlIds.add(cancelActionId)
         }
         return { kind, message: text(required(object, 'message', path), `${path}.message`, state), ...optional(variantValue === undefined ? undefined : enumeration(variantValue, ['braille', 'tide'], `${path}.variant`), 'variant'), ...optional(elapsedValue === undefined ? undefined : finiteInteger(elapsedValue, `${path}.elapsedMs`), 'elapsedMs'), ...optional(cancelActionId, 'cancelActionId') }
       }
@@ -667,15 +894,7 @@ function assertEditorControlVisible(node: BlueEditorShellNode, path = '$'): void
 }
 
 function validate<Value>(value: unknown, mode: ValidationMode): BlueValidationResult<Value> {
-  const state: ValidationState = {
-    active: new WeakSet(),
-    nodes: 0,
-    text: 0,
-    scrollDepth: 0,
-    editorControls: 0,
-    chartCells: 0,
-    controlIds: new Set(),
-  }
+  const state = validationState()
   try {
     const result = mode === 'ui'
       ? node(value, '$', state, 0, 'ui')

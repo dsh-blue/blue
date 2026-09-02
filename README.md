@@ -43,6 +43,11 @@ There is no Blue plugin manifest, capability negotiation, adapter facade,
 private plugin realm, or separate plugin-author CLI. Blue's own features and
 external plugins register through the same services.
 
+Plugins always return ordinary renderer-neutral nodes. Blue automatically
+windows large `list` nodes and delays hidden responsive branches, so plugins
+do not manage viewport ranges, overscan, renderer caches, or scroll
+controllers. Plugins still own database and network fetching.
+
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'

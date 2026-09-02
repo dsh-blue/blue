@@ -34,6 +34,13 @@ command。
 `BlueUiNode`，可由 `@dsh-blue/blue-ui` 构造。core 在渲染前执行 schema、
 quota、控制字符与宽度校验。
 
+插件不需要选择 eager 或 lazy 模式：大型 `list.items` 仍是普通 readonly
+数组，core 只校验、编译和绘制当前 viewport 邻域；带 `when` 的隐藏子树在首次
+可见时才进入完整 admission。列表条目的局部错误由对应禁用行承载，响应式分支
+的错误限制在该分支内。其他非虚拟化集合继续使用类型化 quota。Blue 不公开
+range、overscan、cache、measurement 或 scroll controller API，插件仍负责自身
+的网络与数据库取数。
+
 注册 handle 提供 `refresh()` 和 `dispose()`；pane 还提供
 `setHidden()`，overlay 提供 `close()`。即使调用方不手动 dispose，
 Cordis Fiber unload 也会清理 registration。
