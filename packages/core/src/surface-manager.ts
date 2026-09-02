@@ -135,9 +135,11 @@ function contributionFocusTarget(contribution: SurfaceContribution): BlueFocusab
 /** ANSI-aware Blue-owned lane tab chrome with deterministic overflow. */
 export function renderSurfaceTabs(lane: SurfaceLaneLayout, width: number): string {
   const available = safeDimension(width)
-  const tokens = lane.entries.map(entry => ({
+  const selectable = selectableSurfaceEntries(lane)
+  const activeId = selectable.some(entry => entry.id === lane.active.id) ? lane.active.id : selectable[0]?.id
+  const tokens = selectable.map(entry => ({
     id: entry.id,
-    value: entry.id === lane.active.id ? `[${entry.title ?? entry.id}]` : (entry.title ?? entry.id),
+    value: entry.id === activeId ? `[${entry.title ?? entry.id}]` : (entry.title ?? entry.id),
   }))
   const complete = tokens.map(token => token.value).join(' ')
   if (visibleWidth(complete) <= available) return complete
@@ -158,12 +160,35 @@ export function renderSurfaceTabs(lane: SurfaceLaneLayout, width: number): strin
   return fit(`${fit(ordered.join(' '), labelWidth)}${suffix}`, available)
 }
 
-/** Render one active lane contribution and clamp hostile component output. */
+/** Entries eligible for tab selection; passive bottom progress panes need no tab. */
+function selectableSurfaceEntries(lane: SurfaceLaneLayout): readonly SurfaceLaneEntry[] {
+  return lane.placement === 'bottom'
+    ? lane.entries.filter(entry => contributionFocusTarget(entry) !== null)
+    : lane.entries
+}
+
+/** Entries painted by one lane: passive bottom panes stack around one interactive tab. */
+export function renderedSurfaceEntries(lane: SurfaceLaneLayout): readonly SurfaceLaneEntry[] {
+  if (lane.placement !== 'bottom') return [lane.active]
+  const interactive = selectableSurfaceEntries(lane)
+  if (interactive.length === 0) return lane.entries
+  const selected = interactive.find(entry => entry.id === lane.active.id) ?? interactive[0]!
+  return lane.entries.filter(entry => contributionFocusTarget(entry) === null || entry.id === selected.id)
+}
+
+/** Tab chrome rows used by one lane; stacked bottom panes do not need tabs. */
+export function surfaceLaneTabRows(lane: SurfaceLaneLayout): 0 | 1 {
+  return selectableSurfaceEntries(lane).length > 1 ? 1 : 0
+}
+
+/** Render one lane and clamp hostile component output. */
 export function renderSurfaceLane(lane: SurfaceLaneLayout | undefined, width: number, maxRows = Number.MAX_SAFE_INTEGER): string[] {
   if (lane === undefined) return []
   const available = safeDimension(width)
-  const tabs = lane.entries.length > 1 ? [renderSurfaceTabs(lane, available)] : []
-  const body = lane.active.component.render(available).map(row => fit(row, available))
+  const tabs = surfaceLaneTabRows(lane) === 1 ? [renderSurfaceTabs(lane, available)] : []
+  const body = renderedSurfaceEntries(lane)
+    .flatMap(entry => entry.component.render(available))
+    .map(row => fit(row, available))
   return [...tabs, ...body].slice(0, Math.max(0, finiteInteger(maxRows, 0)))
 }
 

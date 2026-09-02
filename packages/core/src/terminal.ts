@@ -30,6 +30,8 @@ import {
   SurfaceManager,
   renderSurfaceLane,
   renderSurfaceTabs,
+  renderedSurfaceEntries,
+  surfaceLaneTabRows,
   type SurfaceLayout,
   type SurfacePlacement,
 } from './surface-manager.ts'
@@ -99,7 +101,7 @@ class SurfaceLaneContainer implements Component {
   private readonly tabs: Component = {
     render: width => {
       const lane = this.getLayout()[this.placement]
-      return lane === undefined || lane.entries.length < 2 ? [] : [renderSurfaceTabs(lane, width)]
+      return lane === undefined || surfaceLaneTabRows(lane) === 0 ? [] : [renderSurfaceTabs(lane, width)]
     },
     invalidate: () => this.manager.invalidate(),
   }
@@ -123,15 +125,17 @@ class SurfaceLaneContainer implements Component {
     const lane = this.getLayout()[this.placement]
     const stack = new VStack()
     if (lane === undefined) return stack[LAYOUT_NODE]()
-    const tabRows = lane.entries.length > 1 ? 1 : 0
+    const tabRows = surfaceLaneTabRows(lane)
     if (tabRows > 0) stack.addChild(this.tabs, { basis: 1, grow: 0, shrink: 0, minSize: 1, maxSize: 1 })
-    stack.addChild(lane.active.component as Component, {
-      basis: 'auto',
-      grow: 1,
-      shrink: 1,
-      minSize: 0,
-      maxSize: Math.max(0, this.maxRows() - tabRows),
-    })
+    for (const entry of renderedSurfaceEntries(lane)) {
+      stack.addChild(entry.component as Component, {
+        basis: 'auto',
+        grow: 1,
+        shrink: 1,
+        minSize: 0,
+        maxSize: Math.max(0, this.maxRows() - tabRows),
+      })
+    }
     return stack[LAYOUT_NODE]()
   }
 }
@@ -643,6 +647,7 @@ export async function startBlueTerminal(
         grow: 0,
         shrink: 100,
         minSize: 0,
+        maxSize: Math.floor(terminal.rows / 3),
       })
     }
     root.addChild(dockContainer!, { basis: 'auto', grow: 0, shrink: 0, minSize: 1 })
@@ -755,7 +760,7 @@ export async function startBlueTerminal(
         .find(candidate => candidate?.entries.some(entry => entry.id === id))
       const columns = lane?.placement === 'left' || lane?.placement === 'right' ? lane.width ?? terminal.columns : terminal.columns
       if (screenMode === 'main') return { columns: Math.max(1, terminal.columns), rows: Math.max(1, terminal.rows) }
-      const tabs = (lane?.entries.length ?? 0) > 1 ? 1 : 0
+      const tabs = lane === undefined ? 0 : surfaceLaneTabRows(lane)
       const dockRows = lastDockRows
       const rows = lane?.placement === 'header'
         ? Math.max(1, (lastSurfaceHeaderRows || SURFACE_HEADER_MAX_ROWS) - tabs)

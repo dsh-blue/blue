@@ -94,7 +94,7 @@ describe('blue-pane-activity', () => {
     expect(screen.bottomChildren).toHaveLength(0)
   })
 
-  it('yields the bottom lane while the dedicated Agents pane is visible', async () => {
+  it('keeps the activity row while the dedicated Agents pane is visible', async () => {
     const harness = await boot(runningAgent(fakeAgent([])))
     const agents = harness.ctx.bluePanes.register({
       id: 'blue.pane.agents',
@@ -102,9 +102,12 @@ describe('blue-pane-activity', () => {
       placement: 'bottom',
       render: () => ({ kind: 'text', content: 'agent row' }),
     })
-    expect(harness.screen.paneLines()).toEqual(['agent row'])
+    expect(harness.screen.paneLines()).toEqual([
+      `${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`,
+      'agent row',
+    ])
     agents.setHidden(true)
-    expect(harness.screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${buildTipRotation(STATUS_TIPS)[1]!.text}`])
+    expect(harness.screen.paneLines()).toEqual([`${MOON_SPINNER_FRAMES[0]!} · Tip: ${FIRST_TIP}`])
     agents.dispose()
     await harness.dispose()
   })

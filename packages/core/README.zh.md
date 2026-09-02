@@ -8,7 +8,8 @@ mode、alternate screen、focus、键盘 dispatch、layout、theme、node
 
 Core 直接订阅 `ctx.bluePanes` 与 `ctx.blueOverlays`。Pane/overlay 的
 render 函数返回 renderer-neutral `BlueUiNode`，core 校验并编译成具体
-component。Registry 与 renderer 之间没有 plugin host 或 bridge。
+component。Registry 与 renderer 之间没有 plugin host 或 bridge。可见的被动
+bottom pane 会按 priority 堆叠在编辑框上方，可聚焦 pane 仍使用 tab 选择。
 
 Core 也持有富终端渲染：共享 Markdown adapter 会增强闭合的 Mermaid fence，
 结构化 chart node 则通过当前 semantic theme 完成适配。无效、不安全、超 quota
