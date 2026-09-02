@@ -39,6 +39,10 @@ Blue 可以直接在终端显示 Markdown 表格、assistant 消息中的闭合 
 Blue 不再有专用插件 manifest、能力协商、适配 facade、私有插件域或独立的
 插件作者 CLI。Blue 官方功能与外部插件注册到完全相同的服务。
 
+插件始终只返回普通的 renderer-neutral 节点。Blue 会自动窗口化大型 `list`
+节点，并延迟隐藏的响应式分支；插件无需管理 viewport range、overscan、renderer
+cache 或 scroll controller。数据库与网络取数仍由插件负责。
+
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'

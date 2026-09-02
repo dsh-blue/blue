@@ -13,9 +13,12 @@ shared height budget; focusable bottom panes and header/side lanes retain one
 active tab at a time.
 
 Public node admission clones known fields, strips terminal controls, enforces
-depth/node/text/collection budgets, and never mutates caller data. Status
-nodes remain non-interactive. Editor shell validation remains separate because
-the Blue-owned editor control is not an external node kind.
+depth/node/text/type-specific collection budgets, and never mutates caller
+data. Large list entries are admitted through a core-private bounded cache;
+responsive `when` subtrees are admitted when first visible and retain their
+semantic focus after later hides. Status nodes remain non-interactive. Editor
+shell validation remains separate because the Blue-owned editor control is not
+an external node kind.
 
 Core owns the Mermaid and chart adapters. Only closed Mermaid fences are
 enhanced; invalid, unsafe, over-quota, or over-wide content falls back to

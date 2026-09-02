@@ -10,6 +10,7 @@ import type {
   BlueChartNode,
   BlueDocumentNode,
   BlueFormField,
+  BlueListNode,
   BlueStatusNode,
   BlueTone,
   BlueUiEvent,
@@ -39,7 +40,17 @@ import {
   type PatternFocus,
 } from './ui-patterns.ts'
 import { sliceByColumn, visibleWidth } from './width.ts'
-import { validateBlueEditorShellNode, validateBlueStatusNode, validateBlueUiNode } from './ui-validator.ts'
+import {
+  admittedListIndex,
+  admittedListItem,
+  deferredUiNodeMayHaveControls,
+  isDeferredUiNode,
+  materializeDeferredUiNode,
+  materializedDeferredUiNode,
+  validateBlueEditorShellNode,
+  validateBlueStatusNode,
+  validateBlueUiNode,
+} from './ui-validator.ts'
 import type { BlueEditorShellNode, BlueUiErrorCode } from './ui-contracts.ts'
 
 const FOCUS_SENTINEL = '\uf8ff'
@@ -214,6 +225,7 @@ type CompilableNode = BlueUiNode | BlueEditorShellNode
 
 interface RuntimeCompilerOptions extends BlueUiCompilerOptions {
   readonly editor?: BlueEditor
+  readonly listRuntime: BlueUiSurfaceRuntime
   readonly reportRuntimeFailure: (message: string) => void
 }
 
@@ -239,6 +251,7 @@ type ControlDescriptor =
       readonly event: BlueUiEvent
       readonly commitEvent?: BlueUiEvent
       readonly confirm?: string
+      readonly listEntry?: { readonly node: BlueListNode, readonly index: number }
     })
   | (ControlBase & { readonly kind: 'text', readonly field: TextField })
   | (ControlBase & { readonly kind: 'select', readonly field: SelectField })
@@ -265,6 +278,13 @@ interface ScrollControl {
   scrollToEnd(): void
   setScrollbarActive(active: boolean): void
 }
+
+interface VirtualListEntry {
+  readonly index: number
+  readonly item: NonNullable<ReturnType<typeof admittedListItem>>
+}
+
+type ListMovement = 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end'
 
 interface FocusState {
   activeKey: string | undefined
@@ -839,16 +859,33 @@ function releaseTextEditor(lease: TextEditorLease): void {
   detachTextEditorCallbacks(lease)
 }
 
-function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
+function listRowLimit(options: RuntimeCompilerOptions): number {
+  return options.screenMode === 'main'
+    ? options.maxLeafRows ?? 20
+    : safeViewport(options.getViewport).rows
+}
+
+function controlsForNode(node: CompilableNode, options: RuntimeCompilerOptions, path = '$', includeHidden = false): ControlDescriptor[] {
   const controls: ControlDescriptor[] = []
   const visit = (current: CompilableNode, currentPath: string): void => {
+    if (current.kind !== 'editor-control' && isDeferredUiNode(current as BlueUiNode)) {
+      const admitted = materializeDeferredUiNode(current as BlueUiNode)
+      if (admitted?.ok === true) visit(admitted.value, currentPath)
+      return
+    }
     switch (current.kind) {
       case 'editor-control':
         controls.push({ kind: 'editor', key: controlKey('editor', 'editor-control'), renderKey: 'editor-control', identity: focusIdentity('editor-control'), preferred: true, group: controlGroup('editor', 'editor-control'), navigation: 'none' })
         break
       case 'stack':
         for (const [index, child] of current.children.entries()) {
-          if (includeHidden || conditionMatches(child.when, safeViewport(options.getViewport))) visit(child.node, `${currentPath}.${String(index)}`)
+          const visible = conditionMatches(child.when, safeViewport(options.getViewport))
+          if (visible) visit(child.node, `${currentPath}.${String(index)}`)
+          else if (includeHidden) {
+            const admitted = materializedDeferredUiNode(child.node as BlueUiNode)
+            if (admitted?.ok === true) visit(admitted.value, `${currentPath}.${String(index)}`)
+            else if (!isDeferredUiNode(child.node as BlueUiNode)) visit(child.node, `${currentPath}.${String(index)}`)
+          }
         }
         break
       case 'surface':
@@ -870,7 +907,7 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
         for (const item of current.items) if (item.disabled !== true) controls.push({ kind: 'event', role: 'tab', activation: 'enter', key: controlKey('tabs', current.id, item.id), renderKey: item.id, identity: focusIdentity(current.id, item.id), preferred: item.id === current.activeId, group: controlGroup('tabs', current.id), navigation: 'horizontal', event: { kind: 'tab-change', controlId: current.id, tabId: item.id } })
         break
       case 'list':
-        for (const item of current.items) if (item.disabled !== true) {
+        for (const { item, index } of options.listRuntime.listWindow(current, listRowLimit(options))) if (item.disabled !== true) {
           const value = current.mode === 'multiple'
             ? current.selectedIds.includes(item.id) ? current.selectedIds.filter(id => id !== item.id) : [...current.selectedIds, item.id]
             : item.id
@@ -885,6 +922,7 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
             group: controlGroup('list', current.id),
             navigation: 'vertical',
             event: { kind: 'selection-change', controlId: current.id, value },
+            listEntry: { node: current, index },
             ...(current.mode === 'multiple' ? { commitEvent: { kind: 'selection-change', controlId: current.id, value: current.selectedIds } as BlueUiEvent } : {}),
           })
         }
@@ -914,7 +952,38 @@ function controlsForNode(node: CompilableNode, options: BlueUiCompilerOptions, p
   return controls
 }
 
+function containsDeferredNode(node: CompilableNode): boolean {
+  if (node.kind !== 'editor-control' && isDeferredUiNode(node as BlueUiNode)) {
+    const admitted = materializedDeferredUiNode(node as BlueUiNode)
+    if (admitted === undefined) return deferredUiNodeMayHaveControls(node as BlueUiNode)
+    return admitted.ok && containsDeferredNode(admitted.value)
+  }
+  if (node.kind === 'stack') return node.children.some(child => containsDeferredNode(child.node))
+  if (node.kind === 'surface') return containsDeferredNode(node.child) || (node.footer !== undefined && containsDeferredNode(node.footer))
+  if (node.kind === 'scroll') return containsDeferredNode(node.child)
+  if (node.kind === 'list') return node.empty !== undefined && containsDeferredNode(node.empty)
+  return false
+}
+
+function deferredComponent(node: BlueUiNode, state: FocusState, options: RuntimeCompilerOptions, path: string, mode: CompilerMode): BlueComponent {
+  let component: Component | undefined
+  const current = (): Component => {
+    if (component !== undefined) return component
+    const admitted = materializeDeferredUiNode(node)!
+    if (admitted?.ok === true) {
+      options.listRuntime.admitDeferred(admitted.value)
+      component = compileNode(admitted.value, state, options, path, mode)
+    } else component = new ErrorComponent(admitted.message, options.colors)
+    return component
+  }
+  return {
+    render: width => current().render(width),
+    invalidate: () => component?.invalidate?.(),
+  }
+}
+
 function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCompilerOptions, path = '$', mode: CompilerMode = 'ui', contextHint?: Component): Component {
+  if (node.kind !== 'editor-control' && isDeferredUiNode(node as BlueUiNode)) return deferredComponent(node as BlueUiNode, state, options, path, mode)
   switch (node.kind) {
     case 'editor-control': {
       const editor = options.editor
@@ -1024,8 +1093,21 @@ function compileNode(node: CompilableNode, state: FocusState, options: RuntimeCo
     }
     case 'list': {
       if (node.items.length === 0) return node.empty === undefined ? staticComponent(() => [], options) : compileNode(node.empty, state, options, `${path}.empty`, mode)
-      const component = staticComponent(width => renderList(node, width, options.screenMode === 'main' ? options.maxLeafRows ?? Number.MAX_SAFE_INTEGER : safeViewport(options.getViewport).rows, patternFocus(state, controlGroup('list', node.id)), options.colors), options)
-      state.bindControls(node.items.filter(item => item.disabled !== true).map(item => controlKey('list', node.id, item.id)), { component, axis: 'vertical' })
+      let component!: BlueComponent
+      component = staticComponent(width => {
+        const entries = options.listRuntime.listWindow(node, listRowLimit(options))
+        const items = entries.map(entry => entry.item)
+        state.bindControls(items.filter(item => item.disabled !== true).map(item => controlKey('list', node.id, item.id)), { component, axis: 'vertical' })
+        return renderList(
+          { ...node, items },
+          width,
+          listRowLimit(options),
+          patternFocus(state, controlGroup('list', node.id)),
+          options.colors,
+        )
+      }, options)
+      const initial = options.listRuntime.listWindow(node, listRowLimit(options))
+      state.bindControls(initial.filter(entry => entry.item.disabled !== true).map(entry => controlKey('list', node.id, entry.item.id)), { component, axis: 'vertical' })
       return component
     }
     case 'form': {
@@ -1250,6 +1332,7 @@ export class BlueUiSurfaceRuntime {
   private readonly fieldRecency = new Map<string, true>()
   private readonly controlBindings = new Map<string, ControlBinding>()
   private readonly scrollViews = new Map<string, ScrollControl>()
+  private readonly listCursors = new Map<string, { items: BlueListNode['items'], index: number, itemId?: string }>()
   readonly state: FocusState
 
   constructor() {
@@ -1366,6 +1449,45 @@ export class BlueUiSurfaceRuntime {
 
   current(generation: number): boolean { return this.live && generation === this.generation }
 
+  listWindow(node: BlueListNode, rowLimit: number): readonly VirtualListEntry[] {
+    if (node.items.length === 0) return []
+    const cursor = this.listCursor(node)
+    const visible = Math.max(1, Math.min(256, Number.isFinite(rowLimit) ? Math.floor(rowLimit) : 20))
+    const size = Math.min(node.items.length, visible + 4)
+    const start = Math.min(
+      Math.max(0, node.items.length - size),
+      Math.max(0, cursor - Math.floor(size / 2)),
+    )
+    const entries: VirtualListEntry[] = []
+    for (let index = start; index < start + size; index += 1) {
+      const item = admittedListItem(node.items, index)!
+      entries.push({ index, item })
+    }
+    return entries
+  }
+
+  moveList(node: BlueListNode, from: number, movement: ListMovement, pageSize: number): VirtualListEntry | undefined {
+    if (node.items.length === 0) return undefined
+    const direction = movement === 'up' || movement === 'page-up' || movement === 'end' ? -1 : 1
+    let index = movement === 'home' ? -1 : movement === 'end' ? node.items.length : from
+    let remaining = movement === 'page-up' || movement === 'page-down'
+      ? Math.max(1, Math.floor(pageSize))
+      : 1
+    let target: VirtualListEntry | undefined
+    while (remaining > 0) {
+      const candidate = index + direction
+      if (candidate < 0 || candidate >= node.items.length) break
+      index = candidate
+      const item = admittedListItem(node.items, index)!
+      if (item.disabled === true) continue
+      target = { index, item }
+      remaining -= 1
+    }
+    if (target === undefined) return undefined
+    this.listCursors.set(node.id, { items: node.items, index: target.index, itemId: target.item.id })
+    return target
+  }
+
   setFocused(value: boolean): void {
     this.state.focused = value
     if (!value) for (const lease of this.textEditors.values()) lease.editor.focused = false
@@ -1394,6 +1516,7 @@ export class BlueUiSurfaceRuntime {
     const groupActiveKeys = new Map(this.state.groupActiveKeys)
     const controlBindings = new Map(this.controlBindings)
     const scrollViews = new Map(this.scrollViews)
+    const listCursors = new Map(this.listCursors)
     return () => {
       this.node = node
       this.options = options
@@ -1406,6 +1529,7 @@ export class BlueUiSurfaceRuntime {
       this.state.groupActiveKeys.clear(); for (const [key, value] of groupActiveKeys) this.state.groupActiveKeys.set(key, value)
       this.controlBindings.clear(); for (const [key, value] of controlBindings) this.controlBindings.set(key, value)
       this.scrollViews.clear(); for (const [key, value] of scrollViews) this.scrollViews.set(key, value)
+      this.listCursors.clear(); for (const [key, value] of listCursors) this.listCursors.set(key, value)
     }
   }
 
@@ -1425,51 +1549,20 @@ export class BlueUiSurfaceRuntime {
   /** Retain recent inactive fields while bounding registration-owned renderer state. */
   admit(node: CompilableNode): void {
     const active = new Set<string>()
-    const evict = (stateKey: string): void => {
-      this.textBuffers.delete(stateKey)
-      this.selectDrafts.delete(stateKey)
-      this.toggleDrafts.delete(stateKey)
-      const lease = this.textEditors.get(stateKey)
-      if (lease !== undefined) {
-        releaseTextEditor(lease)
-        this.textEditors.delete(stateKey)
-      }
-      const owner = this.fieldOwners.get(stateKey)!
-      if (this.state.editingKey === owner) this.state.setEditing(undefined)
-      this.fieldKinds.delete(owner)
-      this.fieldOwners.delete(stateKey)
-      this.fieldRecency.delete(stateKey)
-    }
-    const touch = (key: string, field: BlueFormField): void => {
-      const previousKind = this.fieldKinds.get(key)
-      if (previousKind !== undefined && previousKind !== field.kind) evict(fieldStateKey(key, previousKind))
-      const stateKey = fieldStateKey(key, field.kind)
-      this.fieldKinds.set(key, field.kind)
-      this.fieldOwners.set(stateKey, key)
-      this.fieldRecency.delete(stateKey)
-      this.fieldRecency.set(stateKey, true)
-      active.add(stateKey)
-    }
-    const visit = (current: CompilableNode): void => {
-      switch (current.kind) {
-        case 'stack': for (const child of current.children) visit(child.node); break
-        case 'surface': visit(current.child); if (current.footer !== undefined) visit(current.footer); break
-        case 'scroll': visit(current.child); break
-        case 'list': if (current.empty !== undefined) visit(current.empty); break
-        case 'form': for (const field of current.fields) touch(controlKey('form-field', current.id, field.id), field); break
-        case 'empty': if (current.actions !== undefined) visit(current.actions); break
-        default: break
-      }
-    }
-    visit(node)
+    this.admitFields(node, active)
     for (const [stateKey, lease] of this.textEditors) if (!active.has(stateKey)) lease.editor.focused = false
     let inactive = this.fieldRecency.size - active.size
     // Every active key was just touched and therefore sits after all inactive keys.
     for (const stateKey of this.fieldRecency.keys()) {
       if (inactive <= INACTIVE_FIELD_CACHE_LIMIT) break
-      evict(stateKey)
+      this.evictField(stateKey)
       inactive -= 1
     }
+  }
+
+  /** Add fields from a newly visible deferred branch without aging sibling state. */
+  admitDeferred(node: BlueUiNode): void {
+    this.admitFields(node, new Set())
   }
 
   deactivate(): void {
@@ -1497,6 +1590,7 @@ export class BlueUiSurfaceRuntime {
     this.fieldRecency.clear()
     this.controlBindings.clear()
     this.scrollViews.clear()
+    this.listCursors.clear()
     this.state.activeKey = undefined
     this.state.activeGroup = undefined
     this.state.desiredKey = undefined
@@ -1505,6 +1599,85 @@ export class BlueUiSurfaceRuntime {
     this.state.groupActiveKeys.clear()
     this.state.lastIndex = 0
     this.state.lastTabGroupIndex = 0
+  }
+
+  private listCursor(node: BlueListNode): number {
+    const previous = this.listCursors.get(node.id)
+    if (previous?.items === node.items && previous.index < node.items.length) return previous.index
+    const anchor = previous?.itemId ?? node.selectedIds[0]
+    let index = anchor === undefined ? 0 : admittedListIndex(node.items, anchor)
+    if (index < 0) index = Math.min(previous?.index ?? 0, Math.max(0, node.items.length - 1))
+    let item = admittedListItem(node.items, index)!
+    if (item?.disabled === true) {
+      const forward = this.findEnabled(node, index + 1, 1)
+      const backward = this.findEnabled(node, index - 1, -1)
+      const replacement = forward ?? backward
+      if (replacement !== undefined) {
+        index = replacement.index
+        item = replacement.item
+      }
+    }
+    this.listCursors.set(node.id, {
+      items: node.items,
+      index,
+      itemId: item.id,
+    })
+    return index
+  }
+
+  private admitFields(current: CompilableNode, active: Set<string>): void {
+    if (current.kind !== 'editor-control' && isDeferredUiNode(current as BlueUiNode)) {
+      const admitted = materializedDeferredUiNode(current as BlueUiNode)
+      if (admitted?.ok === true) this.admitFields(admitted.value, active)
+      return
+    }
+    switch (current.kind) {
+      case 'stack': for (const child of current.children) this.admitFields(child.node, active); break
+      case 'surface':
+        this.admitFields(current.child, active)
+        if (current.footer !== undefined) this.admitFields(current.footer, active)
+        break
+      case 'scroll': this.admitFields(current.child, active); break
+      case 'list': if (current.empty !== undefined) this.admitFields(current.empty, active); break
+      case 'form': for (const field of current.fields) this.touchField(controlKey('form-field', current.id, field.id), field, active); break
+      case 'empty': if (current.actions !== undefined) this.admitFields(current.actions, active); break
+      default: break
+    }
+  }
+
+  private touchField(key: string, field: BlueFormField, active: Set<string>): void {
+    const previousKind = this.fieldKinds.get(key)
+    if (previousKind !== undefined && previousKind !== field.kind) this.evictField(fieldStateKey(key, previousKind))
+    const stateKey = fieldStateKey(key, field.kind)
+    this.fieldKinds.set(key, field.kind)
+    this.fieldOwners.set(stateKey, key)
+    this.fieldRecency.delete(stateKey)
+    this.fieldRecency.set(stateKey, true)
+    active.add(stateKey)
+  }
+
+  private evictField(stateKey: string): void {
+    this.textBuffers.delete(stateKey)
+    this.selectDrafts.delete(stateKey)
+    this.toggleDrafts.delete(stateKey)
+    const lease = this.textEditors.get(stateKey)
+    if (lease !== undefined) {
+      releaseTextEditor(lease)
+      this.textEditors.delete(stateKey)
+    }
+    const owner = this.fieldOwners.get(stateKey)!
+    if (this.state.editingKey === owner) this.state.setEditing(undefined)
+    this.fieldKinds.delete(owner)
+    this.fieldOwners.delete(stateKey)
+    this.fieldRecency.delete(stateKey)
+  }
+
+  private findEnabled(node: BlueListNode, start: number, direction: -1 | 1): VirtualListEntry | undefined {
+    for (let index = start; index >= 0 && index < node.items.length; index += direction) {
+      const item = admittedListItem(node.items, index)!
+      if (item.disabled !== true) return { index, item }
+    }
+    return undefined
   }
 
   private textEditor(field: TextField, key: string): BlueEditor {
@@ -1563,7 +1736,7 @@ class CompiledSurface implements BlueEditorShellComponent {
   private readonly generation: number
 
   constructor(
-    node: CompilableNode,
+    private readonly node: CompilableNode,
     private readonly options: BlueUiCompilerOptions,
     mode: CompilerMode,
     private readonly editor?: BlueEditor,
@@ -1573,13 +1746,14 @@ class CompiledSurface implements BlueEditorShellComponent {
     contextEscapeHint?: 'close' | 'leave',
   ) {
     this.viewport = safeViewport(options.getViewport)
+    this.surfaceRuntime = surfaceRuntime ?? new BlueUiSurfaceRuntime()
     const runtimeOptions: RuntimeCompilerOptions = {
       ...options,
       ...(editor === undefined ? {} : { editor }),
       getViewport: () => this.viewport,
+      listRuntime: this.surfaceRuntime,
       reportRuntimeFailure: message => { this.runtimeFailure ??= message },
     }
-    this.surfaceRuntime = surfaceRuntime ?? new BlueUiSurfaceRuntime()
     this.generation = this.surfaceRuntime.bind(node, runtimeOptions, refreshMode, viewport => { this.viewport = viewport })
     this.state = this.surfaceRuntime.state
     const contextHint = contextKeyHints ? contextKeyHintComponent(this.state, runtimeOptions, contextEscapeHint) : undefined
@@ -1591,8 +1765,8 @@ class CompiledSurface implements BlueEditorShellComponent {
       root.addChild(contextHint)
       this.root = root
     }
-    this.surfaceRuntime.admit(node)
     reconcile(this.state)
+    this.surfaceRuntime.admit(node)
   }
 
   get focused(): boolean { return this.state.focused }
@@ -1602,6 +1776,10 @@ class CompiledSurface implements BlueEditorShellComponent {
     if (!value && this.editor !== undefined) this.editor.focused = false
     if (!value) this.state.pendingConfirmation = undefined
     reconcile(this.state)
+  }
+
+  hasControls(): boolean {
+    return this.state.allControls().length > 0 || containsDeferredNode(this.node)
   }
 
   captureFocusIdentity(): BlueFocusIdentity | undefined {
@@ -1950,18 +2128,36 @@ class CompiledSurface implements BlueEditorShellComponent {
       }
       return
     }
-    if ((data === '\x1b[5~' || data === '\x1b[6~' || data === '\x1b[H' || data === '\x1b[F')
-      && active.kind === 'event'
-      && (active.role === 'list-single' || active.role === 'list-multiple')) {
-      const group = groups.find(candidate => candidate.id === active.group)!
-      const current = group.entries.findIndex(entry => entry.index === this.state.lastIndex)
-      const page = Math.max(1, Math.min(10, this.viewport.rows - 1))
-      const targetIndex = data === '\x1b[H' ? 0
-        : data === '\x1b[F' ? group.entries.length - 1
-          : Math.max(0, Math.min(group.entries.length - 1, current + (data === '\x1b[5~' ? -page : page)))
-      const target = group.entries[targetIndex]
-      if (target !== undefined && target.index !== this.state.lastIndex) moveTo(target.index)
-      return
+    if (active.kind === 'event' && active.listEntry !== undefined) {
+      const movement: ListMovement | undefined = direction === 'up' ? 'up'
+        : direction === 'down' ? 'down'
+          : data === '\x1b[5~' ? 'page-up'
+            : data === '\x1b[6~' ? 'page-down'
+              : data === '\x1b[H' ? 'home'
+                : data === '\x1b[F' ? 'end'
+                  : undefined
+      if (movement !== undefined) {
+        const target = this.surfaceRuntime.moveList(
+          active.listEntry.node,
+          active.listEntry.index,
+          movement,
+          Math.max(1, Math.min(10, this.viewport.rows - 1)),
+        )
+        if (target === undefined || target.index === active.listEntry.index) return
+        const key = controlKey('list', active.listEntry.node.id, target.item.id)
+        const group = controlGroup('list', active.listEntry.node.id)
+        this.state.setEditing(undefined)
+        this.state.pendingConfirmation = undefined
+        this.state.activeKey = key
+        this.state.activeGroup = group
+        this.state.desiredKey = key
+        this.state.desiredGroup = group
+        this.state.groupActiveKeys.set(group, key)
+        const updated = reconcile(this.state)
+        this.state.lastIndex = updated.findIndex(control => control.key === key)
+        try { this.options.onFocusChange?.(focusIdentity(active.listEntry.node.id, target.item.id)) } catch { /* focus observers cannot escape input */ }
+        return
+      }
     }
     if (direction !== undefined) {
       const group = groups.find(candidate => candidate.id === active.group)
@@ -2071,7 +2267,7 @@ export function compileBlueUiNode(value: unknown, options: BlueUiCompilerOptions
     const contextKeyHints = options.contextHints?.enabled === true
     const contextEscapeHint = options.onUnhandledEscape === undefined ? undefined : 'close'
     const surface = admittedSurface(admitted.value, options, 'ui', undefined, undefined, undefined, contextKeyHints, contextEscapeHint)
-    const hasControls = controlsForNode(admitted.value, options, '$', true).length > 0
+    const hasControls = surface.hasControls()
     const focusTarget = hasControls || (contextKeyHints && options.contextHints?.focusWithoutControls === true) ? surface : null
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
@@ -2089,7 +2285,7 @@ export function compileBlueUiSurfaceNode(value: unknown, options: BlueUiSurfaceC
   try {
     const contextEscapeHint = options.onUnhandledEscape === undefined ? undefined : options.escapeHint ?? 'close'
     const surface = admittedSurface(admitted.value, options, 'ui', undefined, options.surfaceRuntime, options.refreshMode, true, contextEscapeHint)
-    const hasControls = controlsForNode(admitted.value, options, '$', true).length > 0
+    const hasControls = surface.hasControls()
     const focusTarget = hasControls || options.contextHints?.focusWithoutControls === true ? surface : null
     return { ok: true, value: { node: admitted.value, component: surface, focusTarget } }
   } catch {
