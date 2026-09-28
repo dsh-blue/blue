@@ -43,7 +43,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dsh-blue/blue.git",
+    "url": "git+https://github.com/Ephemeral-AI-Lab/mayfly.git",
     "directory": "packages/bundle/blue"
   },
   "dsh": {

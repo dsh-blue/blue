@@ -141,7 +141,7 @@ describe('buildConfigSections', () => {
     expect(flat.some(line => line.includes('tool timeout 60000 ms'))).toBe(true)
     expect(flat.some(line => line.includes('fail on startup error false'))).toBe(true)
     expect(flat.some(line => line.includes('enabled · 500 ms → 30000 ms backoff · max 10 attempts'))).toBe(true)
-    expect(flat.some(line => line.includes('dsh-blue.dev'))).toBe(true)
+    expect(flat.some(line => line.includes('may-fly.dev'))).toBe(true)
     // The secret-bearing values never render — only the key list.
     expect(flat.every(line => !line.includes('secret'))).toBe(true)
   })
@@ -191,7 +191,7 @@ describe('emptyMcpSections', () => {
   it('guides to the profile patch, noting orphaned tools when present', () => {
     const flat = emptyMcpSections(catalog([], 0)).flatMap(section => section.rows)
     expect(flat[0]!.segments[0]!.text).toBe('no MCP servers are declared')
-    expect(flat[1]!.segments[0]!.text).toContain('dsh-blue.dev')
+    expect(flat[1]!.segments[0]!.text).toContain('may-fly.dev')
     expect(emptyMcpSections(catalog([], 1))[0]!.rows.at(-1)!.segments[0]!.text)
       .toBe('(1 mcp__ tool visible but undeclared)')
     expect(emptyMcpSections(catalog([], 2))[0]!.rows.at(-1)!.segments[0]!.text)
@@ -338,7 +338,7 @@ describe('registerMcpCommands', () => {
     const empty = screen.overlays.at(-1)! as { component: InfoPanel }
     const rows = plain(empty.component.render(100))
     expect(rows.some(row => row.includes('no MCP servers are declared'))).toBe(true)
-    expect(rows.some(row => row.includes('dsh-blue.dev'))).toBe(true)
+    expect(rows.some(row => row.includes('may-fly.dev'))).toBe(true)
     expect(rows.some(row => row.includes('1 mcp__ tool visible but undeclared'))).toBe(true)
     empty.component.handleInput(KEY.escape)
     expect(empty.hidden).toBe(true)

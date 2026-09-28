@@ -1,11 +1,13 @@
 # Blue
 
-[![CI](https://github.com/dsh-blue/blue/actions/workflows/ci.yml/badge.svg)](https://github.com/dsh-blue/blue/actions/workflows/ci.yml)
+> **Blue has become [Mayfly](https://github.com/Ephemeral-AI-Lab/mayfly)** — a dsh-based multi-agent terminal. This repository is archived and no longer maintained; the project now lives at **[may-fly.dev](https://may-fly.dev/)**.
+
+[![CI](https://github.com/Ephemeral-AI-Lab/mayfly/actions/workflows/ci.yml/badge.svg)](https://github.com/Ephemeral-AI-Lab/mayfly/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933)](#usage)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#usage)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/en/)
-[![Chat](https://img.shields.io/badge/chat-Feishu%20group-3370FF)](https://github.com/dsh-blue/blue/issues/106)
+[![Docs](https://img.shields.io/badge/docs-may--fly.dev-8B5CF6)](https://may-fly.dev/en/)
+[![Chat](https://img.shields.io/badge/chat-Feishu%20group-3370FF)](https://github.com/Ephemeral-AI-Lab/mayfly/issues)
 
 English | [中文](README.zh.md)
 
@@ -21,7 +23,7 @@ and renderer-neutral line, point, bar, sparkline, and heatmap nodes directly in
 the terminal, with width-safe source or text fallbacks.
 
 <p align="center">
-  <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue demo: streaming transcript, tool cards, and panes"></a>
+  <img src="docs/assets/demo.gif" width="720" alt="Blue demo: streaming transcript, tool cards, and panes">
 </p>
 
 ## Plugin model
@@ -122,11 +124,11 @@ the current Agent and coordinates startup, while transcript and interaction
 consume native dsh services and publish UI contributions.
 
 See [the architecture](docs/blue-architecture.md), [the service seams](docs/blue-seams.md),
-and the [developer manual](https://dsh-blue.dev/en/plugins/).
+and the [developer manual](https://may-fly.dev/en/plugins/).
 
 ## Community
 
-Questions, feedback, or feature ideas? Join the official Blue group on Feishu (primarily Chinese). Invite links expire every 7 days — grab the current one from the latest comment of the pinned [group issue](https://github.com/dsh-blue/blue/issues/106). Bug reports still belong in [issues](https://github.com/dsh-blue/blue/issues).
+Blue has moved to [Mayfly](https://github.com/Ephemeral-AI-Lab/mayfly). Questions, feedback, and bug reports belong in Mayfly's [issues](https://github.com/Ephemeral-AI-Lab/mayfly/issues).
 
 ## License
 

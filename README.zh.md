@@ -1,11 +1,13 @@
 # Blue
 
-[![CI](https://github.com/dsh-blue/blue/actions/workflows/ci.yml/badge.svg)](https://github.com/dsh-blue/blue/actions/workflows/ci.yml)
+> **Blue 已演进为 [Mayfly](https://github.com/Ephemeral-AI-Lab/mayfly)**——一个基于 dsh 的多 Agent 终端。本仓库已归档、不再维护；项目现位于 **[may-fly.dev](https://may-fly.dev/)**。
+
+[![CI](https://github.com/Ephemeral-AI-Lab/mayfly/actions/workflows/ci.yml/badge.svg)](https://github.com/Ephemeral-AI-Lab/mayfly/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933)](#用法)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220)](#用法)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-dsh--blue.dev-8B5CF6)](https://dsh-blue.dev/)
-[![Chat](https://img.shields.io/badge/chat-%E9%A3%9E%E4%B9%A6%E7%BE%A4-3370FF)](https://github.com/dsh-blue/blue/issues/106)
+[![Docs](https://img.shields.io/badge/docs-may--fly.dev-8B5CF6)](https://may-fly.dev/)
+[![Chat](https://img.shields.io/badge/chat-%E9%A3%9E%E4%B9%A6%E7%BE%A4-3370FF)](https://github.com/Ephemeral-AI-Lab/mayfly/issues)
 
 [English](README.md) | 中文
 
@@ -20,7 +22,7 @@ Blue 可以直接在终端显示 Markdown 表格、assistant 消息中的闭合 
 的内容会安全回退为源码或文本。
 
 <p align="center">
-  <a href="https://dsh-blue.dev/blue-demo.mp4"><img src="docs/assets/demo.gif" width="720" alt="Blue 演示：流式会话、工具卡片与面板"></a>
+  <img src="docs/assets/demo.gif" width="720" alt="Blue 演示：流式会话、工具卡片与面板">
 </p>
 
 ## 插件模型
@@ -115,11 +117,11 @@ renderer-neutral 节点和直接 registry；app 选择当前 Agent 并协调启�
 transcript 与 interaction 消费 dsh 原生服务并发布 UI 贡献。
 
 进一步阅读：[架构](docs/blue-architecture.md)、[服务 seam](docs/blue-seams.md)、
-[开发手册](https://dsh-blue.dev/plugins/)。
+[开发手册](https://may-fly.dev/plugins/)。
 
 ## 社区
 
-欢迎加入 Blue 官方飞书群——反馈、排障、功能讨论与版本动态的第一线。入群链接 7 天过期，请从置顶的[群组 issue](https://github.com/dsh-blue/blue/issues/106) 最新评论获取当前链接；bug 仍请通过 [issue](https://github.com/dsh-blue/blue/issues) 提交追踪。
+Blue 已迁移至 [Mayfly](https://github.com/Ephemeral-AI-Lab/mayfly)。问题、反馈与 bug 请提交到 Mayfly 的 [issues](https://github.com/Ephemeral-AI-Lab/mayfly/issues)。
 
 ## 许可证
 

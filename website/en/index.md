@@ -11,7 +11,7 @@ hero:
       link: /en/guide/
     - theme: alt
       text: GitHub
-      link: https://github.com/dsh-blue/blue
+      link: https://github.com/Ephemeral-AI-Lab/mayfly
 
 features:
   - title: Stay in the conversation

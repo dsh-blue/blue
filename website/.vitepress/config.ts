@@ -10,11 +10,11 @@ const base = process.env.DOCS_BASE ?? '/'
 const SITE_VERSION = '0.2.0-alpha.1'
 
 /**
- * 站点正式域名（dsh-blue.dev，经 Cloudflare DNS 指向 GitHub Pages）。
+ * 站点正式域名（may-fly.dev，经 Cloudflare DNS 指向 GitHub Pages）。
  * sitemap hostname 必须带尾斜杠：sitemap 库把页面 URL 相对解析到
  * hostname 上，无尾斜杠的路径会被相对路径替换掉。
  */
-const SITE_URL = 'https://dsh-blue.dev'
+const SITE_URL = 'https://may-fly.dev'
 const SITEMAP_HOSTNAME = `${SITE_URL}/`
 
 // ── 入口语言路由（烤进 <head> 内联脚本，整页加载执行；SPA 导航不重跑）──────
@@ -70,7 +70,7 @@ const sharedTheme = {
       },
     },
   },
-  socialLinks: [{ icon: 'github', link: 'https://github.com/dsh-blue/blue' }],
+  socialLinks: [{ icon: 'github', link: 'https://github.com/Ephemeral-AI-Lab/mayfly' }],
 }
 
 // ── 导航：顶栏三入口——用户手册 / 开发手册 / 插件市场 ────────────────────────
@@ -172,7 +172,7 @@ const sidebarZh = {
         { text: 'Seam 参考', link: '/plugins/seams' },
         { text: '内置插件', link: '/plugins/builtins' },
         { text: '贡献本仓库', link: '/plugins/contributing' },
-        { text: '仓库设计文档（GitHub）', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
+        { text: '仓库设计文档（GitHub）', link: 'https://github.com/Ephemeral-AI-Lab/mayfly/blob/main/docs/README.md' },
       ],
     },
   ],
@@ -267,7 +267,7 @@ const sidebarEn = {
         { text: 'Seam reference', link: '/en/plugins/seams' },
         { text: 'Built-in plugins', link: '/en/plugins/builtins' },
         { text: 'Contributing to Blue', link: '/en/plugins/contributing' },
-        { text: 'Design docs (GitHub, 中文)', link: 'https://github.com/dsh-blue/blue/blob/master/docs/README.md' },
+        { text: 'Design docs (GitHub, 中文)', link: 'https://github.com/Ephemeral-AI-Lab/mayfly/blob/main/docs/README.md' },
       ],
     },
   ],

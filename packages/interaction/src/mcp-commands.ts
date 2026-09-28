@@ -31,7 +31,7 @@ import { CanonicalSelectController, type SelectRow } from './select-list.ts'
 import { buildToolDetailSections, firstSentence } from './tools-commands.ts'
 
 /** The website page the empty state and config hint point at. */
-const MCP_GUIDE_URL = 'https://dsh-blue.dev/en/dsh/mcp'
+const MCP_GUIDE_URL = 'https://may-fly.dev/en/dsh/mcp'
 
 /** The config pseudo-row's value inside the per-server panel. */
 const CONFIG_ROW_VALUE = '__server_config__'

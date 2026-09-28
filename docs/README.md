@@ -12,7 +12,7 @@
 当时时点，不定义当前 API。
 
 插件作者应从 Website
-[开发手册](https://dsh-blue.dev/plugins/) 开始，并以
+[开发手册](https://may-fly.dev/plugins/) 开始，并以
 [DeepSeek Harness reference](https://deepseek-harness.github.io/deepseek-harness/reference/)
 为 dsh 原生服务依据。仓库维护规则见根 [AGENTS.md](../AGENTS.md) 与各包
 `AGENTS.md`。

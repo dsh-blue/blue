@@ -12,7 +12,7 @@
   },
   "files": ["lib/**/*"],
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/dsh-blue/blue.git", "directory": "packages/frontend" },
+  "repository": { "type": "git", "url": "git+https://github.com/Ephemeral-AI-Lab/mayfly.git", "directory": "packages/frontend" },
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.2", "@dsh-blue/blue-api": "workspace:*" },
   "devDependencies": { "@deepseek-ai/cordis": "4.0.2", "@dsh-blue/blue-api": "workspace:*" }
 }
